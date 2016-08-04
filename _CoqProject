@@ -1,0 +1,4 @@
+-R . CLAlg
+./VectorQuantification.v
+./CL.v
+./CLAlg.v
