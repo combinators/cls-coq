@@ -1,6 +1,52 @@
 Require Import Coq.Vectors.Fin.
 Require Import Coq.Vectors.Vector.
 
+Require Import Logic.Eqdep_dec.
+Require Import Arith.PeanoNat.
+Require Import Arith.Peano_dec.
+
+Lemma Vector_tl_ineq:
+  forall {T} (x : T) {n} xs ys, xs <> ys -> cons T x n xs <> cons T x n ys.
+Proof.
+  intros T x n xs ys ineq.
+  intro devil.
+  injection devil as devil.
+  contradict ineq.
+  apply inj_pair2_eq_dec.
+  - apply Nat.eq_dec.
+  - exact devil.
+Qed.
+
+Definition Vector_eq_dec: forall {T} {n} (t_eq_dec: forall (x y: T), {x = y} + {x <> y}) (xs ys: t T n), {xs = ys} + {xs <> ys}.
+Proof.
+  intros T n t_eq_dec xs.
+  induction xs as [ | x n xs IH ]; intros ys.
+  - apply (fun P prf => case0 P prf ys).
+    left; reflexivity.
+  - apply (caseS' ys).
+    clear ys; intros y ys.
+    destruct (t_eq_dec x y) as [ x_eq | x_ineq ].
+    + rewrite x_eq.
+      destruct (IH ys) as [ xs_eq | ].
+      * rewrite xs_eq.
+        left; reflexivity.
+      * right; apply Vector_tl_ineq; assumption.
+    + right; intro devil; inversion devil.
+      contradiction x_ineq.
+Defined.
+
+Lemma Vector_append_nil:
+  forall {T} {n} (xs: t T n),
+    existT (fun n => t T n) n xs = existT (fun n => t T n) (n + 0) (append xs (nil T)).
+Proof.
+  intros T n xs.
+  induction xs as [ | x n' xs IH ] .
+  - reflexivity.
+  - simpl.
+    dependent rewrite <- IH.
+    reflexivity.
+Qed.    
+
 Inductive ForAll' {S : Type} (P : S -> Type): forall {n : nat}, t S n -> Type :=
 | ForAll'_nil: ForAll' P (nil _)
 | ForAll'_cons: forall x {n: nat} xs,
@@ -87,6 +133,29 @@ Proof.
 Qed.
 
 
+
+   
+Lemma Forall_dec_eq:
+  forall {T : Type} m
+    (xs ys: t T m)
+    (IH: Forall (fun sigma => forall tau, sigma = tau \/ sigma <> tau) xs),
+    xs = ys \/ xs <> ys.
+Proof.
+  intros T m xs.
+  induction xs as [ | x n xs IHxs ]; intros ys IH.
+  - intros; left; apply case0; reflexivity.
+  - apply (caseS' ys); clear ys; intros y ys.
+    inversion IH as [ | ? ? ? prf prfs' nEq [ hEq tlEq ] ].
+    destruct (prf y) as [ xy_eq | ];
+      [ | right; intro devil; inversion devil; contradiction ].
+    rewrite xy_eq.
+    dependent rewrite tlEq in prfs'.
+    destruct (IHxs ys prfs') as [ xs_eq | xs_ineq ];
+      [ | right; intro devil ].
+    + left; rewrite xs_eq; reflexivity.
+    + exact (Vector_tl_ineq _ _ _ xs_ineq devil).
+Qed.
+
 Lemma ForAll'Forall: forall {T} {n} (xs: t T n) (P: T -> Prop),
     ForAll' P xs -> Forall P xs.
 Proof.
@@ -169,4 +238,4 @@ Proof.
 Qed.
 
 
-    
+

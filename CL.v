@@ -5,6 +5,7 @@ Require Import Coq.Vectors.Fin.
 Require Import Coq.Vectors.Vector.
 Require Import Coq.Classes.Morphisms.
 Require Import Coq.Arith.PeanoNat.
+Require Import Coq.Logic.Eqdep_dec.
 Require Import VectorQuantification.
 
 Module Type SymbolSpecification.
@@ -15,12 +16,18 @@ Module Type SymbolSpecification.
 
   Parameter VariableSymbol: Set.
   Parameter CombinatorSymbol: Set.
-End SymbolSpecification.  
+
+  Parameter VariableSymbol_eq_dec:
+    forall (alpha beta: VariableSymbol), {alpha = beta} + {alpha <> beta}.
+  Parameter ConstructorSymbol_eq_dec:
+    forall (C1 C2: ConstructorSymbol), {C1 = C2} + {C1 <> C2}.
+End SymbolSpecification.
 
 Module Type CombinatoryLogic(Symbols : SymbolSpecification).
 
   Export Symbols.
 
+  
     
   Inductive PreType {T: Set}: Set :=
   | PT_omega: PreType 
@@ -32,7 +39,6 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
   | Var: forall alpha: VariableSymbol, TypeScheme
   | Skeleton: forall skel: @PreType TypeScheme, TypeScheme.
 
-  
   Fixpoint TypeScheme_rect'
            (P: TypeScheme -> Type)
            (var_case: forall alpha, P (Var alpha))
@@ -84,7 +90,6 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
   Inductive IntersectionType: Set :=
   | Ty: forall sigma : @PreType IntersectionType, IntersectionType.
 
- 
   
   Fixpoint IntersectionType_rect'
            (P: IntersectionType -> Type)
@@ -130,6 +135,40 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
                                   const_case arrow_case
                                   inter_case tau)
     end.
+
+  Fixpoint IntersectionType_eq_dec (sigma tau : IntersectionType) {struct sigma}: {sigma = tau} + {sigma <> tau}.
+  Proof.
+    revert tau.
+    destruct sigma as [ [ | C ts | sigma1 sigma2 | sigma1 sigma2 ]  ] ;
+      intros [ tau ];
+      destruct tau;
+      try solve [
+            left; reflexivity
+          | right; intro devil; inversion devil
+          | destruct (IntersectionType_eq_dec sigma1 sigma)
+            as [ sigma_eq | sigma_ineq ];
+            [ | right; intro devil; injection devil as devil; contradiction ];
+            destruct (IntersectionType_eq_dec sigma2 tau)
+              as [ tau_eq | tau_ineq ];
+              [ | right; intro devil; injection devil as devil; contradiction ];
+            left; rewrite sigma_eq; rewrite tau_eq; reflexivity
+          ].
+    - match goal with
+      | [ |- context[ Ty (PT_Const ?C ?ts) = Ty (PT_Const ?C' ?ts') ] ] =>
+        destruct (ConstructorSymbol_eq_dec C C') as [ CC'_eq | CC'_not_eq ];
+          [ revert ts';
+            rewrite <- CC'_eq;
+            intro ts';
+            clear C' CC'_eq;
+            destruct (Vector_eq_dec IntersectionType_eq_dec ts ts')
+              as [ ts_eq  | ts_ineq ];
+            [ left; rewrite ts_eq; reflexivity | right; intro devil ]
+          | right; intro devil; inversion devil; contradiction ]
+      end.
+      contradict ts_ineq.
+      injection devil as devil.
+      apply (inj_pair2_eq_dec _ (ConstructorSymbol_eq_dec) _ _ _ _ devil).
+  Qed.
 
   Definition liftPreType (sigma: @PreType IntersectionType): IntersectionType :=
     Ty sigma.
@@ -605,6 +644,8 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
       + eapply ST_Ax.
         * reflexivity.
         * 
+       
+   
   
   Lemma organize_le: forall tau, tau <= intersect (projT2 (organize tau)).
   Proof.
@@ -614,7 +655,8 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
     - reflexivity.
     - apply ST_intersect.
       simpl.
-      eapply Forall_ap; [ | apply ForAll'Forall; exact IH ].
+      unfold organizeArgs.
+      eapply Forall_ap. [ | apply ForAll'Forall; exact IH ].
       
       
       apply
