@@ -43,14 +43,13 @@ Inductive Stmt : Set :=
 Definition ImpLang : Set := list Stmt.
 
 
-Definition Memory : Set := nat -> option (nat + bool).
-Definition StdOut : Set := list (nat + bool).
-Definition StdIn : Set := Stream ((StdOut -> nat) * (StdOut -> bool)).
+Definition Memory : Set := int32 -> option uint8.
+Definition StdOut : Set := list uint8.
+Definition StdIn : Set := Stream (StdOut -> uint8).
 
 Inductive RuntimeError : Type :=
 | OutOfFuel : Memory -> StdIn -> StdOut -> RuntimeError
-| UninitializedRead : nat -> Memory -> RuntimeError
-| MemoryTypeError : Type -> nat -> Memory -> RuntimeError.
+| InvalidRead : int32 -> Memory -> RuntimeError.
 
 Fixpoint evalNatExp (e: NatExp) (memory: Memory): RuntimeError + nat :=
   match e with
