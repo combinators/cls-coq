@@ -91,10 +91,10 @@ Proof.
     + apply IH; assumption.
 Qed.
 
-Lemma map_Forall: forall {T} {n} (xs: t T n) (P: T -> Prop) f,
+Lemma map_Forall: forall {T1 T2} {n} (xs: t T1 n) (P: T2 -> Prop) (f : T1 -> T2),
     Forall (fun x => P (f x)) xs -> Forall P (map f xs).
 Proof.
-  intros T n xs P f.
+  intros T1 T2 n xs P f.
   induction xs as [ | h ? tl IH ]; intro prf.
   - apply Forall_nil.
   - simpl in prf.
@@ -237,5 +237,43 @@ Proof.
       exact (prf (FS k)).
 Qed.
 
+Lemma Forall_nth:
+  forall {n} {T} (ts: t T n) (P : T -> Prop),
+    Forall P ts -> (forall (k : Fin.t n), P (nth ts k)).
+Proof.
+  intros n T ts P.
+  induction ts as [ | h n tl IH]; intro prf.
+  - intro k; inversion k.
+  - intro k.
+    inversion prf as [ | n' h' tl' Ph Ptl' n_eq [ h_eq tl_eq ] ].
+    dependent rewrite tl_eq in Ptl'.
+    apply (Fin.caseS' k).
+    + assumption.
+    + intro k'.
+      simpl.
+      apply IH.
+      assumption.
+Qed.
 
-
+Lemma nth_Forall2:
+  forall {n} {S T : Type} (P : S -> T -> Prop) (xs: t S n) (ys: t T n),
+    (forall (k : Fin.t n), P (nth xs k) (nth ys k)) -> Forall2 P xs ys.
+Proof.
+  intros n S T P.
+  induction n as [ | n IHn ];
+    intros xs ys.
+  - intro prf.
+    apply (fun r => case0 (fun xs => Forall2 P xs ys) r xs).
+    apply (fun r => case0 (fun ys => Forall2 P (nil _) ys) r ys).
+    apply Forall2_nil.
+  - apply (caseS' xs (fun xs => forall p, Forall2 P xs ys)).
+    clear xs; intros x xs.
+    apply (caseS' ys (fun ys => forall p, Forall2 P (cons _ x _ xs) ys)).
+    clear ys; intros y ys.
+    intro prf.
+    apply Forall2_cons.
+    + apply (prf F1).
+    + apply IHn.
+      intro pos.
+      apply (prf (FS pos)).
+Qed.
