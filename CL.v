@@ -329,6 +329,96 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
           apply IHtaus.
           assumption.
   Qed.
+
+  Lemma ST_intersect_map_le_hom:
+    forall {n} (taus: t IntersectionType n)
+      (f: IntersectionType -> IntersectionType)
+      (f_le: forall sigma, f sigma <= sigma),
+      intersect (map f taus) <= intersect taus.
+  Proof.
+    intros n taus f f_le.
+    induction taus as [ | tau n taus IH ].
+    - reflexivity.
+    - destruct taus as [ | tau' taus ].
+      + apply f_le.
+      + apply ST_Both.
+        * etransitivity; [ | apply (f_le tau)].
+          apply ST_InterMeetLeft.
+        * etransitivity; [ | apply IH ].
+          apply ST_InterMeetRight.
+  Qed.
+
+  Lemma ST_intersect_map_ge_hom:
+    forall {n} (taus: t IntersectionType n)
+      (f: IntersectionType -> IntersectionType)
+      (f_ge: forall sigma, sigma <= f sigma),
+      intersect taus <= intersect (map f taus).
+  Proof.
+    intros n taus f f_ge.
+    induction taus as [ | tau n taus IH ].
+    - reflexivity.
+    - destruct taus as [ | tau' taus ].
+      + apply f_ge.
+      + apply ST_Both.
+        * etransitivity; [ | apply (f_ge tau)].
+          apply ST_InterMeetLeft.
+        * etransitivity; [ | apply IH ].
+          apply ST_InterMeetRight.
+  Qed.
+
+  Lemma ST_intersect_map2_fst_le_hom {T : Type}:
+    forall {n} (taus: t IntersectionType n) (xs: t T n)
+      (f: IntersectionType -> T -> IntersectionType)
+      (f_le: forall sigma x, f sigma x <= sigma),
+      intersect (map2 f taus xs) <= intersect taus.
+  Proof.
+    intros n.
+    induction n as [ | n IH ]; intros taus xs f f_le.
+    - apply (fun r => case0 (fun taus => intersect (map2 f taus _) <= intersect taus) r taus).
+      apply (fun r => case0 (fun xs => intersect (map2 f _ xs) <= intersect _) r xs).
+      reflexivity.
+    - apply (caseS' taus).
+      clear taus; intros tau taus.
+      apply (caseS' xs).
+      clear xs; intros x xs.
+      destruct taus.
+      + apply (fun r => case0 (fun xs => intersect (map2 _ _ (cons _ x _ xs)) <= _) r xs).
+        apply f_le.
+      + apply (caseS' xs).
+        clear xs; intros x' xs.
+        apply ST_Both.
+        * etransitivity; [ apply ST_InterMeetLeft | apply f_le ].
+        * etransitivity; [ apply ST_InterMeetRight | apply IH ].
+          apply f_le.
+  Qed.
+
+  Lemma ST_intersect_map2_fst_ge_hom {T : Type}:
+    forall {n} (taus: t IntersectionType n) (xs: t T n)
+      (f: IntersectionType -> T -> IntersectionType)
+      (f_ge: forall sigma x, sigma <= f sigma x ),
+      intersect taus <= intersect (map2 f taus xs).
+  Proof.
+    intros n.
+    induction n as [ | n IH ]; intros taus xs f f_ge.
+    - apply (fun r => case0 (fun taus => intersect taus <= intersect (map2 f taus _)) r taus).
+      apply (fun r => case0 (fun xs => _ <= intersect (map2 f _ xs)) r xs).
+      reflexivity.
+    - apply (caseS' taus).
+      clear taus; intros tau taus.
+      apply (caseS' xs).
+      clear xs; intros x xs.
+      destruct taus.
+      + apply (fun r => case0 (fun xs => _ <= intersect (map2 _ _ (cons _ x _ xs))) r xs).
+        apply f_ge.
+      + apply (caseS' xs).
+        clear xs; intros x' xs.
+        apply ST_Both.
+        * etransitivity; [ apply ST_InterMeetLeft | apply f_ge ].
+        * etransitivity; [ apply ST_InterMeetRight | ].
+          apply (IH (cons _ _ _ taus) (cons _ x' _ xs)).
+          apply f_ge.
+  Qed.
+      
   
   Inductive Path: IntersectionType -> Prop :=
   | Path_Const: forall C args, PathArgs args -> Path (Const C args)
@@ -515,7 +605,7 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
       * reflexivity.
       * assumption.
     + apply ST_Diag.
-  Qed.
+  Qed.  
 
   Definition intersect_pointwise {n: nat} {m: nat} (xss: t (t IntersectionType n) m): t IntersectionType n := 
     match xss with
@@ -904,6 +994,304 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
       reflexivity.
   Qed.
 
+  Definition intersect_many {m : nat} (types: t { n : _ & t IntersectionType n } m): IntersectionType :=
+    intersect (projT2 (factorize (intersect (map (fun xs => intersect (projT2 xs)) types)))).
+
+  Definition organizeConstructor' {n : nat} (organize: IntersectionType -> IntersectionType)  (args: t IntersectionType n) (C: ConstructorSymbol) (n_eq: n = constructorArity C) : IntersectionType :=
+    match n as n' return (t IntersectionType n') -> (n' = constructorArity C) -> IntersectionType with
+    | 0 => fun args n_eq => Const C (rew n_eq in args)
+    | n =>
+      fun args n_eq =>
+        intersect_many
+          (map2
+             (fun args pos =>
+                existT _ _ (factorize_argument C (rew n_eq in (map organize args))
+                                               (rew n_eq in pos)))
+             (diag omega args)
+             (positions n))
+    end args n_eq.
+
+  Definition organizeConstructor
+             (organize: IntersectionType -> IntersectionType)
+             (C: ConstructorSymbol)
+             (args: t IntersectionType (constructorArity C)): IntersectionType :=
+    organizeConstructor' organize args C eq_refl.
+    
+
+  Lemma map_map2_fg {S T U V: Type} {n: nat}:
+    forall (xs: t S n) (ys: t T n) (f: S -> T -> U) (g: U -> V),
+      map g (map2 f xs ys) = map2 (fun x y => g (f x y)) xs ys.
+  Proof.
+    intro xs.
+    induction xs as [ | x n' xs IH ]; intros ys f g.
+    - apply (fun r => case0 (fun ys => map g (map2 f _ ys) = map2 _ _ ys) r ys).
+      reflexivity.
+    - apply (caseS' ys).
+      clear ys; intros y ys.
+      simpl.
+      apply f_equal.
+      apply IH.
+  Qed.
+
+  Lemma ST_intersect_map2_map_parallel_le {T: Type} {m n: nat}:
+    forall (xss: t (t IntersectionType n) m) (ys: t T m)
+      (f : t IntersectionType n -> T -> IntersectionType)
+      (g : t IntersectionType n -> IntersectionType)
+      (fg_le: forall k, f (nth xss k) (nth ys k) <= g (nth xss k)),
+      intersect (map2 f xss ys) <= intersect (map g xss).
+  Proof.
+    intros xss.
+    induction xss; intros ys f g.
+    - intros.
+      apply (fun r => case0 (fun ys => intersect (map2 f _ ys) <= _) r ys).
+      reflexivity.
+    - destruct xss as [ | x' ? xss ].
+      + apply (caseS' ys).
+        clear ys; intros y ys.
+        apply (fun r => case0 (fun ys => _ -> intersect (map2 f _ (cons _ y _ ys)) <= _) r ys).
+        intro fg_le.
+        apply (fg_le F1).
+      + apply (caseS' ys).
+        clear ys; intros y ys.
+        apply (caseS' ys).
+        clear ys; intros y' ys.
+        intro fg_le.
+        simpl.
+        apply ST_Both.
+        * etransitivity; [ apply ST_InterMeetLeft | apply (fg_le F1)  ].
+        * etransitivity; [ apply ST_InterMeetRight | ].
+          apply (IHxss (cons _ y' _ ys) f g).
+          intro k.
+          apply (fg_le (FS k)).
+  Qed.
+
+  Lemma ST_intersect_map2_map_parallel_ge {T: Type} {m n: nat}:
+    forall (xss: t (t IntersectionType n) m) (ys: t T m)
+      (f : t IntersectionType n -> T -> IntersectionType)
+      (g : t IntersectionType n -> IntersectionType)
+      (fg_ge: forall k,  g (nth xss k) <= f (nth xss k) (nth ys k)),
+      intersect (map g xss) <= intersect (map2 f xss ys).
+  Proof.
+    intros xss.
+    induction xss; intros ys f g.
+    - intros.
+      apply (fun r => case0 (fun ys => _ <= intersect (map2 f _ ys)) r ys).
+      reflexivity.
+    - destruct xss as [ | x' ? xss ].
+      + apply (caseS' ys).
+        clear ys; intros y ys.
+        apply (fun r => case0 (fun ys => _ -> _ <= intersect (map2 f _ (cons _ y _ ys))) r ys).
+        intro fg_ge.
+        apply (fg_ge F1).
+      + apply (caseS' ys).
+        clear ys; intros y ys.
+        apply (caseS' ys).
+        clear ys; intros y' ys.
+        intro fg_ge.
+        simpl.
+        apply ST_Both.
+        * etransitivity; [ apply ST_InterMeetLeft | apply (fg_ge F1)  ].
+        * etransitivity; [ apply ST_InterMeetRight | ].
+          apply (IHxss (cons _ y' _ ys) f g).
+          intro k.
+          apply (fg_ge (FS k)).
+  Qed.
+
+  Lemma ST_intersect_map2_map_parallel_le' {T: Type} {n n': nat}:
+    forall (n_eq: n = n')
+      (xss: t (t IntersectionType n) n) (ys: t T n)
+      (f : t IntersectionType n -> T -> IntersectionType)
+      (g : t IntersectionType n' -> IntersectionType)
+      (fg_le: forall k, f (nth xss k) (nth ys k) <= g (nth (rew [fun n => t (t _ n) n] n_eq in xss) (rew n_eq in k))),
+      intersect (map2 f xss ys) <= intersect (map g (rew [fun n => t (t _ n) n] n_eq in xss)).
+  Proof.
+    destruct n; destruct n';
+      intro n_eq;
+      try solve [ inversion n_eq ].
+    - destruct n_eq.
+      apply (ST_intersect_map2_map_parallel_le).
+    - inversion n_eq as [ n_eq' ].
+      generalize n_eq.
+      clear n_eq.
+      rewrite n_eq'.
+      intro n_eq.
+      intro xss.
+      rewrite <- (eq_rect_eq_dec (Nat.eq_dec) (fun n => t (t _ n) n) xss n_eq).
+      intros ys f g fg_le.
+      apply (ST_intersect_map2_map_parallel_le).
+      intro k.
+      rewrite (eq_rect_eq_dec (Nat.eq_dec) Fin.t _ n_eq) at 3.
+      apply fg_le.      
+  Qed.
+
+   Lemma ST_intersect_map2_map_parallel_ge' {T: Type} {n n': nat}:
+    forall (n_eq: n = n')
+      (xss: t (t IntersectionType n) n) (ys: t T n)
+      (f : t IntersectionType n -> T -> IntersectionType)
+      (g : t IntersectionType n' -> IntersectionType)
+      (fg_ge: forall k, g (nth (rew [fun n => t (t _ n) n] n_eq in xss) (rew n_eq in k)) <= f (nth xss k) (nth ys k)),
+      intersect (map g (rew [fun n => t (t _ n) n] n_eq in xss)) <= intersect (map2 f xss ys).
+  Proof.
+    destruct n; destruct n';
+      intro n_eq;
+      try solve [ inversion n_eq ].
+    - destruct n_eq.
+      apply (ST_intersect_map2_map_parallel_ge).
+    - inversion n_eq as [ n_eq' ].
+      generalize n_eq.
+      clear n_eq.
+      rewrite n_eq'.
+      intro n_eq.
+      intro xss.
+      rewrite <- (eq_rect_eq_dec (Nat.eq_dec) (fun n => t (t _ n) n) xss n_eq).
+      intros ys f g fg_ge.
+      apply (ST_intersect_map2_map_parallel_ge).
+      intro k.
+      rewrite (eq_rect_eq_dec (Nat.eq_dec) Fin.t _ n_eq) at 1.
+      apply fg_ge.      
+  Qed. 
+
+  Lemma diag_size_distrib {T: Type} {n n': nat} (zero: T):
+    forall (n_eq: n = n') (xs: t T n), rew [fun n => t (t T n) n] n_eq in diag zero xs = diag zero (rew n_eq in xs).
+  Proof.
+    destruct n; destruct n';
+      intro n_eq;
+      try solve [ inversion n_eq ].
+    - destruct n_eq.
+      intros; reflexivity.
+    - inversion n_eq as [ n_eq' ].
+      generalize n_eq.
+      clear n_eq.
+      rewrite n_eq'.
+      intro n_eq.
+      intro xs.
+      rewrite <- (eq_rect_eq_dec (Nat.eq_dec) (fun n => t (t _ n) n) (diag zero xs) n_eq).
+      rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ xs n_eq).
+      reflexivity.
+  Qed.
+
+  Lemma nth_k {T: Type} {n n': nat}:
+    forall (n_eq: n = n') (xs: t T n) (k: Fin.t n'), nth (rew n_eq in xs) k = nth xs (rew <- n_eq in k).
+  Proof.
+    destruct n; destruct n';
+      intro n_eq;
+      try solve [ inversion n_eq ].
+    - intros xs k; inversion k.
+    - inversion n_eq as [ n_eq' ].
+      generalize n_eq.
+      clear n_eq.
+      rewrite n_eq'.
+      intros n_eq xs k.
+      rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ n_eq).
+      unfold eq_rect_r.
+      rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ (eq_sym n_eq)).
+      reflexivity.
+  Qed.
+
+  Lemma nth_rew {T: nat -> Type} {n n': nat}:
+    forall (n_eq: n = n') (xs: t (T n) n) (k: Fin.t n), nth (rew [fun n => t (T n) n] n_eq in xs) (rew n_eq in k) = rew n_eq in nth xs k.
+  Proof.
+    destruct n; destruct n';
+      intro n_eq;
+      try solve [ inversion n_eq ].
+    - intros xs k; inversion k.
+    - inversion n_eq as [ n_eq' ].
+      generalize n_eq.
+      clear n_eq.
+      rewrite n_eq'.
+      intros n_eq xs k.
+      rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ n_eq).
+      rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ n_eq).
+      rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ n_eq).
+      reflexivity.
+  Qed.                
+  
+  Lemma ST_organizeConstructor'_le {n: nat} (C: ConstructorSymbol) (args: t IntersectionType n) (n_eq : n = constructorArity C):
+    forall (organize : IntersectionType -> IntersectionType)
+      (organize_le: forall sigma, organize sigma <= sigma),
+      organizeConstructor' organize args C n_eq <= Const C (rew n_eq in args).
+  Proof.
+    intros organize organize_le.
+    destruct n.
+    - reflexivity.
+    - simpl.
+      rewrite <- (ST_Ctor_Diag _ _ (rew n_eq in Nat.lt_0_succ _)).
+      unfold intersect_many.
+      etransitivity.
+      + apply (ST_factorize_le).
+      + rewrite (map_map2_fg).
+        rewrite <- diag_size_distrib.
+        apply (ST_intersect_map2_map_parallel_le').
+        etransitivity.
+        * apply (ST_factorize_argument_le).
+        * apply (ST_Ax C C eq_refl); [ reflexivity | ].
+          apply (nth_Forall2).
+          intro k'.
+          rewrite (nth_k).
+          rewrite (nth_map organize _ _ _ eq_refl).
+          unfold eq_rect_r.
+          simpl.
+          rewrite (nth_rew n_eq (diag omega args) k).
+          rewrite (nth_k).
+          apply organize_le.
+  Qed.
+
+  Lemma ST_organizeConstructor_le
+        (C: ConstructorSymbol)
+        (args: t IntersectionType (constructorArity C)):
+    forall (organize : IntersectionType -> IntersectionType)
+      (organize_le: forall sigma, organize sigma <= sigma),
+      organizeConstructor organize C args <= Const C args.
+  Proof.
+    intros; apply ST_organizeConstructor'_le; assumption.
+  Qed.
+
+
+  Lemma ST_organizeConstructor'_ge {n: nat} (C: ConstructorSymbol) (args: t IntersectionType n) (n_eq : n = constructorArity C):
+    forall (organize : IntersectionType -> IntersectionType)
+      (organize_ge: forall sigma, sigma <= organize sigma),
+      Const C (rew n_eq in args) <= organizeConstructor' organize args C n_eq.
+  Proof.
+    intros organize organize_ge.
+    destruct n.
+    - reflexivity.
+    - simpl.
+      rewrite (ST_Diag_Ctor C (rew n_eq in args)).
+      unfold intersect_many.
+      etransitivity.
+      + apply (ST_factorize_ge).
+      + rewrite (map_map2_fg).
+        rewrite <- diag_size_distrib.
+        etransitivity; [ apply ST_factorize_le | ].
+        etransitivity; [ | apply ST_factorize_ge ].
+        apply (ST_intersect_map2_map_parallel_ge').
+        etransitivity.
+        * apply (ST_factorize_argument_ge _ _ (rew n_eq in k)).
+        * rewrite (positions_spec (S n)).
+          simpl.
+          rewrite (ST_factorize_argument_le).
+          etransitivity; [ | apply (ST_factorize_argument_ge) ].
+          apply (ST_Ax C C eq_refl); [ reflexivity | ].
+          apply nth_Forall2.
+          intro k'.
+          unfold eq_rect_r.
+          simpl.
+          rewrite (nth_rew n_eq (diag omega args) k).
+          rewrite nth_k.
+          rewrite nth_k.
+          rewrite (nth_map organize _ _ _ eq_refl).
+          apply organize_ge.
+  Qed.
+          
+  Lemma ST_organizeConstructor_ge
+        (C: ConstructorSymbol)
+        (args: t IntersectionType (constructorArity C)):
+    forall (organize : IntersectionType -> IntersectionType)
+      (organize_ge: forall sigma, sigma <= organize sigma),
+      Const C args <= organizeConstructor organize C args.
+  Proof.
+    intros; apply (ST_organizeConstructor'_ge _ _ eq_refl); assumption.
+  Qed.
   
   
   Lemma arityEq: forall n m, ((S m) <= n)%nat ->  (n - (S m) + S ((S m) - 1))%nat = n.
