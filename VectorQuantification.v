@@ -80,6 +80,7 @@ Proof.
   - apply Forall_nil.
   - apply Forall_cons; auto.
 Qed.
+ 
 
 Lemma Forall_append: forall {n m} {T} P (xs: t T n) (ys: t T m),
     Forall P xs -> Forall P ys -> Forall P (append xs ys).

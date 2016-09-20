@@ -1286,7 +1286,7 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
  *)
   Lemma ST_organizeConstructor'_le {n: nat} (C: ConstructorSymbol) (args: t IntersectionType n) (n_eq : n = constructorArity C):
     forall (organize : IntersectionType -> IntersectionType)
-      (organize_le: forall sigma, organize sigma <= sigma),
+      (organize_le: Forall (fun arg => organize arg <= arg) args),
       organizeConstructor' organize args C n_eq <= Const C (rew n_eq in args).
   Proof.
     intros organize organize_le.
@@ -1321,18 +1321,22 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
         rewrite <- n_eq.
         simpl.
         clear n_eq.
-        induction args.
+        induction args as [ | arg ? args IHargs ].
         * apply Forall2_nil.
         * apply Forall2_cons.
-          { apply organize_le. }
-          { assumption. }
+          { inversion organize_le.
+            assumption. }
+          { apply IHargs.
+            inversion organize_le as [ | ? ? ? ? ? n_eq [ arg_eq args_eq ] ].
+            dependent rewrite <- args_eq.
+            assumption. }
   Qed.
 
   Lemma ST_organizeConstructor_le
         (C: ConstructorSymbol)
         (args: t IntersectionType (constructorArity C)):
     forall (organize : IntersectionType -> IntersectionType)
-      (organize_le: forall sigma, organize sigma <= sigma),
+      (organize_le: Forall (fun arg => organize arg <= arg) args),
       organizeConstructor organize C args <= Const C args.
   Proof.
     intros; apply ST_organizeConstructor'_le; assumption.
@@ -1341,7 +1345,7 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
 
   Lemma ST_organizeConstructor'_ge {n: nat} (C: ConstructorSymbol) (args: t IntersectionType n) (n_eq : n = constructorArity C):
     forall (organize : IntersectionType -> IntersectionType)
-      (organize_ge: forall sigma, sigma <= organize sigma),
+      (organize_le: Forall (fun arg => arg <= organize arg) args),
       Const C (rew n_eq in args) <= organizeConstructor' organize args C n_eq.
   Proof.
     intros organize organize_ge.
@@ -1353,11 +1357,15 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
         unfold eq_rect_r; simpl.
         rewrite <- n_eq.
         simpl; clear n_eq.
-        induction args.
+        induction args as [ | arg ? args IHargs ].
         * apply Forall2_nil.
         * apply Forall2_cons.
-          { apply organize_ge. }
-          { assumption. }
+          { inversion organize_ge.
+            assumption. }
+          { apply IHargs.
+            inversion organize_ge as [ | ? ? ? ? ? n_eq [ arg_eq args_eq ] ].
+            dependent rewrite <- args_eq.
+            assumption. }
       + rewrite (ST_Diag_Ctor C (rew n_eq in map organize args)).
         unfold intersect_many.
         etransitivity.
@@ -1387,7 +1395,7 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
         (C: ConstructorSymbol)
         (args: t IntersectionType (constructorArity C)):
     forall (organize : IntersectionType -> IntersectionType)
-      (organize_ge: forall sigma, sigma <= organize sigma),
+      (organize_le: Forall (fun arg => arg <= organize arg) args),
       Const C args <= organizeConstructor organize C args.
   Proof.
     intros; apply (ST_organizeConstructor'_ge _ _ eq_refl); assumption.
@@ -1918,8 +1926,157 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
         apply organized_path_factors; assumption.
   Qed.
 
-  Lemma 
-          
+  Lemma ST_intersect_tgts {n: nat}:
+    forall (taus: t IntersectionType n) sigma tau,
+      intersect taus <= tau ->
+      intersect (map (fun tau => Arrow sigma tau) taus) <= Arrow sigma tau.
+  Proof.
+    intros taus sigma tau taus_le.
+    transitivity (Arrow sigma (intersect taus)).
+    - clear taus_le.
+      induction taus as [ | tau' n taus IHtaus ].
+      + simpl.
+        etransitivity.
+        * apply (ST_OmegaArrow).
+        * apply ST_CoContra; [ apply ST_OmegaTop | reflexivity ].
+      + transitivity (Inter (Arrow sigma tau') (Arrow sigma (intersect taus))).
+        * apply ST_Both.
+          { destruct taus.
+            - reflexivity.
+            - apply ST_InterMeetLeft. }
+          { destruct taus.
+            - simpl.
+              apply ST_CoContra.
+              + reflexivity.
+              + apply ST_OmegaTop.
+            - simpl.
+              etransitivity; [ apply ST_InterMeetRight | ].
+              exact IHtaus. }
+        * rewrite ST_InterArrowDistrib.
+          apply ST_CoContra.
+          { reflexivity. }
+          { simpl.
+            destruct taus.
+            - apply ST_InterMeetLeft.
+            - reflexivity. }
+    - apply ST_CoContra.
+      + reflexivity.
+      + assumption.
+  Qed.        
+
+  Lemma ST_organize_le:
+    forall sigma, organize sigma <= sigma.
+  Proof.
+    intro sigma.
+    induction sigma
+      as [ | | sigma tau IHsigma IHtau | sigma1 sigma2 IHsigma1 IHsigma2 ]
+           using IntersectionType_rect'.
+    - reflexivity.
+    - apply ST_organizeConstructor_le.
+      apply ForAll'Forall.
+      assumption.
+    - revert IHtau.
+      simpl.
+      induction (organize tau) as [ | | | l r ] using IntersectionType_rect'.
+      + intros omega_tau.
+        rewrite (ST_OmegaArrow).
+        apply (ST_CoContra).
+        * apply ST_OmegaTop.
+        * assumption.
+      + intro const_tau.
+        apply ST_CoContra.
+        * reflexivity.
+        * assumption.
+      + intro arrow_tau.
+        apply ST_CoContra.
+        * reflexivity.
+        * assumption.
+      + intro inter_tau.
+        apply ST_intersect_tgts.
+        rewrite (ST_intersect_append_le).
+        transitivity (Inter l r).
+        * apply ST_Both.
+          { rewrite ST_InterMeetLeft.
+            apply ST_factorize_le. }
+          { rewrite ST_InterMeetRight.
+            apply ST_factorize_le. }
+        * assumption.
+    - simpl.
+      apply ST_Both.
+      + rewrite (ST_intersect_append_le).
+        etransitivity.
+        * apply ST_InterMeetLeft.
+        * rewrite <- (factorize_organized); [ assumption | ].
+          apply organize_organized.
+      + rewrite (ST_intersect_append_le).
+        etransitivity.
+        * apply ST_InterMeetRight.
+        * rewrite <- (factorize_organized); [ assumption | ].
+          apply organize_organized.
+  Qed.
+
+  Lemma ST_organize_ge:
+     forall sigma, sigma <= organize sigma.
+  Proof.
+    intro sigma.
+    induction sigma
+      as [ | | sigma tau IHsigma IHtau | sigma1 sigma2 IHsigma1 IHsigma2 ]
+           using IntersectionType_rect'.
+    - reflexivity.
+    - apply ST_organizeConstructor_ge.
+      apply ForAll'Forall.
+      assumption.
+    - simpl.
+      revert IHtau.
+      simpl.
+      induction (organize tau) as [ | | | l r ] using IntersectionType_rect'.
+      + intros; apply ST_OmegaTop.
+      + intro tau_const.
+        apply ST_CoContra.
+        * reflexivity.
+        * assumption.
+      + intro tau_arrow.
+        apply ST_CoContra.
+        * reflexivity.
+        * assumption.
+      + intro tau_inter.
+        apply ST_intersect.
+        apply map_Forall.
+        apply nth_Forall.
+        intro k.
+        apply ST_CoContra.
+        * reflexivity.
+        * revert k.
+          apply Forall_nth.
+          apply Forall_append.
+          { apply ST_intersect_ge.
+            transitivity l.
+            - rewrite tau_inter.
+              apply ST_InterMeetLeft.
+            - apply ST_factorize_ge. }
+          { apply ST_intersect_ge.
+            transitivity r.
+            - rewrite tau_inter.
+              apply ST_InterMeetRight.
+            - apply ST_factorize_ge. }
+    - simpl.     
+      transitivity (Inter (organize sigma1) (organize sigma2)).
+      + apply ST_Both.
+        * rewrite <- IHsigma1.
+          apply ST_InterMeetLeft.
+        * rewrite <- IHsigma2.
+          apply ST_InterMeetRight.
+      + transitivity (Inter (intersect (projT2 (factorize (organize sigma1))))
+                            (intersect (projT2 (factorize (organize sigma2))))).
+        * apply ST_Both.
+          { etransitivity; [ apply ST_InterMeetLeft | ].
+            apply ST_factorize_ge. }
+          { etransitivity; [ apply ST_InterMeetRight | ].
+            apply ST_factorize_ge. }
+        * apply ST_intersect_append_ge.
+  Qed.
+
+        
   
   Lemma arityEq: forall n m, ((S m) <= n)%nat ->  (n - (S m) + S ((S m) - 1))%nat = n.
   Proof.
