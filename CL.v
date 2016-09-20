@@ -423,14 +423,15 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
   Inductive Path: IntersectionType -> Prop :=
   | Path_Const: forall C args, PathArgs args -> Path (Const C args)
   | Path_Arr: forall sigma tau, Path tau -> Path (Arrow sigma tau)
-  with PathArgs: forall {n}, t IntersectionType n -> Set :=
+  with PathArgs: forall {n}, t IntersectionType n -> Prop :=
        | PathArgs_nil: PathArgs (nil _)
        | PathArgs_cons_arg: forall n sigma, Path sigma -> PathArgs (cons _ sigma _ (const omega n))
        | PathArgs_cons_omega: forall n args, PathArgs args -> PathArgs (cons _ omega n args).
 
   Inductive Organized: IntersectionType -> Prop :=
   | Organized_Path: forall sigma, Path sigma -> Organized sigma
-  | Organized_Cons: forall sigma tau, Path sigma -> Organized tau -> Organized (Inter sigma tau).
+  | Organized_Cons: forall sigma tau, Path sigma -> tau <> omega -> Organized tau -> Organized (Inter sigma tau)
+  | Organized_Omega: Organized omega.
 
 
   Definition dirac {T : Type} {n: nat} (zero: T) (one: T) (pos: Fin.t n): t T n :=
@@ -724,29 +725,15 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
 
   Fixpoint factorize (sigma: IntersectionType): { n : nat & t IntersectionType n } :=
     match sigma with
+    | Ty (PT_omega) => existT _ 0 (nil _)
     | Ty (PT_Inter sigma tau) =>
       let sigmaFactors := factorize sigma in
       let tauFactors := factorize tau in
-      existT _ ((projT1 sigmaFactors) + (projT1 tauFactors))%nat
-             (append (projT2 sigmaFactors) (projT2 tauFactors))
+        existT _ ((projT1 sigmaFactors) + (projT1 tauFactors))%nat
+               (append (projT2 sigmaFactors) (projT2 tauFactors))
     | sigma => existT _ 1 (cons _ sigma _ (nil _))
     end.
 
-  Lemma factors_never_empty: forall sigma, projT1 (factorize sigma) <> 0.
-  Proof.
-    intro sigma.
-    induction sigma
-      as [ | | | sigma1 sigma2 IHsigma1 IHsigma2 ]
-           using IntersectionType_rect';
-      intro devil;
-      try solve [ inversion devil ].
-    simpl in devil.
-    destruct (projT1 (factorize sigma1)).
-    - contradiction.
-    - destruct (projT2 (factorize sigma2)).
-      + contradict IHsigma2; reflexivity.
-      + inversion devil.
-  Qed.
     
   Lemma ST_intersect_append_le {n m : nat}:
     forall (sigmas: t IntersectionType n) (taus : t IntersectionType m),
@@ -799,7 +786,7 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
     intro sigma.
     induction sigma using IntersectionType_rect';
       try solve [ simpl; reflexivity ].
-    simpl.
+    simpl.     
     rewrite ST_intersect_append_le.
     apply ST_Both.
     - rewrite ST_InterMeetLeft.
@@ -826,8 +813,13 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
 
   Definition factorize_argument (C: ConstructorSymbol)
              (args: t IntersectionType (constructorArity C))
-             (pos: Fin.t (constructorArity C)): t IntersectionType (projT1 (factorize (nth args pos))) :=
-    map (fun arg => Const C (replace args pos arg)) (projT2 (factorize (nth args pos))).
+             (pos: Fin.t (constructorArity C)): { n : _ & t IntersectionType (S n) }:=
+    match factorize (nth args pos) with
+    | existT _ _ (nil _) =>
+      existT _ 0 (map (fun arg => Const C (replace args pos arg)) (cons _ omega _ (nil _)))
+    | existT _ _ xs =>
+      existT _ _ (map (fun arg => Const C (replace args pos arg)) xs)
+    end.
 
   Lemma replace_id {T: Type} {n: nat}:
     forall (xs: t T n) (pos: Fin.t n) (x: T),
@@ -928,70 +920,120 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
       rewrite IHxs.
       reflexivity.
   Qed.
-  
+
+  Lemma ST_omega_factors: forall sigma, factorize sigma = existT _ 0 (nil _) -> omega <= sigma.
+  Proof.
+    intro sigma.
+    induction sigma
+      as [ | | | sigma1 sigma2 IHsigma1 IHsigma2 ] using IntersectionType_rect';
+      intro factors_eq;
+      try solve [ inversion factors_eq ].
+    - reflexivity.
+    - apply ST_Both;
+      [ apply IHsigma1 | apply IHsigma2 ];
+      simpl in factors_eq;
+      destruct (factorize sigma1) as [ n_sigma1 [ | x ? xs ] ];
+        destruct (factorize sigma2) as [ n_sigma2 [ | y ? ys ] ];
+        solve [ reflexivity | inversion factors_eq ].
+  Qed.        
+        
   Lemma ST_factorize_argument_le (C: ConstructorSymbol) (args: t IntersectionType (constructorArity C)):
-    forall pos, intersect (factorize_argument C args pos) <= Const C args.
+    forall pos, intersect (projT2 (factorize_argument C args pos)) <= Const C args.
   Proof.
     intro pos.      
     unfold factorize_argument.
-    rewrite map_fg.
-    assert (factors_gt : projT1 (factorize (nth args pos)) > 0).
-    { destruct (projT1 (factorize (nth args pos))) eqn:factors_eq.
-      - contradict (factors_never_empty _ factors_eq).
-      - apply Nat.lt_0_succ. }      
-    rewrite (ST_intersect_pointwise_ConstDistrib _ _ factors_gt).
-    apply (ST_Ax _ _ eq_refl); [ reflexivity | ].
-    apply nth_Forall2.
-    intro k.
-    destruct (Fin.eq_dec k pos) as [ pos_eq | pos_ineq ].
-    - rewrite intersect_pointwise_spec.
-      rewrite <- map_fg.
-      rewrite (map_extensional _ _ _ (fun x => replace_replaced _ _ _ x pos_eq)).
-      rewrite (map_id _ _ (fun x => eq_refl x)).
-      rewrite pos_eq.
-      apply (ST_factorize_le).
-    - rewrite intersect_pointwise_spec.
-      rewrite <- map_fg.
-      rewrite (map_extensional _ _ _ (fun x => replace_others _ _ _ x pos_ineq)).
-      rewrite (map_const _ _ (nth args k) (fun x => eq_refl)).
-      set (factors_not_empty := factors_never_empty (nth args pos)).
-      generalize factors_not_empty.
-      generalize (projT1 (factorize (nth args pos))).
-      intros n n_not_0.
-      destruct n.
-      + contradict (n_not_0 eq_refl).
-      + destruct n.
+    destruct (factorize (nth args pos)) as [ n [ | x n_xs xs ] ] eqn:argfactors_eq.
+    - simpl.
+      apply (ST_Ax C C eq_refl); [ reflexivity | ].
+      apply nth_Forall2.
+      intro k.
+      destruct (Fin.eq_dec k pos) as [ pos_eq | pos_ineq ].
+      + rewrite (replace_replaced _ _ _ _ pos_eq).
+        unfold eq_rect_r.
+        simpl.
+        apply ST_omega_factors.
+        rewrite pos_eq.
+        assumption.
+      + rewrite (replace_others _ _ _ _ pos_ineq).
+        unfold eq_rect_r.
+        simpl.
+        reflexivity.
+    - simpl.
+      rewrite map_fg.
+      rewrite (ST_intersect_pointwise_ConstDistrib C (map (replace args pos) (cons _ x _ xs)) (Nat.lt_0_succ _)).
+      apply (ST_Ax _ _ eq_refl); [ reflexivity | ].
+      apply nth_Forall2.
+      intro k.
+      destruct (Fin.eq_dec k pos) as [ pos_eq | pos_ineq ].
+      + rewrite intersect_pointwise_spec.
+        rewrite <- map_fg.
+        rewrite (map_extensional _ _ _ (fun x => replace_replaced _ _ _ x pos_eq)).
+        rewrite (map_id _ _ (fun x => eq_refl x)).
+        rewrite pos_eq.
+        set (argfactors_eq' := f_equal (fun xs => intersect (projT2 xs)) argfactors_eq).
+        simpl in argfactors_eq'.
+        simpl.
+        rewrite <- argfactors_eq'.
+        apply (ST_factorize_le).
+      + rewrite intersect_pointwise_spec.
+        rewrite <- map_fg.
+        rewrite (map_extensional _ _ _ (fun x => replace_others _ _ _ x pos_ineq)).
+        rewrite (map_const _ _ (nth args k) (fun x => eq_refl)).
+        simpl.
+        destruct (const (nth args k) n_xs).
         * reflexivity.
         * apply ST_InterMeetLeft.
   Qed.
 
+  Lemma ST_intersect_nth {n: nat}:
+    forall (xs : t IntersectionType n) k, intersect xs <= nth xs k.
+  Proof.
+    intro xs.
+    induction xs as [ | ? ? xs IHxs ]; intro k.
+    - inversion k.
+    - apply (Fin.caseS' k).
+      + destruct xs.
+        * reflexivity.
+        * apply ST_InterMeetLeft.
+      + intro k'.
+        destruct xs.
+        * inversion k'.
+        * etransitivity; [ apply ST_InterMeetRight | ].
+          apply (IHxs k').
+  Qed.
+          
+
   Lemma ST_factorize_argument_ge (C: ConstructorSymbol) (args: t IntersectionType (constructorArity C)):
-    forall pos, Const C args <= intersect (factorize_argument C args pos).
+    forall pos, Const C args <= intersect (projT2 (factorize_argument C args pos)).
   Proof.
     intro pos.
     unfold factorize_argument.
     rewrite map_fg.
     apply (ST_intersect).
-    apply (map_Forall).
-    apply (nth_Forall).
-    intro k.
-    apply (ST_Ax _ _ eq_refl); [ reflexivity | ].
-    apply (nth_Forall2).
-    intro k'.
-    rewrite (nth_map _ _ _ _ (eq_refl _)).
-    destruct (Fin.eq_dec k' pos) as [ pos_eq | pos_ineq ].
-    - unfold eq_rect_r.
-      simpl.
-      rewrite (replace_replaced args _ _ (nth (projT2 (factorize (nth args pos))) k) pos_eq).
-      generalize k.
-      apply (Forall_nth).
-      apply (ST_intersect_ge).
-      rewrite pos_eq.
-      apply (ST_factorize_ge).
-    - unfold eq_rect_r.
-      simpl.
-      rewrite (replace_others args _ _ (nth (projT2 (factorize (nth args pos))) k) pos_ineq).
-      reflexivity.
+    destruct (factorize (nth args pos))
+      as  [ n [ | argfactor ? argfactors ] ] eqn:argfactors_eq; 
+      apply (map_Forall);
+      apply (nth_Forall);
+      intro k;
+      [ apply (ST_Ax _ _ eq_refl); [ reflexivity | ] .. ];
+      apply (nth_Forall2);
+      intro k';
+      destruct (Fin.eq_dec k' pos) as [ pos_eq | pos_ineq ];
+      unfold eq_rect_r;
+      try rewrite (nth_map _ _ _ _ (eq_refl _));
+      try solve [ simpl eq_rect_r; simpl; rewrite (replace_others _ _ _ _ pos_ineq); reflexivity ].
+    - simpl eq_rect.
+      rewrite (replace_replaced _ _ _ _ pos_eq).
+      apply (Fin.caseS' k).
+      + apply ST_OmegaTop.
+      + intro p; inversion p.
+    - simpl.
+      rewrite (replace_replaced _ _ _ _ pos_eq).
+      etransitivity.
+      + apply (ST_factorize_ge).
+      + rewrite pos_eq.
+        rewrite argfactors_eq.
+        apply (ST_intersect_nth (cons _ argfactor _ argfactors) k).
   Qed.
 
   Definition intersect_many {m : nat} (types: t { n : _ & t IntersectionType n } m): IntersectionType :=
@@ -1005,9 +1047,9 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
         intersect_many
           (map2
              (fun args pos =>
-                existT _ _ (factorize_argument C (rew n_eq in (map organize args))
-                                               (rew n_eq in pos)))
-             (diag omega args)
+                existT _ (S (projT1 (factorize_argument C (rew n_eq in args) (rew n_eq in pos))))
+                       (projT2 (factorize_argument C (rew n_eq in args) (rew n_eq in pos))))
+             (diag omega (map organize args))
              (positions n))
     end args n_eq.
 
@@ -1204,8 +1246,44 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
       rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ n_eq).
       rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ n_eq).
       reflexivity.
-  Qed.                
-  
+  Qed.
+(*
+  Lemma ST_diag_hom_le {n: nat}:
+    forall (args args': t IntersectionType n),
+      (Forall2 Subtypes args args') ->
+      Forall2 (Forall2 Subtypes) (diag omega args) (diag omega args').
+  Proof.
+    intro args.
+    induction args as [ | arg n' args IHargs ].
+    - intros args' ?.
+      apply (fun r => case0 (fun args' => Forall2 _ _ (diag omega args')) r args').
+      apply Forall2_nil.
+    - intros args'.
+      apply (caseS' args').
+      clear args'; intros arg' args'.
+      intro args_le.
+      apply nth_Forall2.
+      intro k.
+      apply (Fin.caseS' k).
+      + apply Forall2_cons.
+        * inversion args_le; assumption.
+        * apply nth_Forall2.
+          clear arg args IHargs arg' args' args_le k.
+          intro k.
+          induction k; [ reflexivity | assumption ].
+      + intro k'.
+        apply nth_Forall2.
+        intro k''.
+        destruct (Fin.eq_dec (FS k') k'') as [ k''_eq | k''_ineq ].
+        * rewrite (diag_spec_one _ _ _ _ k''_eq).
+          rewrite (diag_spec_one _ _ _ _ k''_eq).
+          apply Forall2_nth.
+          assumption.
+        * rewrite (diag_spec_zero _ _ _ _ k''_ineq).
+          rewrite (diag_spec_zero _ _ _ _ k''_ineq).
+          reflexivity.
+  Qed.
+ *)
   Lemma ST_organizeConstructor'_le {n: nat} (C: ConstructorSymbol) (args: t IntersectionType n) (n_eq : n = constructorArity C):
     forall (organize : IntersectionType -> IntersectionType)
       (organize_le: forall sigma, organize sigma <= sigma),
@@ -1215,25 +1293,39 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
     destruct n.
     - reflexivity.
     - simpl.
-      rewrite <- (ST_Ctor_Diag _ _ (rew n_eq in Nat.lt_0_succ _)).
-      unfold intersect_many.
-      etransitivity.
-      + apply (ST_factorize_le).
-      + rewrite (map_map2_fg).
-        rewrite <- diag_size_distrib.
-        apply (ST_intersect_map2_map_parallel_le').
+      transitivity (Const C (rew [t IntersectionType] n_eq in map organize args)).
+      + rewrite <- (ST_Ctor_Diag _ _ (rew n_eq in Nat.lt_0_succ _)).
+        unfold intersect_many.
         etransitivity.
-        * apply (ST_factorize_argument_le).
-        * apply (ST_Ax C C eq_refl); [ reflexivity | ].
-          apply (nth_Forall2).
-          intro k'.
-          rewrite (nth_k).
-          rewrite (nth_map organize _ _ _ eq_refl).
-          unfold eq_rect_r.
+        * apply (ST_factorize_le).
+        * rewrite (map_map2_fg).
           simpl.
-          rewrite (nth_rew n_eq (diag omega args) k).
-          rewrite (nth_k).
-          apply organize_le.
+          rewrite <- diag_size_distrib.
+          apply (ST_intersect_map2_map_parallel_le').
+          etransitivity.
+          { simpl.
+            apply (ST_factorize_argument_le).
+          }
+          { apply (ST_Ax C C eq_refl); [ reflexivity | ].
+            apply (nth_Forall2).
+            intro k'.
+            rewrite (nth_k).
+            unfold eq_rect_r.
+            simpl.
+            rewrite (nth_rew n_eq (diag omega (map organize args)) k).
+            rewrite (nth_k).
+            reflexivity. }
+      + apply (ST_Ax _ _ eq_refl); [ reflexivity | ].
+        unfold eq_rect_r.
+        simpl.
+        rewrite <- n_eq.
+        simpl.
+        clear n_eq.
+        induction args.
+        * apply Forall2_nil.
+        * apply Forall2_cons.
+          { apply organize_le. }
+          { assumption. }
   Qed.
 
   Lemma ST_organizeConstructor_le
@@ -1256,31 +1348,39 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
     destruct n.
     - reflexivity.
     - simpl.
-      rewrite (ST_Diag_Ctor C (rew n_eq in args)).
-      unfold intersect_many.
-      etransitivity.
-      + apply (ST_factorize_ge).
-      + rewrite (map_map2_fg).
-        rewrite <- diag_size_distrib.
-        etransitivity; [ apply ST_factorize_le | ].
-        etransitivity; [ | apply ST_factorize_ge ].
-        apply (ST_intersect_map2_map_parallel_ge').
+      transitivity (Const C (rew [t IntersectionType] n_eq in map organize args)).
+      + apply (ST_Ax C C eq_refl); [ reflexivity | ].
+        unfold eq_rect_r; simpl.
+        rewrite <- n_eq.
+        simpl; clear n_eq.
+        induction args.
+        * apply Forall2_nil.
+        * apply Forall2_cons.
+          { apply organize_ge. }
+          { assumption. }
+      + rewrite (ST_Diag_Ctor C (rew n_eq in map organize args)).
+        unfold intersect_many.
         etransitivity.
-        * apply (ST_factorize_argument_ge _ _ (rew n_eq in k)).
-        * rewrite (positions_spec (S n)).
-          simpl.
-          rewrite (ST_factorize_argument_le).
-          etransitivity; [ | apply (ST_factorize_argument_ge) ].
-          apply (ST_Ax C C eq_refl); [ reflexivity | ].
-          apply nth_Forall2.
-          intro k'.
-          unfold eq_rect_r.
-          simpl.
-          rewrite (nth_rew n_eq (diag omega args) k).
-          rewrite nth_k.
-          rewrite nth_k.
-          rewrite (nth_map organize _ _ _ eq_refl).
-          apply organize_ge.
+        * apply (ST_factorize_ge).
+        * rewrite (map_map2_fg).
+          rewrite <- diag_size_distrib.
+          etransitivity; [ apply ST_factorize_le | ].
+          etransitivity; [ | apply ST_factorize_ge ].
+          apply (ST_intersect_map2_map_parallel_ge').
+          etransitivity.
+          { apply (ST_factorize_argument_ge _ _ (rew n_eq in k)). }
+          { rewrite (positions_spec (S n)).
+            simpl.
+            rewrite (ST_factorize_argument_le).
+            etransitivity; [ | apply (ST_factorize_argument_ge) ].
+            apply (ST_Ax C C eq_refl); [ reflexivity | ].
+            apply nth_Forall2.
+            intro k'.
+            unfold eq_rect_r.
+            simpl.
+            rewrite (nth_rew n_eq (diag omega (map organize args)) k).
+            rewrite nth_k.
+            reflexivity. }
   Qed.
           
   Lemma ST_organizeConstructor_ge
@@ -1292,7 +1392,534 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
   Proof.
     intros; apply (ST_organizeConstructor'_ge _ _ eq_refl); assumption.
   Qed.
+
+  Lemma factorize_path:
+    forall sigma, Path sigma -> factorize sigma = existT _ 1 (cons _ sigma _ (nil _)).
+  Proof.
+    intro sigma.
+    induction sigma using IntersectionType_rect';
+      intro sigmaPath;
+      solve [ inversion sigmaPath | reflexivity ].
+  Qed.
   
+  Lemma factorize_intersect_size_eq {n : nat}: 
+    forall (xs: t IntersectionType n)
+      (xs_paths: Forall Path xs),
+      projT1 (factorize (intersect xs)) = n.
+  Proof.
+    induction n as [ | n IH ]; intros xs xs_paths.
+    - apply (fun r => case0 (fun xs => projT1 (factorize (intersect xs)) = _) r xs).
+      reflexivity.
+    - revert xs_paths.
+      apply (caseS' xs).
+      clear xs; intros x xs.
+      intro xs_paths.
+      inversion xs_paths as [ | n' ? xs' pathx xs_paths' n'_eq [ x_eq xs_eq ] ].
+      simpl.      
+      destruct xs as [ | x' n xs ].
+      + rewrite (factorize_path _ pathx).
+        reflexivity.
+      + simpl.
+        rewrite (factorize_path _ pathx).
+        dependent rewrite xs_eq in xs_paths'.
+        set (rhs_eq := IH _ xs_paths').
+        simpl in rhs_eq.
+        rewrite rhs_eq.
+        reflexivity.
+  Qed.
+  
+  Lemma factorize_intersect_eq {n : nat}: 
+    forall (xs: t IntersectionType n)
+      (xs_paths: Forall Path xs)
+      (xs_size_eq: projT1 (factorize (intersect xs)) = n),
+      rew xs_size_eq in projT2 (factorize (intersect xs)) = xs.
+  Proof.
+    induction n; intros xs xs_paths.
+    - apply (fun r => case0 (fun xs => forall (xs_size_eq:  projT1 (factorize (intersect xs)) = 0),
+                              rew _ in projT2 (factorize (intersect xs)) = xs) r xs).
+      simpl.
+      intro xs_size_eq.
+      rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ xs_size_eq).
+      reflexivity.
+    - revert xs_paths.
+      apply (caseS' xs).
+      clear xs; intros x xs.
+      intro xs_paths.
+      inversion xs_paths as [ | n' ? xs' pathx xs_paths' n'_eq [ x_eq xs_eq ] ].
+      simpl.      
+      destruct xs as [ | x' n xs ].
+      + rewrite (factorize_path _ pathx).
+        intro xs_size_eq.
+        rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ xs_size_eq).
+        reflexivity.
+      + dependent rewrite xs_eq in xs_paths'.
+        simpl.
+        rewrite (factorize_path _ pathx).
+        simpl.
+        intro xs_size_eq.
+        inversion xs_size_eq as [ xs_size_eq' ].
+        set (IH := IHn _ xs_paths' xs_size_eq').
+        rewrite <- IH.
+        simpl.
+        revert xs_size_eq.
+        rewrite <- xs_size_eq'.
+        intro xs_size_eq.
+        rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ xs_size_eq).
+        reflexivity.
+  Qed.
+
+  Lemma organized_intersect_paths {n: nat}:
+    forall (xs: t IntersectionType n) (xs_paths: Forall Path xs),
+      Organized (intersect xs).
+  Proof.
+    intro xs.
+    induction xs as [ | ? ? ? IH ]; intro xs_paths.
+    - apply Organized_Omega.
+    - inversion xs_paths as [ | ? ? ? ? Paths_xxs Sn_eq [ x_eq xs_eq ]].
+      destruct xs.
+      + apply Organized_Path.
+        assumption.
+      + apply Organized_Cons.
+        * assumption.
+        * destruct xs.
+          { dependent rewrite xs_eq in Paths_xxs.
+            inversion Paths_xxs as [ | ? ? ? Path_x ].
+            unfold not; intro omega_eq.
+            rewrite omega_eq in Path_x.
+            inversion Path_x. }
+          { unfold not; intro omega_eq; inversion omega_eq. }
+        * apply IH.
+          dependent rewrite <- xs_eq.
+          assumption.
+  Qed.
+
+  Lemma factorize_path_intersections {m: nat}:
+    forall (xss: t { n : _ & t IntersectionType n } m)
+      (xss_paths: Forall (fun xs => Forall Path (projT2 xs)) xss),
+      Forall Path (projT2 (factorize (intersect (map (fun xs => intersect (projT2 xs)) xss)))).
+  Proof.
+    intro xss.
+    induction xss as [ | xs n xss IH ].
+    - intros; apply Forall_nil.
+    - intro xss_paths.
+      simpl.
+      destruct xss as [ | xs' n' xss ].
+      + simpl.
+        inversion xss_paths as [ | ? ? ? xs_paths ] .
+        rewrite <- (rewrite_vect (fun n xs => Forall Path xs)
+                                (factorize_intersect_size_eq (projT2 xs) xs_paths)).
+        rewrite (factorize_intersect_eq _ xs_paths).
+        assumption.
+      + apply (Forall_append).
+        * inversion xss_paths as [ | ? ? ? xs_paths ] .
+          rewrite <- (rewrite_vect (fun n xs => Forall Path xs)
+                                  (factorize_intersect_size_eq (projT2 xs) xs_paths)).
+          rewrite (factorize_intersect_eq _ xs_paths).
+          assumption.
+        * apply IH.
+          inversion xss_paths as [ | ? ? ? xs_paths xss'_paths n_eq [ xs_eq xss'_eq ] ].
+          dependent rewrite xss'_eq in xss'_paths.
+          assumption.
+  Qed.
+
+  Lemma factorize_organized_not_empty:
+    forall sigma, Organized sigma -> sigma = omega \/ projT1 (factorize sigma) > 0.
+  Proof.
+    intro sigma.
+    induction sigma
+      as [ | | | sigma1 sigma2 IHsigma1 IHsigma2 ]
+           using IntersectionType_rect'.
+    - intros; left; reflexivity.
+    - intros; right; apply Nat.lt_0_succ.
+    - intros; right; apply Nat.lt_0_succ.
+    - intro org_sigma.
+      right.
+      simpl.
+      apply (Nat.add_pos_l).
+      inversion org_sigma
+        as [ ? path_sigma | sigma tau Path_sigma1 not_omega_sigma2 Org_sigma2 arg_eq | ].
+      + inversion path_sigma.
+      + rewrite (factorize_path _ Path_sigma1).
+        apply (Nat.lt_0_succ).
+  Qed.
+
+  Lemma factorize_organized:
+    forall sigma, Organized sigma -> sigma = intersect (projT2 (factorize sigma)).
+  Proof.
+    intro sigma.
+    induction sigma
+      as [ | | sigma1 sigma2 IHsigma1 IHsigma2 | ]
+           using IntersectionType_rect';
+      try solve [ intros; reflexivity ].
+    intro org_sigma.
+    inversion org_sigma
+      as [ ? path_sigma | sigma tau Path_sigma1 not_omega_sigma2 Org_sigma2 arg_eq | ].
+    - inversion path_sigma.
+    - simpl.
+      inversion Path_sigma1; solve [
+        simpl;
+        rewrite <- (IHsigma2 Org_sigma2);
+        destruct (factorize_organized_not_empty _ Org_sigma2)
+          as [ | factorize_gt ];
+        [ contradict (not_omega_sigma2); assumption
+        | destruct (projT2 (factorize sigma2));
+          [ inversion factorize_gt
+          | reflexivity ] ] ].
+  Qed.
+
+  Lemma nth_eq {m n: nat} {T: Type}:
+    forall (xs: t T m) (mn_eq: m = n) (k: Fin.t m),
+      nth (rew mn_eq in xs) (rew mn_eq in k) = nth xs k.
+  Proof.
+    intros xs.
+    induction xs.
+    - intros ? k; inversion k.
+    - intro mn_eq.
+      destruct n; [ inversion mn_eq | ].
+      inversion mn_eq as [ mn_eq' ].
+      generalize mn_eq.
+      clear mn_eq.
+      rewrite <- mn_eq'.
+      intros mn_eq k.
+      rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ mn_eq).
+      rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ mn_eq).
+      reflexivity.
+  Qed.
+
+  Lemma nth_const {n: nat} {T : Type}:
+    forall (xs: t T n) x, (forall k, nth xs k = x) -> xs = const x n.
+  Proof.
+    intro xs.
+    induction xs as [ | x' ? xs IH ].
+    - intros; reflexivity.
+    - intros x xs_const.
+      set (x'_eq := xs_const F1).
+      simpl in x'_eq.
+      rewrite x'_eq.
+      simpl.
+      apply f_equal.
+      apply IH.
+      intro k'.
+      exact (xs_const (FS k')).
+  Qed.
+
+  Lemma PathArgs_const_omega {n: nat}: PathArgs (const omega n).
+  Proof.
+    induction n.
+    - apply PathArgs_nil.
+    - apply PathArgs_cons_omega.
+      assumption.
+  Qed.
+
+  Lemma PathArgs_from_spec {n: nat} (args: t IntersectionType n):
+    forall (k: Fin.t n) (omega_args: forall k', k' <> k -> nth args k' = omega) (path_k: Path (nth args k) \/ nth args k = omega),
+      PathArgs args.
+  Proof.
+    intro k.
+    induction k as [ | n k IH ].
+    - apply (caseS' args); clear args; intros arg args.
+      intros omega_args path_k.
+      assert (args_const_omega: args = const omega _).
+      { apply nth_const.
+        intro k'.
+        apply (omega_args (FS k')).
+        unfold not; intro devil; inversion devil. }
+      rewrite args_const_omega.
+      destruct path_k as [ | omega_arg ].
+      + apply PathArgs_cons_arg.
+        assumption.
+      + simpl in omega_arg.
+        rewrite omega_arg.
+        apply PathArgs_cons_omega.
+        apply PathArgs_const_omega.
+    - apply (caseS' args); clear args; intros arg args.
+      intros omega_args path_k.
+      assert (arg_omega: arg = omega).
+      { apply (omega_args F1).
+        unfold not; intro devil; inversion devil. }
+      rewrite arg_omega.
+      apply PathArgs_cons_omega.
+      apply IH.
+      + intros k' k_ineq.
+        apply (omega_args (FS k')).
+        unfold not; intro devil.
+        apply k_ineq.
+        apply FS_inj.
+        assumption.
+      + assumption.
+  Qed.
+
+  Lemma factorize_omega_args {n: nat} {C : ConstructorSymbol}:
+    forall (n_eq: n = constructorArity C) k,
+      Forall Path
+             (projT2 (factorize_argument C (rew [t IntersectionType] n_eq in const omega n)
+                                         (rew [Fin.t] n_eq in k))).
+  Proof.
+    intros n_eq k.
+    assert (args_eq: rew [t IntersectionType] n_eq in const omega n = const omega (constructorArity C)).
+    { rewrite <- n_eq.
+      reflexivity. }
+    unfold factorize_argument.
+    rewrite args_eq.
+    rewrite const_nth.
+    simpl.
+    apply Forall_cons; [ | apply Forall_nil].
+    apply Path_Const.
+    assert (all_omega: replace (const omega _) (rew [Fin.t] n_eq in k) omega = const omega _).
+    { apply nth_const.
+      intro k'.
+      destruct (Fin.eq_dec (rew [Fin.t] n_eq in k) k') as [ k_eq | k_ineq ].
+      - rewrite <- k_eq.
+        apply replace_replaced.
+        reflexivity.
+      - rewrite (replace_others).
+        + apply const_nth.
+        + apply not_eq_sym.
+          assumption. }
+    rewrite all_omega.
+    apply PathArgs_const_omega.
+  Qed.
+
+  Lemma organized_path_factors:
+    forall sigma, Organized sigma -> Forall Path (projT2 (factorize sigma)).
+  Proof.
+    intro sigma.
+    induction sigma
+      as [ | | | sigma1 sigma2 IHsigma1 IHsigma2 ]
+           using IntersectionType_rect'; intro org_sigma.
+    - apply Forall_nil.
+    - apply Forall_cons; [ | apply Forall_nil ].
+      inversion org_sigma; assumption.
+    - apply Forall_cons; [ | apply Forall_nil ].
+      inversion org_sigma; assumption.
+    - inversion org_sigma as [ ? path_sigma | ? ? path_sigma ? org_sigmas | ].
+      + inversion path_sigma.
+      + simpl.
+        rewrite (factorize_path _ path_sigma).
+        apply Forall_cons.
+        * assumption.
+        * apply IHsigma2.
+          assumption.
+  Qed. 
+        
+  Lemma Path_factorize_argument {n : nat} (C: ConstructorSymbol) (args: t IntersectionType n) (n_eq : n = constructorArity C):
+    forall (k: Fin.t n) (organized_arg: Organized (nth args k)) (omega_args: forall k', k' <> k -> nth args k' = omega),
+      Forall Path (projT2 (factorize_argument C (rew n_eq in args) (rew n_eq in k))).
+  Proof.
+    intros k org_kth omega_others.
+    destruct (factorize_organized_not_empty _ org_kth) as [ kth_omega | factors_kth ].
+    - assert (omega_args: args = const omega n).
+      { apply nth_const.
+        intro k'.
+        destruct (Fin.eq_dec k' k) as [ k_eq | k_ineq ].
+        - rewrite k_eq; assumption.
+        - apply omega_others; assumption. }
+      rewrite omega_args.
+      apply (factorize_omega_args).
+    - unfold factorize_argument.
+      destruct (factorize (nth (rew [t IntersectionType] n_eq in args) (rew [Fin.t] n_eq in k)))
+               as [ m [ | x ? xs ]] eqn:factors_eq.
+      + rewrite <- n_eq in factors_eq.
+        contradict factors_eq.
+        simpl.
+        unfold not; intro devil.
+        rewrite devil in factors_kth.
+        inversion factors_kth.
+      + apply nth_Forall.
+        intro k'.
+        unfold projT2.
+        set (map_eq := nth_map (fun arg => Const C (replace (rew [t IntersectionType] n_eq in args) (rew [Fin.t] n_eq in k) arg)) (cons _ x _ xs) _ _ (eq_refl k')).
+        simpl.
+        simpl in map_eq.
+        rewrite map_eq.
+        apply Path_Const.
+        apply (PathArgs_from_spec _ (rew [Fin.t] n_eq in k)).
+        * intros k'' k''_ineq.
+          rewrite replace_others.
+          { rewrite nth_k.
+            apply omega_others.
+            unfold not; intro devil.
+            apply k''_ineq.
+            set (devil' := f_equal (fun x => rew [Fin.t] n_eq in x) devil).
+            simpl in devil'.
+            rewrite (rew_opp_r) in devil'.
+            exact devil'. }
+          assumption.
+        * left.
+          rewrite replace_replaced.
+          { clear map_eq.
+            revert k'.
+            simpl.
+            apply (Forall_nth (cons _ x _ xs) Path).
+            set (kth_eq := factorize_organized (nth args k) org_kth).
+            rewrite <- n_eq in factors_eq.
+            simpl in factors_eq.
+            rewrite factors_eq in kth_eq.
+            simpl in kth_eq.
+            revert kth_eq.
+            induction (nth args k) using IntersectionType_rect'.
+            - inversion factors_eq.
+            - inversion factors_eq.
+              intro c_eq.
+              apply Forall_cons; [  | apply Forall_nil ].
+              inversion org_kth.
+              assumption.
+            - inversion factors_eq.
+              intro arr_eq.
+              apply Forall_cons; [ | apply Forall_nil ].
+              inversion org_kth.
+              assumption.
+            - inversion factors_eq.
+              intro inter_eq.
+              inversion org_kth.
+              + inversion H.
+              + rewrite (factorize_path _ H3).
+                apply Forall_cons.
+                * assumption.
+                * apply organized_path_factors.
+                  assumption.
+          }
+          { reflexivity. }
+  Qed.
+  
+  Lemma organizeConstructor'_organized {n: nat} (C: ConstructorSymbol) (args: t IntersectionType n) (n_eq : n = constructorArity C):
+    forall (organize: IntersectionType -> IntersectionType)
+      (organize_org: Forall (fun arg => Organized (organize arg)) args),
+      Organized (organizeConstructor' organize args C n_eq).
+  Proof.
+    intros organize organize_org.
+    destruct n.
+    - apply Organized_Path.
+      apply Path_Const.
+      apply (fun r => case0 (fun args => PathArgs (rew n_eq in args)) r args).
+      destruct (constructorArity C).
+      + destruct n_eq.
+        apply (PathArgs_nil).
+      + inversion n_eq.
+    - simpl.
+      unfold intersect_many.
+      apply (organized_intersect_paths).
+      apply (factorize_path_intersections).
+      apply (nth_Forall).
+      intro k.
+      apply (nth_Forall).
+      rewrite (nth_map2 (fun args pos => existT _ _ _)
+                        (diag omega (map organize args))
+                        (cons _ F1 _ (map FS (positions n)))
+                        k k k eq_refl eq_refl).
+      apply Forall_nth.
+      apply Path_factorize_argument.
+      + rewrite (diag_spec_one).
+        * rewrite (nth_map _ _ _ _ (eq_refl)).
+          apply Forall_nth.
+          apply organize_org.
+        * apply eq_sym.
+          apply (positions_spec).
+      + intros k' k'_ineq.
+        rewrite (diag_spec_zero).
+        * reflexivity.
+        * rewrite (positions_spec) in k'_ineq.
+          apply (not_eq_sym).
+          assumption.
+  Qed.
+    
+  Lemma organizeConstructor_organized (C: ConstructorSymbol) (args: t IntersectionType (constructorArity C)):
+    forall (organize: IntersectionType -> IntersectionType)
+      (organize_org: Forall (fun arg => Organized (organize arg)) args),
+      Organized (organizeConstructor organize C args).
+  Proof.
+    intros organize organize_org.
+    apply organizeConstructor'_organized; assumption.
+  Qed.
+
+  Fixpoint organize (sigma: IntersectionType): IntersectionType :=
+    match sigma with
+    | Ty PT_omega => omega
+    | Ty (PT_Const C args) => organizeConstructor organize C args
+    | Ty (PT_Inter sigma tau) =>
+      intersect (append (projT2 (factorize (organize sigma))) (projT2 (factorize (organize tau))))
+    | Ty (PT_Arrow sigma tau) =>
+      match organize tau with
+      | Ty PT_omega => Ty PT_omega
+      | tau' => intersect (map (fun tau => Ty (PT_Arrow sigma tau)) (projT2 (factorize tau')))
+      end
+    end.
+
+  Lemma arrows_organized {n : nat}:
+    forall (taus: t IntersectionType n) sigma,
+      Forall Path taus ->
+      Organized (intersect (map (fun tau => Arrow sigma tau) taus)).
+  Proof.
+    intro taus.
+    induction taus as [ | tau n' taus IH ].
+    - intros; apply Organized_Omega.
+    - intros sigma paths_taus.
+      destruct taus.
+      + simpl.
+        apply Organized_Path.
+        apply Path_Arr.
+        simpl in paths_taus.
+        inversion paths_taus.
+        assumption.
+      + apply Organized_Cons.
+        * apply Path_Arr.
+          inversion paths_taus.
+          assumption.
+        * destruct taus;
+            simpl;
+            unfold not;
+            intro devil;
+            inversion devil.
+        * apply IH.
+          inversion paths_taus as [ | ? ? ? ? ? n_eq [ h_eq tl_eq ] ].
+          dependent rewrite <- tl_eq.
+          assumption.
+  Qed.
+
+  Lemma organize_organized:
+    forall sigma, Organized (organize sigma).
+  Proof.
+    intro sigma.
+    induction sigma
+      as [ | | sigma tau IHsigma IHtau | sigma1 sigma2 IHsigma1 IHsigma2 ]
+           using IntersectionType_rect'.
+    - apply Organized_Omega.
+    - simpl.
+      apply organizeConstructor_organized.
+      apply ForAll'Forall.
+      assumption.
+    - simpl.
+      clear IHsigma.
+      revert IHtau.
+      induction (organize tau)
+                as [ | | | l r IHl IHr ]using IntersectionType_rect'.
+      + intros; apply Organized_Omega.
+      + intro org_sigma.
+        inversion org_sigma.
+        apply Organized_Path.
+        apply Path_Arr.
+        assumption.
+      + intro org_sigma.
+        inversion org_sigma.
+        apply Organized_Path.
+        apply Path_Arr.
+        assumption.
+      + intro org_sigma.
+        apply (arrows_organized (append (projT2 (factorize l)) (projT2 (factorize r))) sigma).      
+        inversion org_sigma as [ ? path_sigma | ? ? ? r_not_omega org_r | ].
+        * inversion path_sigma.
+        * rewrite (factorize_path); [ | assumption ].
+          apply Forall_cons; [ assumption | ].
+          apply (organized_path_factors).
+          assumption.
+    - simpl.
+      apply organized_intersect_paths.
+      apply Forall_append;
+        apply organized_path_factors; assumption.
+  Qed.
+
+  Lemma 
+          
   
   Lemma arityEq: forall n m, ((S m) <= n)%nat ->  (n - (S m) + S ((S m) - 1))%nat = n.
   Proof.

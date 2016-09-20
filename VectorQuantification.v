@@ -5,6 +5,26 @@ Require Import Logic.Eqdep_dec.
 Require Import Arith.PeanoNat.
 Require Import Arith.Peano_dec.
 
+Import EqNotations.
+
+Lemma rewrite_vect {S T: Type} {n n': nat}:
+  forall (P : forall n, (t S n) -> T) (n_eq: n = n') (xs: t S n),
+    P _ (rew [fun n => t S n] n_eq in xs) = P _ xs.
+Proof.
+  intros P.
+  destruct n; destruct n';
+    intro n_eq;
+    try solve [ inversion n_eq ].
+  - intros; destruct n_eq; reflexivity.
+  - inversion n_eq as [ n_eq' ].
+    generalize n_eq.
+    clear n_eq.
+    rewrite n_eq'.
+    intros n_eq xs.
+    rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ n_eq).
+    reflexivity.
+Qed.
+
 Lemma Vector_tl_ineq:
   forall {T} (x : T) {n} xs ys, xs <> ys -> cons T x n xs <> cons T x n ys.
 Proof.
@@ -276,4 +296,44 @@ Proof.
     + apply IHn.
       intro pos.
       apply (prf (FS pos)).
+Qed.
+
+Lemma vect_exist_eq {T: Type} {n : nat}:
+  forall xs ys, existT (t T)  n xs = existT (t T) n ys -> xs = ys.
+Proof.
+  intro xs.
+  induction xs as [ | x n xs IHxs ].
+  - intro ys.
+    apply (fun r => case0 (fun ys => _ = existT _ 0 ys -> _ = ys) r ys).
+    intros; reflexivity.
+  - intro ys.
+    apply (caseS' ys).
+    clear ys; intros y ys.
+    intro xs_eq.
+    inversion xs_eq.
+    apply f_equal.
+    apply IHxs.
+    assumption.
+Qed.
+
+Lemma Forall2_nth:
+  forall {n} {S T : Type} (P : S -> T -> Prop) (xs: t S n) (ys: t T n),
+    Forall2 P xs ys -> (forall (k : Fin.t n), P (nth xs k) (nth ys k)).
+Proof.
+  intros n S T P.
+  induction n as [ | n IHn ];
+    intros xs ys.
+  - intros prf k; inversion k.
+  - apply (caseS' xs).
+    clear xs; intros x xs.
+    apply (caseS' ys).
+    clear ys; intros y ys.
+    intros prf k.
+    inversion prf as [ | ? ? ? xs' ys'  prf_hd prf_tl size_eq [ x_eq xs_eq ] [ y_eq ys_eq ] ].    
+    apply (Fin.caseS' k).
+    + assumption.
+    + rewrite (vect_exist_eq _ _ (eq_sym xs_eq)).
+      rewrite (vect_exist_eq _ _ (eq_sym ys_eq)).
+      apply IHn.
+      assumption.
 Qed.
