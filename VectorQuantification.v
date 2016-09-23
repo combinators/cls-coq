@@ -225,24 +225,6 @@ Proof.
     + apply IH; assumption.
 Qed.
 
-(*Lemma Forall_depAp: forall {T} {n} (xs: t T n) (P: T -> Prop) (R: T), P x) (S: T -> Prop),
-    Forall (fun x => forall (prf: P x), S x) xs -> Forall R xs -> Forall S xs.
-Proof.
-  intros T n xs R S.
-  induction xs as [ | h n tl IH ]; intros prfRS prfR.
-  - apply Forall_nil.
-  - inversion prfRS as [ | ? ? ? RSh RStl RSneq [ RSheq RStleq ] ].
-    dependent rewrite RStleq in RStl.
-    clear RSheq RStleq RSneq.
-    inversion prfR as [ | ? ? ? Rh Rtl Rneq [ Rheq Rtleq ] ].
-    dependent rewrite Rtleq in Rtl.
-    clear Rheq Rtleq Rneq.
-    apply Forall_cons.
-    + apply RSh; assumption.
-    + apply IH; assumption.
-Qed.
-*)
-
 Lemma nth_Forall:
   forall {n} {T} (ts: t T n) (P : T -> Prop),
     (forall (k : Fin.t n), P (nth ts k)) -> Forall P ts.
@@ -338,3 +320,441 @@ Proof.
       apply IHn.
       assumption.
 Qed.
+
+(*Lemma ForAll2'_tail: forall {n: nat} {A B: Type} (P : A -> B -> Type) (xs: t A (S n)) (ys: t B (S n)) (prfs: ForAll2' P xs ys), ForAll2' P (tl xs) (tl ys).
+Proof.
+  intros n A B P xs ys prfs.
+  inversion prfs as [ | ? ? ? ? ? ? ? ? n_eq m_eq xs_eq ys_eq ].
+  revert xs_eq.
+  revert ys_eq.
+  apply (caseS' xs
+                (fun xs =>
+                   (existT _ (S n) (cons _ y _ ys0) = existT _ (S n) ys) ->
+                   (existT _ (S n) (cons _ x _ xs0) = existT _ (S n) xs) ->
+                   ForAll2' P (tl xs) (tl ys))).
+  intros x' xs'.
+  apply (caseS' ys
+                (fun ys =>
+                   (existT _ (S n) (cons _ y _ ys0) = existT _ (S n) ys) ->
+                   (existT _ (S n) (cons _ x _ xs0) = existT _ (S n) (cons _ x' _ xs')) ->
+                   ForAll2' P (tl (cons _ x' _ xs')) (tl ys))).
+  intros y' ys'.
+  intros ys_eq xs_eq.
+  injection xs_eq as x_eq xs'_eq.
+  injection ys_eq as y_eq ys'_eq.
+  simpl.
+  set (G := fun n xs' => ForAll2' (n := n) P xs' ys').
+  fold (G n xs').
+  dependent rewrite <- xs'_eq.
+  unfold G.
+  set (G' := fun n ys' => ForAll2' (m := n) P xs0 ys').
+  fold (G' n ys').
+  dependent rewrite <- ys'_eq.
+  unfold G'.
+  assumption.
+Qed.
+        
+
+Lemma ForAll2'_shiftin: forall {n : nat} {A B: Type} (P : A -> B -> Type) (xs: t A n) (ys: t B n) (prfs: ForAll2' P xs ys) (x: A) (y: B) (prf: P x y), ForAll2' P (shiftin x xs) (shiftin y ys).
+Proof.
+  intro n.
+  induction n; intros A B P xs ys prfs x y prf.
+  - apply (case0 (fun xs => ForAll2' P (shiftin x xs) (shiftin y ys))).
+    apply (case0 (fun ys => ForAll2' P (shiftin x (nil _)) (shiftin y ys))).
+    apply ForAll2'_cons.
+    + assumption.
+    + apply ForAll2'_nil.
+  - generalize prfs.
+    clear prfs.
+    apply (caseS' _ (fun xs => ForAll2' P xs ys -> ForAll2' P (shiftin x xs) (shiftin y ys))).
+    intros x' xs'.
+    apply (caseS' _ (fun ys => ForAll2' P (cons _ x' _ xs') ys -> ForAll2' P (shiftin x (cons _ x' _ xs')) (shiftin y ys))).
+    intros y' ys' prfs.
+    simpl.
+    apply ForAll2'_cons.
+    + inversion prfs; assumption.
+    + apply IHn.
+      * exact (ForAll2'_tail _ _ _ prfs).
+      * inversion prfs; assumption.
+Qed.      *)                 
+
+Definition dirac {T : Type} {n: nat} (zero: T) (one: T) (pos: Fin.t n): t T n :=
+  (fix dirac (m: nat) (p: Fin.t m): t T m :=
+     match p in (Fin.t n) return t T n with
+     | F1 => cons _ one _ (const zero _)
+     | FS p' => cons _ zero _ (dirac _ p')
+     end) _ pos.
+
+Lemma dirac_spec_one: forall {T: Type} {n: nat} (zero: T) (one: T) (pos: Fin.t n),
+    forall i, pos = i -> nth (dirac zero one pos) i = one.
+Proof.
+  intros T n.
+  induction n as [ | n IHn ] ; intros zero one pos i i_eq.
+  - inversion i.
+  - remember (S n) as n' eqn:n'_eq.
+    destruct pos; rewrite <- i_eq.
+    + reflexivity.
+    + simpl.
+      clear i_eq i.
+      revert pos.
+      injection n'_eq as n_eq.
+      rewrite n_eq.
+      intro pos.
+      apply IHn.
+      reflexivity.
+Qed.
+
+Lemma dirac_spec_zero: forall {T: Type} {n: nat} (zero: T) (one: T) (pos: Fin.t n),
+    forall i, pos <> i -> nth (dirac zero one pos) i = zero.
+Proof.
+  intros T n.
+  induction n as [ | n IHn ] ; intros zero one pos i i_eq.
+  - inversion i.
+  - remember (S n) as n' eqn:n'_eq.
+    revert i_eq.
+    destruct pos.
+    + apply (Fin.caseS' i).
+      * intro i_eq.
+        contradiction i_eq.
+        reflexivity.
+      * intros i' i_eq.
+        simpl.
+        apply const_nth.
+    + apply (Fin.caseS' i).
+      * intro i_eq.
+        reflexivity.
+      * clear i.
+        revert pos.
+        injection n'_eq as n_eq.
+        rewrite n_eq.          
+        intros pos i' i_eq.
+        simpl.
+        apply IHn.
+        unfold not.
+        intro i'_eq.
+        apply (i_eq (f_equal FS i'_eq)).
+Qed.
+
+Fixpoint positions (n : nat): t (Fin.t n) n :=
+  match n with
+  | O => nil _
+  | S n => cons _ F1 _ (map FS (positions n))
+  end.
+
+Lemma positions_spec: forall n k, nth (positions n) k = k.
+Proof.
+  intro n.
+  induction n as [ | n IHn ]; intro k.
+  - inversion k.
+  - remember (S n) as n' eqn:n'_eq.
+    destruct k.
+    + reflexivity.
+    + simpl.
+      injection n'_eq as n_eq.
+      revert k.
+      rewrite n_eq.
+      intro k.
+      rewrite (nth_map _ _ _ _ (eq_refl k)).
+      rewrite (IHn k).
+      reflexivity.
+Qed.
+
+Definition diag {T : Type} {n : nat} (zero: T) (xs: t T n): t (t T n) n :=
+  map2 (dirac zero) xs (positions n).
+
+Lemma diag_spec_outer {T : Type} {n : nat} (xs: t T n) (zero : T):
+  forall i, nth (diag zero xs) i = dirac zero (nth xs i) i.
+Proof.    
+  destruct i;
+    apply (caseS' xs);
+    clear xs;
+    intros x xs.
+  + reflexivity.
+  + simpl.
+    rewrite (nth_map2 (dirac zero) xs (map FS (positions _)) i i i eq_refl eq_refl).
+    rewrite (nth_map FS (positions _) i i eq_refl).
+    rewrite (positions_spec _ _).
+    reflexivity.
+Qed.       
+
+Lemma diag_spec_one {T : Type} {n : nat} (xs: t T n) (zero: T):
+  forall i j, i = j -> nth (nth (diag zero xs) i) j = nth xs i.
+Proof.
+  intro i.
+  rewrite (diag_spec_outer xs zero i).
+  exact (dirac_spec_one _ _ _).
+Qed.
+
+Lemma diag_spec_zero {T : Type} {n : nat} (xs: t T n) (zero: T):
+  forall i j, i <> j -> nth (nth (diag zero xs) i) j = zero.
+Proof.
+  intro i.
+  rewrite (diag_spec_outer xs zero i).
+  exact (dirac_spec_zero _ _ _).
+Qed.
+
+Lemma map_id {T : Type} {n: nat} (xs: t T n):
+  forall f, (forall x, f x = x) -> map f xs = xs.
+Proof.
+  intros f f_id.
+  induction xs as [ | x n xs IHxs ].
+  - reflexivity.
+  - simpl.
+    rewrite f_id.
+    rewrite IHxs.
+    reflexivity.
+Qed.
+
+Lemma diag_diag {T : Type} {n: nat} (zero: T):
+  forall (xs: t T n) k, map (fun xs => nth xs k) (diag zero xs) = dirac zero (nth xs k) k.
+Proof.
+  intros xs k.
+  apply eq_nth_iff.
+  intros pos pos2 pos_eq.
+  rewrite <- pos_eq.
+  clear pos_eq pos2.
+  rewrite (nth_map _ _ _ _ eq_refl).
+  destruct (Fin.eq_dec pos k) as [ eq | ineq ].
+  + rewrite (diag_spec_one xs zero pos k eq).
+    rewrite (dirac_spec_one zero (nth xs k) k pos (eq_sym eq)).
+    rewrite eq.
+    reflexivity.
+  + rewrite (diag_spec_zero xs zero pos k ineq).
+    rewrite (dirac_spec_zero zero (nth xs k) k pos (not_eq_sym ineq)).
+    reflexivity.
+Qed.
+
+
+Lemma replace_id {T: Type} {n: nat}:
+  forall (xs: t T n) (pos: Fin.t n) (x: T),
+    x = nth xs pos ->
+    replace xs pos x = xs.
+Proof.
+  intro xs.
+  induction xs as [ | ? ? ? IHxs ].
+  - intro pos; inversion pos.
+  - intro pos.
+    apply (Fin.caseS' pos).
+    + intros x xeq.
+      rewrite xeq.
+      reflexivity.
+    + intros p x xeq.
+      simpl.
+      apply f_equal.
+      apply IHxs.
+      assumption.
+Qed.
+
+Lemma replace_replaced {T : Type} {n: nat}:
+  forall (xs: t T n) (pos k: Fin.t n) (x: T),
+    k = pos ->
+    nth (replace xs pos x) k = x.
+Proof.
+  intros xs.
+  induction xs as [ | ? ? ? IHxs ]; intros pos k x pos_eq.
+  - inversion pos.
+  - rewrite pos_eq.
+    clear pos_eq.
+    clear k.
+    apply (Fin.caseS' pos).
+    + reflexivity.
+    + intro pos'.
+      apply (IHxs pos' pos' x eq_refl).
+Qed.
+
+Lemma replace_others {T : Type} {n: nat}:
+  forall (xs: t T n) (pos k: Fin.t n) (x: T),
+    k <> pos ->
+    nth (replace xs pos x) k = nth xs k.
+Proof.
+  intros xs.
+  induction xs as [ | ? ? ? IHxs ]; intros pos k x.
+  - inversion pos.
+  - apply (Fin.caseS' k).
+    + apply (Fin.caseS' pos).
+      * intro devil.
+        contradict (devil eq_refl).
+      * intros pos' pos_ineq.
+        reflexivity.
+    + apply (Fin.caseS' pos).
+      * intros pos' pos_ineq.
+        reflexivity.
+      * intros pos' k' pos_ineq.
+        assert (pos'_ineq: pos' <> k').
+        { intro devil.
+          rewrite devil in pos_ineq.
+          contradict (pos_ineq eq_refl). }
+        simpl.
+        apply (IHxs pos' k' x (not_eq_sym pos'_ineq)).
+Qed.
+
+Lemma map_fg {S T U: Type} {n: nat}:
+  forall (xs: t S n) (f : T -> U) (g: S -> T), map (fun x => f (g x)) xs = map f (map g xs).
+Proof.
+  intros xs f g.
+  induction xs.
+  - reflexivity.
+  - simpl.
+    apply f_equal.
+    assumption.
+Qed.
+
+Lemma map_extensional {S T : Type} {n: nat}:
+  forall (xs: t S n) (f: S -> T) (g: S -> T) (fg_eq: forall x, f x = g x),
+    map f xs = map g xs.
+Proof.
+  intros xs f g fg_eq.
+  induction xs.
+  - reflexivity.
+  - simpl.
+    rewrite fg_eq.
+    apply f_equal.
+    assumption.
+Qed.
+
+Lemma map_const {S T : Type} {n: nat}:
+  forall (xs: t S n) (f: S -> T) (c: T) (f_const: forall x, f x = c),
+    map f xs = const c n.
+Proof.
+  intros xs f c f_const.
+  induction xs as [ | ? ? ? IHxs ].
+  - reflexivity.
+  - simpl.
+    rewrite f_const.
+    rewrite IHxs.
+    reflexivity.
+Qed.
+
+Lemma map_map2_fg {S T U V: Type} {n: nat}:
+  forall (xs: t S n) (ys: t T n) (f: S -> T -> U) (g: U -> V),
+    map g (map2 f xs ys) = map2 (fun x y => g (f x y)) xs ys.
+Proof.
+  intro xs.
+  induction xs as [ | x n' xs IH ]; intros ys f g.
+  - apply (fun r => case0 (fun ys => map g (map2 f _ ys) = map2 _ _ ys) r ys).
+    reflexivity.
+  - apply (caseS' ys).
+    clear ys; intros y ys.
+    simpl.
+    apply f_equal.
+    apply IH.
+Qed.
+
+Lemma nth_k {T: Type} {n n': nat}:
+  forall (n_eq: n = n') (xs: t T n) (k: Fin.t n'), nth (rew n_eq in xs) k = nth xs (rew <- n_eq in k).
+Proof.
+  destruct n; destruct n';
+    intro n_eq;
+    try solve [ inversion n_eq ].
+  - intros xs k; inversion k.
+  - inversion n_eq as [ n_eq' ].
+    generalize n_eq.
+    clear n_eq.
+    rewrite n_eq'.
+    intros n_eq xs k.
+    rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ n_eq).
+    unfold eq_rect_r.
+    rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ (eq_sym n_eq)).
+    reflexivity.
+Qed.
+
+Lemma nth_rew {T: nat -> Type} {n n': nat}:
+  forall (n_eq: n = n') (xs: t (T n) n) (k: Fin.t n), nth (rew [fun n => t (T n) n] n_eq in xs) (rew n_eq in k) = rew n_eq in nth xs k.
+Proof.
+  destruct n; destruct n';
+    intro n_eq;
+    try solve [ inversion n_eq ].
+  - intros xs k; inversion k.
+  - inversion n_eq as [ n_eq' ].
+    generalize n_eq.
+    clear n_eq.
+    rewrite n_eq'.
+    intros n_eq xs k.
+    rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ n_eq).
+    rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ n_eq).
+    rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ n_eq).
+    reflexivity.
+Qed.
+
+
+Lemma nth_eq {m n: nat} {T: Type}:
+  forall (xs: t T m) (mn_eq: m = n) (k: Fin.t m),
+    nth (rew mn_eq in xs) (rew mn_eq in k) = nth xs k.
+Proof.
+  intros xs.
+  induction xs.
+  - intros ? k; inversion k.
+  - intro mn_eq.
+    destruct n; [ inversion mn_eq | ].
+    inversion mn_eq as [ mn_eq' ].
+    generalize mn_eq.
+    clear mn_eq.
+    rewrite <- mn_eq'.
+    intros mn_eq k.
+    rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ mn_eq).
+    rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ mn_eq).
+    reflexivity.
+Qed.
+
+Lemma nth_const {n: nat} {T : Type}:
+  forall (xs: t T n) x, (forall k, nth xs k = x) -> xs = const x n.
+Proof.
+  intro xs.
+  induction xs as [ | x' ? xs IH ].
+  - intros; reflexivity.
+  - intros x xs_const.
+    set (x'_eq := xs_const F1).
+    simpl in x'_eq.
+    rewrite x'_eq.
+    simpl.
+    apply f_equal.
+    apply IH.
+    intro k'.
+    exact (xs_const (FS k')).
+Qed.
+
+Lemma discharge_Forall2_head {n: nat} {S T: Type} {P: S -> T -> Prop}:
+  forall x y (xs: t S n) (ys: t T n), (P x y -> False) -> Forall2 P (cons _ x _ xs) (cons _ y _ ys) -> False.
+Proof.
+  intros x y xs ys disprf prf.
+  inversion prf.
+  contradiction.
+Qed.
+
+Lemma discharge_Forall2_tail {n: nat} {S T: Type} {P: S -> T -> Prop}:
+  forall x y (xs: t S n) (ys: t T n), (Forall2 P xs ys -> False) -> Forall2 P (cons _ x _ xs) (cons _ y _ ys) -> False.
+Proof.
+  intros x y xs ys disprf prf.
+  inversion prf as [ | ? ? ? ? ? ? tl_prf n_eq [x_eq xs_eq] [y_eq ys_eq]].
+  rewrite (vect_exist_eq _ _ xs_eq) in tl_prf.
+  rewrite (vect_exist_eq _ _ ys_eq) in tl_prf.
+  contradiction.
+Qed.
+
+Lemma existT_fg {S T : Type}: forall (f : T -> Type)  (g: S -> T) x (y : f (g x)) P,
+    P (projT2 (existT (fun x => f (g x)) x y)) -> P (projT2 (existT f (g x) y)).
+Proof.
+  intros f g x y P prf.
+  simpl.
+  assumption.
+Qed.
+
+Lemma existT_fg' {S T : Type}: forall (f : T -> Type)  (g: S -> T) x (y : f (g x)) P,
+    P (projT2 (existT f (g x) y)) -> P (projT2 (existT (fun x => f (g x)) x y)).
+Proof.
+  intros f g x y P prf.
+  simpl.
+  assumption.
+Qed.
+
+Lemma existT_fg_eq {S T : Type}: forall (f : T -> Type)  (g: S -> T) x (y y' : f (g x)),
+    existT (fun x => f (g x)) x y = existT (fun x => f (g x)) x y' ->
+    existT f (g x) y = existT f (g x) y'.
+Proof.
+  intros f g x y y' prf.
+  remember (existT f (g x) y) as lhs eqn:lhs_eq.
+  dependent rewrite prf in lhs_eq.
+  rewrite lhs_eq.
+  reflexivity.
+Qed.
+
