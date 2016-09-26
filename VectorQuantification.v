@@ -65,7 +65,57 @@ Proof.
   - simpl.
     dependent rewrite <- IH.
     reflexivity.
-Qed.    
+Qed.
+
+Lemma Vector_append_assoc:
+  forall {T: Type} {m n o: nat} (xs: t T m) (ys: t T n) (zs: t T o),
+    append (append xs ys) zs = rew (Nat.add_assoc m n o) in append xs (append ys zs).
+Proof.
+  intros T m n o xs.
+  induction xs as [ | ? m ? IH].
+  - intros ys zs.
+    simpl.
+    generalize (Nat.add_assoc 0 n o).
+    intro eq.
+    simpl in eq.
+    rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ eq).
+    reflexivity.
+  - simpl append.
+    intros ys zs.
+    rewrite IH.
+    generalize (Nat.add_assoc m n o).
+    intro eq.
+    destruct m.
+    + simpl in eq.
+      rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ eq).
+      generalize (Nat.add_assoc 1 n o).
+      intro eq'.
+      rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ eq').
+      reflexivity.
+    + simpl in eq.
+      generalize (Nat.add_assoc (S (S m)) n o).
+      intro eq'.
+      simpl in eq'.
+      inversion eq' as [ eq'' ].
+      revert eq'.
+      revert eq.
+      simpl.
+      rewrite <- eq''.
+      intros eq eq'.
+      rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ eq).
+      rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ eq').
+      reflexivity.
+Qed.
+
+Lemma Vector_append_assoc':
+  forall {T: Type} {m n o: nat} (xs: t T m) (ys: t T n) (zs: t T o),
+    rew <- (Nat.add_assoc m n o) in append (append xs ys) zs = append xs (append ys zs).
+Proof.
+  intros.
+  rewrite Vector_append_assoc.
+  rewrite (rew_opp_l).
+  reflexivity.
+Qed.
 
 Inductive ForAll' {S : Type} (P : S -> Type): forall {n : nat}, t S n -> Type :=
 | ForAll'_nil: ForAll' P (nil _)
@@ -319,6 +369,15 @@ Proof.
       rewrite (vect_exist_eq _ _ (eq_sym ys_eq)).
       apply IHn.
       assumption.
+Qed.
+
+Lemma Forall2_shiftin {S T : Type} {n : nat} (P: S -> T -> Prop):
+  forall (xs: t S n) (ys: t T n) x y, P x y -> Forall2 P xs ys -> Forall2 P (shiftin x xs) (shiftin y ys).
+Proof.
+  intros xs.
+  induction xs; intros ys x y.
+  - admit.
+  - admit.
 Qed.
 
 (*Lemma ForAll2'_tail: forall {n: nat} {A B: Type} (P : A -> B -> Type) (xs: t A (S n)) (ys: t B (S n)) (prfs: ForAll2' P xs ys), ForAll2' P (tl xs) (tl ys).
@@ -588,6 +647,18 @@ Proof.
         apply (IHxs pos' k' x (not_eq_sym pos'_ineq)).
 Qed.
 
+Lemma map_append {S T : Type} {m n: nat}:
+  forall (xs: t S m) (ys: t S n) (f : S -> T), map f (append xs ys) = append (map f xs) (map f ys).
+Proof.
+  intro xs.
+  induction xs.
+  - intros; reflexivity.
+  - intros ys f.
+    simpl.
+    apply f_equal.
+    auto.
+Qed.
+
 Lemma map_fg {S T U: Type} {n: nat}:
   forall (xs: t S n) (f : T -> U) (g: S -> T), map (fun x => f (g x)) xs = map f (map g xs).
 Proof.
@@ -758,3 +829,14 @@ Proof.
   reflexivity.
 Qed.
 
+Lemma existT_eq {T : Type}: forall (x y : T) (P: T -> Type) (xs : P x) (ys : P y) (xy_eq : x = y),
+    rew [P] xy_eq in xs = ys -> existT P x xs = existT P y ys.
+Proof.
+  intros x y P xs ys xy_eq.
+  revert xs.
+  rewrite xy_eq.
+  intros xs xsys_eq.
+  simpl in xsys_eq.
+  rewrite xsys_eq.
+  reflexivity.
+Qed.

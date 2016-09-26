@@ -2382,27 +2382,121 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
           apply (Omega_path _ path_tgt').
           assumption.
   Qed.
+  
+  Axiom ST_path: forall sigma tau,
+      sigma <= tau ->
+      Path tau ->
+      Exists (fun sigma => Path sigma /\ sigma <= tau) (projT2 (factorize (organize sigma))).
 
+  Lemma ST_organization: forall sigma tau,
+      sigma <= tau ->
+      Forall (fun tau' => Exists (fun sigma => Path sigma /\ sigma <= tau') (projT2 (factorize (organize sigma)))) (projT2 (factorize (organize tau))).
+  Proof.
+    intros sigma tau sigma_le.
+    generalize (organize_organized tau).
+    generalize (ST_organize_ge tau).
+    induction (organize tau) as [ | | | l r IHl IHr ] using IntersectionType_rect'.
+    - intros; apply Forall_nil.
+    - intros org_ge org_C.
+      apply Forall_cons; [ | apply Forall_nil].
+      inversion org_C.
+      apply ST_path.
+      + transitivity tau; assumption.
+      + assumption.
+    - intros org_ge org_Arr.
+      apply Forall_cons; [ | apply Forall_nil].
+      inversion org_Arr.
+      apply ST_path.
+      + transitivity tau; assumption.
+      + assumption.
+    - intros org_ge org_Inter.
+      inversion org_Inter as [ ? devil | ? ? path_l not_omega_r path_r | ].
+      + inversion devil.
+      + simpl.
+        rewrite (factorize_path _ path_l).
+        apply Forall_cons.
+        * apply ST_path.
+          { transitivity tau.
+            - assumption.
+            - etransitivity; [ eassumption | apply ST_InterMeetLeft ]. }
+          { assumption. }
+        * apply IHr.
+          { etransitivity; [ eassumption | apply ST_InterMeetRight ]. }
+          { assumption. }
+  Qed.
+  
+  
+  (*
   Lemma ST_path: forall sigma tau,
       sigma <= tau ->
-      Organized sigma ->
       Path tau ->
-      Exists (fun sigma => Path sigma /\ sigma <= tau) (projT2 (factorize sigma)).
+      Exists (fun sigma => Path sigma /\ sigma <= tau) (projT2 (factorize (organize sigma))).
   Proof.
     intros sigma tau sigma_le.
     induction sigma_le;
-      intros org_sigma path_tau;
+      intros path_tau;
       try solve [ inversion path_tau ].
     - apply Exists_cons_hd.
       split.
       + inversion org_sigma; assumption.
       + eapply ST_Ax; eassumption.
-    - set (paths := organized_path_factor _ org_sigma).
-      rewrite (factorize_organized _ org_sigma) in org_sigma.
+    - simpl.
+      rewrite (factorize_path _ path_tau).
+      simpl.
+      apply Exists_cons_hd.
+      split; [ assumption | reflexivity ].
+    - simpl.
+      inversion org_sigma as [ ? devil | ? ? path_sigma | ].
+      + inversion devil.
+      + rewrite (factorize_path _ path_tau). 
+        rewrite (factorize_path _ path_sigma).
+        apply Exists_cons_tl.
+        apply Exists_cons_hd.
+        split; [ assumption | reflexivity ].
+    - inversion path_tau as [ | ? ? devil ].
+      inversion devil.
+    - simpl.
+      apply Exists_cons_hd.
+      split.
+      + inversion org_sigma as [ ? devil | | ].
+        * inversion devil.
+        * assumption.
+      + apply (ST_Ax _ _ eq_refl); [ reflexivity | ].
+        clear org_sigma.
+        inversion path_tau as [ C' args pathargs_taus [ C_eq taus_eq ] | ].
+        dependent rewrite taus_eq in pathargs_taus.
+        clear C' C_eq taus_eq args path_tau.
+        revert taus sigmas pathargs_taus.
+        generalize (constructorArity C).
+        clear C.
+        unfold eq_rect_r.
+        simpl.
+        intros n.
+        destruct n.
+        * intros taus sigmas.
+          apply (fun r => case0 (fun xs => PathArgs (map2 Inter xs _) -> Forall2 _ xs (map2 _ xs _)) r sigmas).
+          apply (fun r => case0 (fun xs => PathArgs (map2 Inter _ xs) -> Forall2 _ _ (map2 _ _ xs)) r taus).
+          intro.
+          apply Forall2_nil.
+        * intros taus sigmas.
+          apply (caseS' sigmas).
+          clear sigmas; intros sigma sigmas.
+          apply (caseS' taus).
+          clear taus; intros tau taus.
+          intro pathargs_taus.
+          inversion pathargs_taus as [ | ? ? devil | ].
+          inversion devil.
+    - inversion org_sigma as [ ? path_sigma | | ].
+      rewrite (factorize_path _ path_sigma).
+      apply (Exists_cons_hd).
+      split.
+      + assumption.
+      + apply ST_CoContra; assumption.
+    - inversion path_tau as [ | ? ? devil ].
+      inversion devil.
+    - 
+      *)
       
-      set (xxx := factorize_intersect_eq _).
-      
-    
   
   Definition Substitution: Type := VariableSymbol -> IntersectionType.
   Fixpoint Apply (S: Substitution) (sigma: TypeScheme): IntersectionType :=
@@ -2472,6 +2566,587 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
           * apply ST_OmegaArrow.
         + assumption.
     Qed.
+
+    Lemma MP_generation: forall Gamma M N tau,
+        CL Gamma (App M N) tau -> exists sigma, CL Gamma M (Arrow sigma tau) /\ CL Gamma N sigma.
+    Proof.
+      intros Gamma M N tau prf.
+      remember (App M N) as MN eqn:MN_eq.
+      generalize M N MN_eq.
+      clear M N MN_eq.
+      induction prf as [ | | M' tau1 tau2 M'tau1 IHtau1 M'tau2 IHtau2 | ? ? tau_ge prf IH ].
+      - intros ? ? MN_eq; inversion MN_eq.
+      - intros ? ? MN_eq.
+        inversion MN_eq as [ [ M_eq N_eq ] ].
+        rewrite <- M_eq.
+        rewrite <- N_eq.
+        eexists; split; eassumption.
+      - intros M N MN_eq.
+        destruct (IHtau1 _ _ MN_eq) as [ sigma1 [ Msigma1tau1 Nsigma1 ] ].
+        destruct (IHtau2 _ _ MN_eq) as [ sigma2 [ Msigma2tau2 Nsigma2 ] ].
+        exists (Inter sigma1 sigma2).
+        split.
+        + eapply CL_ST.
+          * apply CL_II; [ exact Msigma1tau1 | exact Msigma2tau2 ].
+          * etransitivity; [ | apply ST_InterArrowDistrib ].
+            apply ST_Both;
+             [ rewrite ST_InterMeetLeft | rewrite ST_InterMeetRight ];
+             apply ST_CoContra;
+             solve [ apply ST_InterMeetLeft || apply ST_InterMeetRight | reflexivity ].
+        + apply CL_II; assumption.
+      - intros ? ? MN_eq.
+        destruct (IH _ _ MN_eq) as [ ? [ ? ? ] ].
+        eexists.
+        split.
+        + eapply CL_ST.
+          * eassumption.
+          * apply ST_CoContra; [ reflexivity | assumption ].
+        + assumption.
+    Qed.
+
+    Lemma MinimalSubst_PerPath: forall Gamma c tau,
+        CL Gamma (Symbol c) tau ->
+        Forall (fun tau' =>
+                  exists S, WellFormed S /\ Apply S (Gamma c) <= tau') (projT2 (factorize (organize tau))).
+    Proof.
+      intros Gamma c tau prf.
+      remember (Symbol c) as c' eqn:c'_eq.
+      generalize c c'_eq.
+      clear c'_eq c.
+      induction prf as [ | | M sigma tau | M sigma tau prf IH sigma_le ].
+      - intros ? c'_eq.
+        inversion c'_eq as [ c_eq ].
+        rewrite <- c_eq.
+        apply (nth_Forall).
+        intro k.
+        eexists; split.
+        + eassumption.
+        + rewrite <- (ST_intersect_nth).
+          rewrite <- (factorize_organized).
+          * apply ST_organize_ge.
+          * apply organize_organized.
+      - intros ? c'_eq; inversion c'_eq.
+      - intros c M_eq.
+        simpl.
+        assert (all_paths: Forall Path (append (projT2 (factorize (organize sigma)))
+                                               (projT2 (factorize (organize tau))))).
+        { apply Forall_append;
+            apply organized_path_factors;
+            apply organize_organized. }
+        generalize (factorize_intersect_size_eq _ all_paths).
+        intro xs_size_eq.
+        rewrite <- (rewrite_vect _ xs_size_eq).
+        set (factors_eq := factorize_intersect_eq _ all_paths xs_size_eq).
+        rewrite factors_eq.
+        apply Forall_append; auto.
+      - intros.
+        apply (nth_Forall).
+        intro k.
+        assert (kth_path : Path (nth (projT2 (factorize (organize tau))) k)).
+        { apply (Forall_nth).
+          apply (organized_path_factors).
+          apply (organize_organized). }
+        assert (kth_ge : sigma <= nth (projT2 (factorize (organize tau))) k).
+        { rewrite sigma_le.
+          etransitivity; [ apply ST_organize_ge | ].
+          rewrite (factorize_organized _ (organize_organized _)) at 1.
+          apply (ST_intersect_nth). }
+        generalize (IH _ c'_eq).
+        clear IH.
+        induction (ST_path _ _ kth_ge kth_path) as [ ? ? ? [ ? x_le ] | ? ? ? ? IH' ]; intro IH.
+        + inversion IH as [ | ? ? ? [ S [ WF_S ? ] ] ].
+          exists S; split; [ assumption | etransitivity; [ eassumption | apply x_le ] ].          
+        + inversion IH as [ | ? ? ? ? ? n_eq [ x_eq xs_eq ] ].
+          dependent rewrite <- xs_eq in IH'.
+          auto.
+    Qed.
+        
+    Lemma SingleMinimalSubst: forall Gamma c sigma,
+        CL Gamma (Symbol c) sigma -> Path sigma -> exists S, WellFormed S /\ Apply S (Gamma c) <= sigma.
+    Proof.
+      intros Gamma c sigma prf path_sigma.
+      generalize (MinimalSubst_PerPath _ _ _ prf).
+      induction (ST_path _ _ (ST_Refl sigma) path_sigma) as [ n x xs [ path_x sigma_gt ] | ].
+      - intro exsubsts. 
+        inversion exsubsts as [ | ? ? ? [ S [ WF_S S_le ] ] ].
+        exists S; split.
+        + assumption.
+        + rewrite S_le; assumption.
+      - intro exsubsts.
+        inversion exsubsts as [ | ? ? ? ? exsubsts' n_eq [ x_eq xs_eq ] ].
+        dependent rewrite xs_eq in exsubsts'.
+        auto.
+    Qed.
+
+    Fixpoint src_count (sigma: IntersectionType): nat :=
+      match sigma with
+      | Ty (PT_Arrow _ tgt) => S (src_count tgt)
+      | _ => 0
+      end.
+
+    Fixpoint split_path (sigma: IntersectionType) (n: nat) (nOk: (n <= src_count sigma)%nat) {struct n}: (t IntersectionType n) * IntersectionType  :=
+      match n with
+      | 0 => fun _ => ((nil _), sigma)
+      | S n' =>
+        fun nOk => 
+          match sigma as sigma' return (S n' <= src_count sigma')%nat -> _ with
+          | Ty (PT_Arrow src tgt) =>
+            fun nOk =>
+              (cons _ src _ (fst (split_path tgt n' (proj2 (Nat.succ_le_mono _ _) nOk))),
+               snd (split_path tgt n' (proj2 (Nat.succ_le_mono _ _) nOk)))
+          | _ => fun _ => (const omega _, omega)
+          end nOk
+      end nOk.
+
+    Fixpoint mkArrow {n : nat} (srcs: t IntersectionType n) (tgt: IntersectionType): IntersectionType :=
+      match srcs with
+      | nil _ => tgt
+      | cons _ src _ srcs => Arrow src (mkArrow srcs tgt)
+      end.
+
+    Lemma split_path_spec: forall sigma n (nOk: (n <= src_count sigma)%nat),
+        mkArrow (fst (split_path sigma n nOk)) (snd (split_path sigma n nOk)) = sigma.
+    Proof.
+      intros sigma n nOk.
+      revert sigma nOk.
+      induction n as [ | n IH ];
+        intros sigma nOk.
+      - reflexivity.
+      - destruct sigma using IntersectionType_rect';
+          try solve [ inversion nOk ].
+        simpl; unfold Arrow.
+        apply f_equal.
+        apply f_equal.
+        apply IH.
+    Qed.
+  
+    Lemma factors_map_distrib:
+      forall sigma tau,
+        (Omega tau -> False) ->
+        (factorize (organize (Arrow sigma tau))) =
+        existT _ _ (map (Arrow sigma) (projT2 (factorize (organize tau)))).
+    Proof.
+      intros sigma tau not_omega_tau.
+      simpl.
+      destruct tau as [ | C args | sigma' tau | sigma1 sigma2 ] using IntersectionType_rect'.
+      - contradict not_omega_tau; exact I.
+      - simpl.
+        generalize (organize_organized (Const C args)).
+        simpl.
+        destruct (organizeConstructor organize C args)
+          as [ | | | l r ]
+               eqn:ctor_eq using IntersectionType_rect'.
+        + contradict not_omega_tau.
+          apply (Omega_complete _ _ (ST_organize_le (Const C args))).
+          simpl.
+          rewrite ctor_eq.
+          exact I.
+        + reflexivity.
+        + reflexivity.
+        + intro org_inter.
+          assert (paths_inter : Forall Path (map (fun tau => Ty (PT_Arrow sigma tau)) (append (projT2 (factorize l)) (projT2 (factorize r))))).
+          { set (paths_inter := organized_path_factors _ org_inter).
+            simpl in paths_inter.
+            apply (map_Forall).
+            apply (Forall_ap _ (Path)).
+            - apply Forall_tautology.
+              intro; apply Path_Arr.
+            - assumption. }         
+          assert (expand_factorize :
+                    existT _ (projT1 _)
+                           (projT2 (factorize (intersect
+                                                 (map (Arrow sigma)
+                                                      (append (projT2 (factorize l))
+                                                              (projT2 (factorize r))))))) =
+                    factorize (intersect (map (fun tau => Ty (PT_Arrow sigma tau))
+                                              (append (projT2 (factorize l))
+                                                      (projT2 (factorize r)))))
+                 ).
+          { unfold Arrow.
+            unfold liftPreType.
+            destruct (factorize (intersect (map (fun tau => Ty (PT_Arrow sigma tau))
+                                                (append (projT2 (factorize l))
+                                                        (projT2 (factorize r)))))).
+            reflexivity. }
+          rewrite <- expand_factorize.
+          set (size_eq := factorize_intersect_size_eq _ paths_inter).
+          apply (existT_eq _ _ _ _ _ size_eq).
+          unfold Arrow.
+          apply (factorize_intersect_eq _ paths_inter).
+      - generalize (organize_organized (Ty (PT_Arrow sigma' tau))).
+        destruct (organize (Ty (PT_Arrow sigma' tau)))
+                 as [ | | | l r ] eqn:arr_eq
+                       using IntersectionType_rect'.
+        + contradict not_omega_tau.
+          apply (Omega_complete _ _ (ST_organize_le (Ty (PT_Arrow sigma' tau)))).
+          rewrite arr_eq.
+          exact I.
+        + reflexivity.
+        + reflexivity.
+        + intro org_inter.
+          assert (paths_inter : Forall Path (map (fun tau => Ty (PT_Arrow sigma tau)) (append (projT2 (factorize l)) (projT2 (factorize r))))).
+          { set (paths_inter := organized_path_factors _ org_inter).
+            simpl in paths_inter.
+            apply (map_Forall).
+            apply (Forall_ap _ (Path)).
+            - apply Forall_tautology.
+              intro; apply Path_Arr.
+            - assumption. }         
+          assert (expand_factorize :
+                    existT _ (projT1 _)
+                           (projT2 (factorize (intersect
+                                                 (map (Arrow sigma)
+                                                      (append (projT2 (factorize l))
+                                                              (projT2 (factorize r))))))) =
+                    factorize (intersect (map (fun tau => Ty (PT_Arrow sigma tau))
+                                              (append (projT2 (factorize l))
+                                                      (projT2 (factorize r)))))
+                 ).
+          { unfold Arrow.
+            unfold liftPreType.
+            destruct (factorize (intersect (map (fun tau => Ty (PT_Arrow sigma tau))
+                                                (append (projT2 (factorize l))
+                                                        (projT2 (factorize r)))))).
+            reflexivity. }
+          rewrite <- expand_factorize.
+          set (size_eq := factorize_intersect_size_eq _ paths_inter).
+          apply (existT_eq _ _ _ _ _ size_eq).
+          unfold Arrow.
+          apply (factorize_intersect_eq _ paths_inter).
+      - generalize (organize_organized (Ty (PT_Inter sigma1 sigma2))).
+        destruct (organize (Ty (PT_Inter sigma1 sigma2)))
+                 as [ | | | l r ] eqn:arr_eq
+                                        using IntersectionType_rect'.
+        + contradict not_omega_tau.
+          apply (Omega_complete _ _ (ST_organize_le (Ty (PT_Inter sigma1 sigma2)))).
+          rewrite arr_eq.
+          exact I.
+        + reflexivity.
+        + reflexivity.
+        + intro org_inter.
+          assert (paths_inter : Forall Path (map (fun tau => Ty (PT_Arrow sigma tau)) (append (projT2 (factorize l)) (projT2 (factorize r))))).
+          { set (paths_inter := organized_path_factors _ org_inter).
+            simpl in paths_inter.
+            apply (map_Forall).
+            apply (Forall_ap _ (Path)).
+            - apply Forall_tautology.
+              intro; apply Path_Arr.
+            - assumption. }         
+          assert (expand_factorize :
+                    existT _ (projT1 _)
+                           (projT2 (factorize (intersect
+                                                 (map (Arrow sigma)
+                                                      (append (projT2 (factorize l))
+                                                              (projT2 (factorize r))))))) =
+                    factorize (intersect (map (fun tau => Ty (PT_Arrow sigma tau))
+                                              (append (projT2 (factorize l))
+                                                      (projT2 (factorize r)))))
+                 ).
+          { unfold Arrow.
+            unfold liftPreType.
+            destruct (factorize (intersect (map (fun tau => Ty (PT_Arrow sigma tau))
+                                                (append (projT2 (factorize l))
+                                                        (projT2 (factorize r)))))).
+            reflexivity. }
+          rewrite <- expand_factorize.
+          set (size_eq := factorize_intersect_size_eq _ paths_inter).
+          apply (existT_eq _ _ _ _ _ size_eq).
+          unfold Arrow.
+          apply (factorize_intersect_eq _ paths_inter).
+    Qed.
+
+    Lemma organize_omega: forall sigma, Omega sigma -> organize sigma = omega.
+    Proof.
+      intros sigma.
+      induction sigma as [ | | ? tau ? IH | ? ? IHsigma1 IHsigma2 ] using IntersectionType_rect'.
+      - reflexivity.
+      - intro devil; inversion devil.
+      - intro omega_arr.
+        simpl.
+        rewrite (IH omega_arr).
+        reflexivity.
+      - intro omega_inter.
+        destruct omega_inter as [ omega_sigma1 omega_sigma2 ].
+        simpl.
+        rewrite (IHsigma1 omega_sigma1).
+        rewrite (IHsigma2 omega_sigma2).
+        reflexivity.
+    Qed.
+
+    Lemma factorize_intersect_cons_omega {n: nat}:
+      forall sigmas, factorize (intersect (cons _ omega n sigmas)) = factorize (intersect sigmas).
+    Proof.
+      intro sigmas.
+      simpl.
+      destruct sigmas as [ | sigma n sigmas ].
+      - reflexivity.
+      - simpl.
+        destruct (factorize (match sigmas with
+                             | nil _ => sigma
+                             | cons _ _ _ _ => Inter sigma (intersect sigmas)
+                             end)).
+        reflexivity.
+    Qed.          
+
+    Lemma factorize_intersect_append {m n : nat}:
+      forall (sigmas: t IntersectionType m) (taus: t IntersectionType n),
+        factorize (intersect (append sigmas taus)) = existT _ _ (append (projT2 (factorize (intersect sigmas)))
+                                                                        (projT2 (factorize (intersect taus)))).
+    Proof.
+      intros sigmas.
+      induction sigmas as [ | sigma m sigmas IH ].
+      - simpl.
+        intro taus.
+        destruct (factorize (intersect taus)).
+        reflexivity.
+      - intro taus.
+        destruct sigma using IntersectionType_rect'.
+        + destruct sigmas.
+          * simpl.
+            destruct taus; reflexivity.
+          * simpl append at 1.
+            match goal with
+            | [ |- factorize (@intersect ?m (cons _ (Ty (PT_omega)) ?n ?xs)) = _ ] =>
+              assert (xxs_eq :
+                        @intersect m (cons _ (Ty (PT_omega)) _ xs) =
+                        @intersect (S n) (cons _ (Ty PT_omega) n xs));
+              [ simpl; reflexivity | ]
+            end.
+            rewrite xxs_eq.
+            rewrite (factorize_intersect_cons_omega).
+            rewrite (factorize_intersect_cons_omega).
+            apply IH.
+        + destruct sigmas.
+          * simpl; destruct taus; reflexivity.
+          * simpl.
+            set (IH' := IH taus).
+            simpl in IH'.
+            rewrite IH'.
+            reflexivity.
+        + destruct sigmas.
+          * simpl; destruct taus; reflexivity.
+          * simpl.
+            set (IH' := IH taus).
+            simpl in IH'.
+            rewrite IH'.
+            reflexivity.
+        + destruct sigmas.
+          * simpl; destruct taus.
+            { simpl.
+              rewrite Vector_append_nil.
+              reflexivity. }
+            { simpl.
+              reflexivity. }
+          * simpl.
+            set (IH' := IH taus).
+            simpl in IH'.
+            rewrite IH'.
+            simpl.
+            apply (existT_eq _ _ _ _ _ (Nat.add_assoc _ _ _)).
+            rewrite <- (Vector_append_assoc).
+            reflexivity.
+    Qed.
+
+    Lemma Path_src_count:
+      forall sigma tau, sigma <= tau -> Path sigma -> Path tau -> src_count sigma = src_count tau.
+    Proof.
+      intros sigma tau sigma_le path_sigma.
+      revert tau sigma_le.
+      induction path_sigma as [ | sigma' tau' path_sigma IH ].
+      - intros tau sigma_le path_tau.
+        inversion path_tau as [ | sigma' tau' path_tau' tau_eq ].
+        + reflexivity.
+        + rewrite <- tau_eq in sigma_le.
+          contradict sigma_le.
+          unfold not; intro sigma_le.
+          set (sigma_le' := CF_complete _ _ _ sigma_le).
+          inversion sigma_le'.
+          apply (Omega_path _ path_tau').
+          assumption.
+      - intros tau sigma_le path_tau.
+        inversion path_tau as [ C args path_C tau_eq | sigma'' tau'' path_tau'' tau_eq ].
+        + rewrite <- tau_eq in sigma_le.
+          contradict sigma_le.
+          unfold not; intro sigma_le.
+          set (sigma_le' := AF_complete _ _ _ sigma_le).
+          inversion sigma_le'.
+          contradiction.
+        + simpl.
+          apply f_equal.
+          apply IH.
+          * rewrite <- tau_eq in sigma_le.
+            set (sigma_le' := AF_complete _ _ _ sigma_le).
+            inversion sigma_le' as [ | | ? omega_tau'' ].
+            { assumption. }
+            { contradict omega_tau''.
+              unfold not.
+              apply Omega_path.
+              apply Path_Arr.
+              assumption. }
+          * assumption.
+    Qed.
+
+    Lemma Path_split_path: forall sigma n prf, Path sigma -> Path (snd (split_path sigma n prf)).
+    Proof.
+      intros sigma n prf path_sigma.
+      revert n prf.
+      induction path_sigma; intros n prf.
+      - destruct n.
+        + apply Path_Const; assumption.
+        + inversion prf.
+      - destruct n.
+        + apply Path_Arr; assumption.
+        + simpl; auto.
+    Qed.
+
+    Lemma split_path_shiftin: forall sigma n prf prf',
+        fst (split_path sigma (S n) prf) = shiftin (last (fst (split_path sigma (S n) prf)))
+                                                   (fst (split_path sigma n prf')).
+    Proof.
+      intros sigma. 
+      induction sigma as [ | | ? ? IHsigma IHtau | ] using IntersectionType_rect';
+        destruct n;
+        intros prf prf';
+        try solve [ inversion prf ].
+      - reflexivity.
+      - simpl.
+        apply f_equal.
+        eapply IHtau.
+    Qed.
+
+    Lemma source_count_plus: forall sigma n prf,
+        src_count sigma = (n + (src_count (snd (split_path sigma n prf))))%nat.
+    Proof.
+      intros sigma.
+      induction sigma using IntersectionType_rect';
+        intros n prf;
+        destruct n;
+        try solve [ reflexivity | inversion prf ].
+      simpl.
+      auto.
+    Qed.      
+    
+    Lemma CL_Path: forall Gamma M sigma,
+        CL Gamma M sigma ->
+        Forall (fun sigma' =>
+                  exists S, WellFormed S /\
+                       Exists (fun path =>
+                                 Path path /\
+                                 exists argCountPrf : (argumentCount M <= src_count path)%nat,
+                                   Forall2 (CL Gamma) (argumentsOf M)
+                                           (fst (split_path path _ argCountPrf)) /\
+                                   (snd (split_path path _ argCountPrf)) <= sigma'
+                              )
+                              (projT2 (factorize (organize (Apply S (Gamma (rootOf M)))))))
+               (projT2 (factorize (organize sigma))).
+    Proof.
+      intros Gamma M sigma prf.
+      induction prf as
+          [ c S
+          | M N sigma tau Msigmatau IHM Nsigma IHN
+          | ? sigma tau
+          | ? sigma tau prf IH sigma_le ].
+      - apply (nth_Forall).
+        intro k.
+        eexists; split.
+        + eassumption.
+        + simpl.
+          generalize (Forall_nth _ _ (organized_path_factors _ (organize_organized (Apply S (Gamma c))))).
+          revert k.
+          generalize (factorize (organize (Apply S (Gamma c)))).
+          intros [ n factors ].
+          simpl.
+          intro k.
+          induction k as [ | ? k IH ].
+          * apply (caseS' factors).
+            clear factors; intros factor factors.
+            intro kth_path.
+            apply Exists_cons_hd; split.
+            { exact (kth_path F1). }
+            { exists (le_0_n _); split.
+              - apply Forall2_nil.
+              - reflexivity. }
+          * apply (caseS' factors).
+            clear factors; intros factor factors.
+            intro kth_path.
+            apply Exists_cons_tl.
+            simpl.
+            apply IH.
+            intro k'.
+            exact (kth_path (FS k')).
+      - clear IHN.
+        simpl rootOf.
+        destruct (Omega_dec tau) as [ omega_tau | not_omega_tau ].
+        + rewrite (organize_omega _ omega_tau).
+          apply Forall_nil.
+        + rewrite (factors_map_distrib _ _ not_omega_tau) in IHM.
+          simpl in IHM.
+          generalize (organized_path_factors _ (organize_organized tau)).
+          generalize (Forall_map _ _ _ IHM).
+          clear IHM.
+          intro IHM.
+          induction IHM as [ | n factor factors factor_prf factors_prf IH ].
+          * intros.
+            apply Forall_nil.
+          * intro factor_paths.
+            apply Forall_cons.
+            { destruct factor_prf as [ S [ WF_S ex_prf ] ].
+              exists S; split; [ assumption | ].
+              induction ex_prf as
+                  [ n' factor' factors' [ path_factor' [ argCountPrf [ args_prf tgt_prf ]]]
+                  | n' factor' factors' IHex
+                  ].
+              - apply Exists_cons_hd; split.
+                + assumption.
+                + assert (argCountPrf' : (argumentCount (App M N) <= src_count factor')%nat).
+                  { inversion factor_paths as [  | ? ? ? path_factor ].
+                    set (tgt_S_n := Path_src_count _ _ tgt_prf (Path_split_path _ _ _ path_factor')
+                                                   (Path_Arr _ _ path_factor)).
+                    rewrite (source_count_plus _ _ argCountPrf).
+                    simpl.
+                    rewrite tgt_S_n.
+                    simpl.
+                    rewrite <- (Nat.add_succ_comm).
+                    apply (Nat.le_add_r). }
+                  exists argCountPrf'; split.
+                  * rewrite (split_path_shiftin _ _ _ argCountPrf).
+                    
+              - apply Exists_cons_tl; assumption. }
+            { apply IH.
+              inversion factor_paths as [ | ? ? ? ? ? n_eq [ factor_eq factors_eq ]].
+              dependent rewrite <- factors_eq.
+              assumption. }
+      - simpl.
+        rewrite (factorize_intersect_append).
+        simpl.
+        rewrite <- (factorize_organized _ (organize_organized sigma)).
+        rewrite <- (factorize_organized _ (organize_organized tau)).
+        apply Forall_append; assumption.
+      - generalize (ST_organization _ _ sigma_le).
+        intro sigma_paths.
+        induction sigma_paths as [ | ? ? ? prf' ].
+        + apply Forall_nil.
+        + apply Forall_cons.
+          clear sigma_paths.
+          * induction prf' as [ sigma' ? ?  [ path_sigma' sigma'_le ] | ? ? ? ? IH' ].
+            { inversion IH as [ | ? ? ? [ S [ WF_S prfs ] ] ].
+              exists S; split; [ assumption | ].
+              induction prfs as [ ? path ? [ path_path [ argPrf [ args_le tgt_le ] ] ] | ].
+              - apply Exists_cons_hd.
+                split; [ assumption | ].
+                exists argPrf; split.
+                + assumption.
+                + rewrite <- sigma'_le.
+                  assumption.
+              - apply Exists_cons_tl.
+                assumption. }
+            { inversion IH as [ | ? ? ? ? ? n_eq [ hd_eq tl_eq ] ].
+              apply IH'.
+              dependent rewrite <- tl_eq.
+              assumption. }             
+          * assumption.
+    Qed.
+    
 (*
     Lemma MP_generation: forall Gamma M N tau,
         CL Gamma (App M N) tau -> { sigma: _ | CL Gamma M (Arrow sigma tau) /\ CL Gamma N sigma }.
@@ -3303,61 +3978,9 @@ Module Type DisjointContexts(Symbols: SymbolSpecification) <: CombinatoryLogic(S
           | x => x
           end.
 
-        Axiom bailOut: Fin.t numberOfContexts.
-        Lemma foo sigma tau sigma' tau': Arrow sigma tau = Arrow sigma' tau' -> tau = tau'.
-        Proof.
-          intro arrow_eq.
-          inversion arrow_eq.
-          reflexivity.
-        Qed.
-        Print foo.
-
+      
         Import EqNotations.
-        (*Fixpoint TypeOf_path (sigma: IntersectionType): Path sigma -> Fin.t numberOfContexts :=
-          match sigma with
-          | Ty (PT_Arrow src tgt) =>
-            fun pathSigma =>
-              TypeOf_path tgt (match pathSigma in Path sigma' return (Arrow src tgt = sigma') -> Path tgt with
-                               | Path_Arr src' tgt' pathTgt =>
-                                 fun sigmaEq => rew <- (f_equal (fun sigma =>
-                                                               match sigma with
-                                                               | Ty (PT_Arrow _ tgt) => tgt
-                                                               | _ => tgt'
-                                                               end) sigmaEq) in pathTgt
-                               | Path_Const C args _ => fun sigmaEq =>
-                                                         False_rect _ (eq_ind (Arrow src tgt)
-                                                                              (fun sigma' =>
-                                                                                 match sigma' with
-                                                                                 | Ty (PT_Arrow _ _) => True
-                                                                                 | _ => False
-                                                                                 end)
-                                                                              I (Const C args) sigmaEq)
-                               end eq_refl)
-          | Ty (PT_Const C args) => fun pathSigma => proj1_sig (SymbolsFull C)
-          | devil => fun pathSigma =>
-                      False_rect _
-                                 (match pathSigma in Path sigma' return (devil = sigma') -> False with
-                                  | Path_Arr src' tgt' _ => fun sigmaEq =>
-                                                             eq_ind (Arrow src' tgt')
-                                                                    (fun sigma' =>
-                                                                       match sigma' with
-                                                                       | Ty (PT_Arrow _ _) => True
-                                                                       | Ty (PT_Const _ _) => True
-                                                                       | _ => False
-                                                                       end)
-                                                                    I devil (eq_sym sigmaEq)
-                                  | Path_Const C args _ => fun sigmaEq =>
-                                                            eq_ind (Const C args)
-                                                                   (fun sigma' =>
-                                                                      match sigma' with
-                                                                      | Ty (PT_Arrow _ _) => True
-                                                                      | Ty (PT_Const _ _) => True
-                                                                      | _ => False
-                                                                      end)
-                                                                   I devil (eq_sym sigmaEq)
-                                  end eq_refl)
-          end.*)
-
+        
         Lemma Path_assumption_singular:
           forall S c (path_c: Path (Apply S (Gamma c))),
             numberOfContexts = 1.
@@ -3410,23 +4033,24 @@ Module Type DisjointContexts(Symbols: SymbolSpecification) <: CombinatoryLogic(S
               * assumption.
               * apply (contextsWF F1 c).
             + inversion n_eq.
-        Qed.         
-
-          
-          
+        Qed.
         
         Lemma TypeOf_path:
           forall M sigma,
             CL Gamma M sigma ->
-            Path sigma ->
-            exists sigma', sigma' <= sigma /\ Path sigma' /\ exists n, TypeOf n sigma'.
+            exists tau, tau <= sigma /\ Organized tau /\ Forall (fun tau' => exists n, TypeOf n tau') (projT2 (factorize tau)).
         Proof.
           intros M sigma prf.
-          induction prf as [ | M N sigma tau Msigmatau IHM Nsigma IHN | | ].
-          - intro path_sigma.
-            exists (Apply S (Gamma c)).
+          induction prf.
+          - 
+          
+          
+          intros M sigma prf.
+          induction prf as [ | M N sigma tau Msigmatau IHM Nsigma IHN | | ? ? ? Msigma IH sigma_le ].
+          - intros sigma' path_sigma'.
+            exists sigma'.
             repeat split.
-            + reflexivity.
+            + assumption.
             + assumption.
             + assert (n_eq: numberOfContexts = 1).
               { apply (Path_assumption_singular S c).
@@ -3455,7 +4079,8 @@ Module Type DisjointContexts(Symbols: SymbolSpecification) <: CombinatoryLogic(S
                 unfold not.
                 apply Omega_path; assumption.
           - intro path_sigmatau; inversion path_sigmatau.
-          -  
+          - intro path
+            destruct (ST_path _ sigma_le 
           
       
       Lemma TypeOf_arrow_omega:
