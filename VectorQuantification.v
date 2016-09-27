@@ -148,6 +148,32 @@ Proof.
     + apply IH; assumption.
 Qed.
 
+Lemma append_Forall1: forall {n m} {T} P (xs: t T n) (ys: t T m),
+    Forall P (append xs ys) -> Forall P xs.
+Proof.
+  intros n m T P xs ys.
+  induction xs.
+  - intro; apply Forall_nil.
+  - intro prf.
+    inversion prf as [ | ? ? ? prf_hd prf_tl n_eq [ hd_eq tl_eq ]].
+    dependent rewrite tl_eq in prf_tl.
+    apply Forall_cons.
+    + assumption.
+    + auto.
+Qed.
+
+Lemma append_Forall2: forall {n m} {T} P (xs: t T n) (ys: t T m),
+    Forall P (append xs ys) -> Forall P ys.
+Proof.
+  intros n m T P xs ys.
+  induction xs.
+  - intro; assumption.
+  - intro prf.
+    inversion prf as [ | ? ? ? prf_hd prf_tl n_eq [ hd_eq tl_eq ]].
+    dependent rewrite tl_eq in prf_tl.
+    auto.
+Qed.
+
 Lemma Forall_map: forall {T} {n} (xs: t T n) (P: T -> Prop) f,
     Forall P (map f xs) -> Forall (fun x => P (f x)) xs.
 Proof.
@@ -850,4 +876,47 @@ Proof.
   simpl in xsys_eq.
   rewrite xsys_eq.
   reflexivity.
+Qed.
+
+Lemma Exists_map {S T : Type} {n: nat}:
+  forall (xs: t S n) f (P: T -> Prop), Exists (fun x => P (f x)) xs -> Exists P (map f xs).
+Proof.
+  intro xs.
+  induction xs.
+  - intros f P devil; inversion devil.
+  - intros f P prf.
+    inversion prf as [ | ? ? ? tl_prf n_eq [ hd_eq tl_eq ] ].
+    + apply Exists_cons_hd.
+      assumption.
+    + dependent rewrite tl_eq in tl_prf.
+      simpl.
+      apply Exists_cons_tl.
+      auto.
+Qed.
+
+Lemma Exists_append1 {T : Type} {m n : nat}:
+  forall (xs: t T m) (ys: t T n) (P: T -> Prop), Exists P xs -> Exists P (append xs ys).
+Proof.
+  intros xs.
+  induction xs.
+  - intros ? ? devil; inversion devil.
+  - intros ? ? prf.
+    inversion prf as [ | ? ? ? tl_prf n_eq [ hd_eq tl_eq ] ].
+    + apply Exists_cons_hd; assumption.
+    + dependent rewrite tl_eq in tl_prf.
+      simpl.
+      apply Exists_cons_tl.
+      auto.
+Qed.
+
+Lemma Exists_append2 {T : Type} {m n : nat}:
+  forall (xs: t T m) (ys: t T n) (P: T -> Prop), Exists P ys -> Exists P (append xs ys).
+Proof.
+  intros xs.
+  induction xs.
+  - intros; assumption.
+  - intros;
+    simpl.
+    apply Exists_cons_tl.
+    auto.
 Qed.
