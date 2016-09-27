@@ -3024,7 +3024,34 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
         try solve [ reflexivity | inversion prf ].
       simpl.
       auto.
-    Qed.      
+    Qed.
+
+    Lemma split_path_step: forall sigma n prf prf',
+        snd (split_path sigma n prf) = Arrow (last (fst (split_path sigma (S n) prf')))
+                                             (snd (split_path sigma (S n) prf')).
+    Proof.
+      intro sigma.
+      induction sigma
+        as [ | | sigma tau _ IHtau | ]
+             using IntersectionType_rect';
+        intros n prf prf';
+        destruct n;
+        try solve [ inversion prf' ].
+      - reflexivity.
+      - assert (lhs_eq: snd (split_path (Ty (PT_Arrow sigma tau)) (S n) prf) =
+                        snd (split_path tau n (proj2 (Nat.succ_le_mono _ _) prf))).
+        { reflexivity. }
+        rewrite lhs_eq.
+        assert (rhs_eq1: last (fst (split_path (Ty (PT_Arrow sigma tau)) (S (S n)) prf')) =
+                         last (fst (split_path tau (S n) (proj2 (Nat.succ_le_mono _ _) prf')))).
+        { reflexivity. }
+        rewrite rhs_eq1.
+        assert (rhs_eq2: snd (split_path (Ty (PT_Arrow sigma tau)) (S (S n)) prf') =
+                         snd (split_path tau (S n) (proj2 (Nat.succ_le_mono _ _) prf'))).
+        { reflexivity. }
+        rewrite rhs_eq2.
+        apply IHtau.
+    Qed.        
     
     Lemma CL_Path: forall Gamma M sigma,
         CL Gamma M sigma ->
@@ -3098,9 +3125,9 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
                   ].
               - apply Exists_cons_hd; split.
                 + assumption.
-                + assert (argCountPrf' : (argumentCount (App M N) <= src_count factor')%nat).
-                  { inversion factor_paths as [  | ? ? ? path_factor ].
-                    set (tgt_S_n := Path_src_count _ _ tgt_prf (Path_split_path _ _ _ path_factor')
+                + inversion factor_paths as [  | ? ? ? path_factor ].
+                  assert (argCountPrf' : (argumentCount (App M N) <= src_count factor')%nat).
+                  { set (tgt_S_n := Path_src_count _ _ tgt_prf (Path_split_path _ _ _ path_factor')
                                                    (Path_Arr _ _ path_factor)).
                     rewrite (source_count_plus _ _ argCountPrf).
                     simpl.
@@ -3110,7 +3137,31 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
                     apply (Nat.le_add_r). }
                   exists argCountPrf'; split.
                   * rewrite (split_path_shiftin _ _ _ argCountPrf).
-                    
+                    apply Forall2_shiftin.
+                    { set (factor'_last_eq := split_path_shiftin _ _ argCountPrf' argCountPrf).
+                      simpl plus in factor'_last_eq.
+                      rewrite factor'_last_eq.
+                      rewrite (shiftin_last).
+                      apply (CL_ST _ _ _ _ Nsigma).
+                      rewrite (split_path_step _ _ _ argCountPrf') in tgt_prf.
+                      set (tgt_prf' := AF_complete _ _ _ tgt_prf).
+                      inversion tgt_prf' as [ | | ? omega_factor ].
+                      - assumption.
+                      - contradict omega_factor.
+                        unfold not.
+                        simpl.
+                        apply Omega_path.
+                        assumption. }
+                    { exact args_prf. }
+                  * rewrite (split_path_step _ _ _ argCountPrf') in tgt_prf.
+                    set (tgt_prf' := AF_complete _ _ _ tgt_prf).
+                    inversion tgt_prf' as [ | | ? omega_factor ].
+                    { assumption.  }
+                    { contradict omega_factor.
+                      unfold not.
+                      simpl.
+                      apply Omega_path.
+                      assumption. }
               - apply Exists_cons_tl; assumption. }
             { apply IH.
               inversion factor_paths as [ | ? ? ? ? ? n_eq [ factor_eq factors_eq ]].

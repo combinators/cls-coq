@@ -375,9 +375,20 @@ Lemma Forall2_shiftin {S T : Type} {n : nat} (P: S -> T -> Prop):
   forall (xs: t S n) (ys: t T n) x y, P x y -> Forall2 P xs ys -> Forall2 P (shiftin x xs) (shiftin y ys).
 Proof.
   intros xs.
-  induction xs; intros ys x y.
-  - admit.
-  - admit.
+  induction xs as [ | x' n xs IH ]; intros ys x y.
+  - intros.
+    apply (fun r => case0 (fun ys => Forall2 P _ (shiftin y ys)) r ys).
+    apply Forall2_cons; [ | apply Forall2_nil ].
+    assumption.
+  - apply (caseS' ys).
+    clear ys.
+    intros y' ys prf prfs.
+    inversion prfs as [ | ? ? ? ? ? ? prfs' n_eq [ x'_eq xs_eq ] [ y'_eq ys_eq ] ].
+    apply Forall2_cons.
+    + assumption.
+    + rewrite (vect_exist_eq _ _ xs_eq) in prfs'.
+      rewrite (vect_exist_eq _ _ ys_eq) in prfs'.
+      apply IH; assumption.
 Qed.
 
 (*Lemma ForAll2'_tail: forall {n: nat} {A B: Type} (P : A -> B -> Type) (xs: t A (S n)) (ys: t B (S n)) (prfs: ForAll2' P xs ys), ForAll2' P (tl xs) (tl ys).
