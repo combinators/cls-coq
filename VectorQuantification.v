@@ -7,6 +7,38 @@ Require Import Arith.Peano_dec.
 
 Import EqNotations.
 
+Lemma shiftin_shiftout {T : Type} {n : nat}:
+  forall (xs: t T (S n)),
+    xs = shiftin (last xs) (shiftout xs).
+Proof.
+  induction n as [ | n IH ]; intro xs.
+  - apply (caseS' xs).
+    clear xs; intros x xs.
+    apply (fun r => case0 (fun xs => cons _ _ _ xs = shiftin (last (cons _ _ _ xs)) (shiftout (cons _ _ _ xs))) r xs).
+    reflexivity.
+  - apply (caseS' xs).
+    clear xs; intros x xs.
+    simpl.
+    rewrite (IH xs) at 1.
+    reflexivity.
+Qed.
+
+Lemma shiftout_shiftin {T : Type} {n : nat}:
+  forall (xs: t T (S n)) x,
+    xs = shiftout (shiftin x xs).
+Proof.
+  induction n as [ | n IH ]; intro xs.
+  - apply (caseS' xs).
+    clear xs; intros x xs x'.
+    apply (fun r => case0 (fun xs => cons _ _ _ xs = shiftout (shiftin _ (cons _ _ _ xs))) r xs).
+    reflexivity.
+  - apply (caseS' xs).
+    clear xs; intros x xs x'.
+    simpl.
+    rewrite (IH xs) at 1.
+    reflexivity.
+Qed.
+  
 Lemma rewrite_vect {S T: Type} {n n': nat}:
   forall (P : forall n, (t S n) -> T) (n_eq: n = n') (xs: t S n),
     P _ (rew [fun n => t S n] n_eq in xs) = P _ xs.
@@ -417,6 +449,48 @@ Proof.
       apply IH; assumption.
 Qed.
 
+Lemma Forall2_shiftout {T U : Type} {n : nat} (P: T -> U -> Prop):
+  forall (xs: t T (S n)) (ys: t U (S n)),
+    Forall2 P xs ys -> Forall2 P (shiftout xs) (shiftout ys).
+Proof.
+  induction n as [ | n IH ]; intros xs ys.
+  - apply (caseS' xs); clear xs; intros x xs.
+    apply (caseS' ys); clear ys; intros y ys.
+    intro.
+    apply (fun r => case0 (fun xs => Forall2 _ (shiftout (cons _ _ _ xs)) _) r xs).
+    apply (fun r => case0 (fun xs => Forall2 _ _ (shiftout (cons _ _ _ xs))) r ys).
+    apply Forall2_nil.
+  - apply (caseS' xs); clear xs; intros x xs.
+    apply (caseS' ys); clear ys; intros y ys.
+    intro prfs.
+    inversion prfs as [ | ? ? ? ? ? prf prfs' n_eq [ hd_eq1 tl_eq1 ] [hd_eq2 tl_eq2] ].
+    rewrite (vect_exist_eq _ _ tl_eq1) in prfs'.
+    rewrite (vect_exist_eq _ _ tl_eq2) in prfs'.
+    apply Forall2_cons; [ assumption | auto ].
+Qed.
+
+Lemma Forall2_last {T U : Type} {n : nat} (P: T -> U -> Prop):
+  forall (xs: t T (S n)) (ys: t U (S n)),
+    Forall2 P xs ys -> P (last xs) (last ys).
+Proof.
+  induction n; intros xs ys.
+  - apply (caseS' xs); clear xs; intros x xs.
+    apply (caseS' ys); clear ys; intros y ys.
+    intro prf.
+    inversion prf.
+    apply (fun r => case0 (fun xs => P (last (cons _ _ _ xs)) _) r xs).
+    apply (fun r => case0 (fun xs => P _ (last (cons _ _ _ xs))) r ys).
+    assumption.
+  - apply (caseS' xs); clear xs; intros x xs.
+    apply (caseS' ys); clear ys; intros y ys.
+    intro prfs.
+    inversion prfs as [ | ? ? ? ? ? prf prfs' n_eq [ hd_eq1 tl_eq1 ] [hd_eq2 tl_eq2] ].
+    rewrite (vect_exist_eq _ _ tl_eq1) in prfs'.
+    rewrite (vect_exist_eq _ _ tl_eq2) in prfs'.
+    simpl.
+    auto.
+Qed.
+  
 (*Lemma ForAll2'_tail: forall {n: nat} {A B: Type} (P : A -> B -> Type) (xs: t A (S n)) (ys: t B (S n)) (prfs: ForAll2' P xs ys), ForAll2' P (tl xs) (tl ys).
 Proof.
   intros n A B P xs ys prfs.
