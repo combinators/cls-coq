@@ -5443,7 +5443,7 @@ Module Type DisjointContexts(Symbols: SymbolSpecification) <: CombinatoryLogic(S
         Qed.
           
         
-        Lemma TypeOf_path:
+        Lemma CL_ContextSeparation_sound:
           forall M sigma,
             CL Gamma M sigma ->
             forall n, TypeOf n sigma ->
@@ -5555,6 +5555,24 @@ Module Type DisjointContexts(Symbols: SymbolSpecification) <: CombinatoryLogic(S
                 dependent rewrite tl_eq' in org_tl.
                 auto.
         Qed.
+
+        Lemma CL_ContextSeparation_complete:
+          forall M sigma n, CL (nth contexts n) M sigma -> CL Gamma M sigma.
+        Proof.
+          intros M sigma n prf.
+          induction prf.
+          - eapply CL_ST; [ apply CL_Var; eassumption | ].
+            unfold Gamma.
+            rewrite Apply_Distrib.
+            etransitivity; [ apply (ST_intersect_nth _ n) | ].
+            rewrite (nth_map (fun ctxt => Apply S (ctxt c)) contexts _ n eq_refl).
+            reflexivity.
+          - eapply CL_MP; eassumption.
+          - eapply CL_II; eassumption.
+          - eapply CL_ST; eassumption.
+        Qed.
+          
+        
       End CombinedContext.            
     End Disjoint.
   End DisjointTypeSystem.
