@@ -5202,43 +5202,6 @@ Module Type DisjointContexts(Symbols: SymbolSpecification) <: CombinatoryLogic(S
           apply contextsWF.
         Qed.
 
-        Lemma split_path_typeOf_snd: forall sigma n k prf,
-            TypeOf n sigma -> TypeOf n (snd (split_path sigma k prf)).
-        Proof.
-          intro sigma.
-          induction sigma using IntersectionType_rect';
-            intros n k prf n_sigma;
-            try solve [
-                  simpl in prf;
-                  destruct k; [ assumption | inversion prf ] ].
-          destruct k.
-          - assumption.
-          - simpl.
-            inversion n_sigma.
-            generalize (proj2 (Nat.succ_le_mono k (src_count sigma2)) prf).
-            intro prf'.
-            auto.
-        Qed.
-
-        Lemma split_path_typeOf_fst: forall sigma n k prf,
-            TypeOf n sigma -> Forall (TypeOf n) (fst (split_path sigma k prf)).
-        Proof.
-          intro sigma.
-          induction sigma using IntersectionType_rect';
-            intros n k prf n_sigma;
-            try solve [
-                  simpl in prf;
-                  destruct k; [ apply Forall_nil | inversion prf ] ].
-          destruct k.
-          - apply Forall_nil.
-          - simpl.
-            inversion n_sigma.
-            apply Forall_cons; [ assumption | ].
-            generalize (proj2 (Nat.succ_le_mono k (src_count sigma2)) prf).
-            intro prf'.
-            auto.
-        Qed.
-
         Lemma ST_typeOf_path:
           forall sigma tau m n,
             (Omega tau -> False) ->
@@ -5298,6 +5261,108 @@ Module Type DisjointContexts(Symbols: SymbolSpecification) <: CombinatoryLogic(S
               + left; assumption. }
             inversion not_omega as [ left_choice | right_choice ]; eauto.
         Qed.
+
+        Lemma TypeOf_disjoint:
+          forall sigma m n, TypeOf m sigma -> TypeOf n sigma -> Omega sigma \/ m = n.
+        Proof.
+          intro sigma.
+          induction sigma
+            as [ | | src tgt IHsrc IHtgt | l r IHl IHr ] using IntersectionType_rect'.
+          - intros; left; exact I.
+          - intros m n m_sigma n_sigma.
+            right.
+            inversion m_sigma.
+            inversion n_sigma.
+            destruct (Fin.eq_dec m n) as [ | m_not_n ]; [ assumption | ].
+            assert False.
+            { eapply SymbolsDisjoint; eassumption. }
+            contradiction.
+          - intros m n m_sigma n_sigma.
+            inversion m_sigma; inversion n_sigma.
+            simpl; auto.
+          - intros m n m_sigma n_sigma.
+            inversion m_sigma; inversion n_sigma.
+            assert (dec_l: Omega l \/ m = n).
+            { auto. }
+            assert (dec_r: Omega r \/ m = n).
+            { auto. }
+            destruct dec_l; destruct dec_r;
+              solve [ left; split; assumption
+                    | right; assumption ].
+        Qed.           
+            
+        
+        Lemma Combinator_path_typesOfn:
+          forall c n S, WellFormed S ->
+                   Forall (fun path => TypeOf n path -> CL (nth contexts n) (Symbol c) path)
+                          (projT2 (factorize (organize (Apply S (Gamma c))))).
+        Proof.
+          intros c n S WFS.
+          unfold Gamma.
+          rewrite Apply_Distrib.
+          rewrite (factorize_organize_intersect numberOfContexts).
+          apply Forall_factors_distrib; intro k.
+          rewrite (nth_map _ _ _ _ eq_refl).
+          rewrite (nth_map _ _ _ _ eq_refl).
+          apply (nth_Forall); intro k'.
+          intro n_factor.          
+          eapply CL_ST; [ apply CL_Var; eassumption | ].
+          assert (nk_eq: n = k \/
+                         Omega (nth (projT2 (factorize (organize (Apply S (nth contexts k c))))) k')).
+          { assert (k_assumption : TypeOf k (Apply S (nth contexts k c))).
+            { apply WF_respectful; auto. }
+            generalize (Forall_nth _ _
+                                   (factorize_typeOf _ _ (organize_typeOf _ _ k_assumption))
+                                   k').
+            intro k_factor.
+            destruct (TypeOf_disjoint _ _ _ n_factor k_factor);
+              [ right; assumption | left; assumption ]. }
+          destruct nk_eq as [ nk_eq | c_omega ].
+          + rewrite nk_eq.
+            rewrite ST_organize_ge.
+            rewrite (factorize_organized _ (organize_organized _)).
+            apply ST_intersect_nth.
+          + rewrite <- (Omega_sound _ c_omega).
+            apply ST_OmegaTop.
+        Qed.        
+              
+        Lemma split_path_typeOf_snd: forall sigma n k prf,
+            TypeOf n sigma -> TypeOf n (snd (split_path sigma k prf)).
+        Proof.
+          intro sigma.
+          induction sigma using IntersectionType_rect';
+            intros n k prf n_sigma;
+            try solve [
+                  simpl in prf;
+                  destruct k; [ assumption | inversion prf ] ].
+          destruct k.
+          - assumption.
+          - simpl.
+            inversion n_sigma.
+            generalize (proj2 (Nat.succ_le_mono k (src_count sigma2)) prf).
+            intro prf'.
+            auto.
+        Qed.
+
+        Lemma split_path_typeOf_fst: forall sigma n k prf,
+            TypeOf n sigma -> Forall (TypeOf n) (fst (split_path sigma k prf)).
+        Proof.
+          intro sigma.
+          induction sigma using IntersectionType_rect';
+            intros n k prf n_sigma;
+            try solve [
+                  simpl in prf;
+                  destruct k; [ apply Forall_nil | inversion prf ] ].
+          destruct k.
+          - apply Forall_nil.
+          - simpl.
+            inversion n_sigma.
+            apply Forall_cons; [ assumption | ].
+            generalize (proj2 (Nat.succ_le_mono k (src_count sigma2)) prf).
+            intro prf'.
+            auto.
+        Qed.
+
 
         Lemma Exist_path_unapply:
           forall S M N sigma,
@@ -5391,7 +5456,51 @@ Module Type DisjointContexts(Symbols: SymbolSpecification) <: CombinatoryLogic(S
             eexists; eassumption. }
           revert sigma prf.
           induction M as [ c | M IHM N IHN ].
-          - admit.
+          - intros sigma prf n n_sigma.
+            generalize (CL_Path _ _ _ prf).
+            intro path_prfs.
+            apply CL_all_paths; [ assumption | ].
+            generalize (factorize_typeOf _ _ (organize_typeOf _ _ n_sigma)).
+            intro types_of.
+            generalize (organized_path_factors _ (organize_organized sigma)).
+            intro organized_xs.
+            induction path_prfs as [ | ? ? ? [ S [ WF_S ex_prf ] ] ].
+            + apply Forall_nil.
+            + generalize (Combinator_path_typesOfn (rootOf (Symbol c)) n S WF_S).
+              intro paths_inhabited.            
+              inversion types_of as [ | ? ? ? type_of_hd types_of_tl n_eq [ hd_eq tl_eq ] ] .
+              dependent rewrite tl_eq in types_of_tl.
+              apply Forall_cons; [ | auto ].
+              clear types_of_tl n_eq hd_eq tl_eq types_of.
+              generalize (Combinator_path_types (rootOf (Symbol c)) S WF_S).
+              intro path_types.              
+              induction ex_prf
+                as [ ? path ? [ path_path [ argCountPrf [ _  tgt_le ] ] ]
+                   |  ].
+              * eapply CL_ST; [ | exact tgt_le ].
+                simpl.
+                assert (n_path : TypeOf n path).
+                { inversion path_types as [ | ? ? ? [ m' m'_path ] ].
+                  assert (m'_eq : m' = n).
+                  { eapply (ST_typeOf_path);
+                      [ | | | exact type_of_hd | exact tgt_le ].
+                    - inversion organized_xs.
+                      apply Omega_path; assumption.
+                    - apply Path_split_path; assumption.
+                    - apply (split_path_typeOf_snd); assumption. }
+                  rewrite <- m'_eq.
+                  assumption. }
+                simpl in paths_inhabited.
+                inversion paths_inhabited.
+                auto.
+              * inversion path_types as [ | ? ? ? ? path_types' n_eq' [ hd_eq' tl_eq' ]].
+                dependent rewrite tl_eq' in path_types'.
+                inversion paths_inhabited as [ | ? ? ? ? paths_inhabited' n_eq'' [ hd_eq'' tl_eq'' ]].
+                dependent rewrite tl_eq'' in paths_inhabited'.
+                auto.
+              * inversion organized_xs as [ | ? ? ? ? organized_xs' n_eq' [ hd_eq' tl_eq' ] ].
+                dependent rewrite tl_eq' in organized_xs'.
+                auto.              
           - intros sigma prf n n_sigma.
             generalize (CL_Path _ _ _ prf).
             intro path_prfs.
