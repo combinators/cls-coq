@@ -5027,6 +5027,7 @@ Module Type DisjointContexts(Symbols: SymbolSpecification) <: CombinatoryLogic(S
           [ apply IHsigma1 | apply IHsigma2 ];
           assumption.
     Qed.
+  
   End Disjoint.
     
   Module Type DisjointTypeSystem <: TypeSystem.
@@ -5201,6 +5202,43 @@ Module Type DisjointContexts(Symbols: SymbolSpecification) <: CombinatoryLogic(S
           apply contextsWF.
         Qed.
 
+        Lemma split_path_typeOf_snd: forall sigma n k prf,
+            TypeOf n sigma -> TypeOf n (snd (split_path sigma k prf)).
+        Proof.
+          intro sigma.
+          induction sigma using IntersectionType_rect';
+            intros n k prf n_sigma;
+            try solve [
+                  simpl in prf;
+                  destruct k; [ assumption | inversion prf ] ].
+          destruct k.
+          - assumption.
+          - simpl.
+            inversion n_sigma.
+            generalize (proj2 (Nat.succ_le_mono k (src_count sigma2)) prf).
+            intro prf'.
+            auto.
+        Qed.
+
+        Lemma split_path_typeOf_fst: forall sigma n k prf,
+            TypeOf n sigma -> Forall (TypeOf n) (fst (split_path sigma k prf)).
+        Proof.
+          intro sigma.
+          induction sigma using IntersectionType_rect';
+            intros n k prf n_sigma;
+            try solve [
+                  simpl in prf;
+                  destruct k; [ apply Forall_nil | inversion prf ] ].
+          destruct k.
+          - apply Forall_nil.
+          - simpl.
+            inversion n_sigma.
+            apply Forall_cons; [ assumption | ].
+            generalize (proj2 (Nat.succ_le_mono k (src_count sigma2)) prf).
+            intro prf'.
+            auto.
+        Qed.
+
         Lemma ST_typeOf_path:
           forall sigma tau m n,
             (Omega tau -> False) ->
@@ -5289,53 +5327,55 @@ Module Type DisjointContexts(Symbols: SymbolSpecification) <: CombinatoryLogic(S
           { rewrite <- (factorize_organized _ (organize_organized _)).
             eapply CL_ST; [ | apply ST_organize_ge ].
             apply CL_Var; assumption. }
-          induction ex_prf as [ ? path ? [ path_path [ argCountPrf [ srcPrfs tgtPrf ] ] ] | ].
+          induction ex_prf as [ ? path ? [ path_path [ argCountPrf [ srcPrfs tgtPrf ] ] ]
+                              | ? ? paths ].
           - apply Exists_cons_hd; split; [ assumption | ].
             exists argCountPrf; repeat split.
-            + revert argCountPrf srcPrfs tgtPrf root_prf.
-              rewrite <- (applyAllSpec M).
-              intros argCountPrf srcPrfs tgtPrf root_prf.
-              simpl in argCountPrf.
-              assert (argCountPrf':
-                  (argumentCount (applyAll (Symbol (rootOf M)) (argumentsOf M)) <=
-                   src_count path)%nat).
-              { etransitivity; [ apply le_S | eassumption ]; reflexivity. }
-              simpl argumentCount.
-              set (eq := split_path_step _ _ argCountPrf' argCountPrf).
-              simpl in eq.
-              simpl.
-              rewrite <- eq.
-              clear eq.
-              assert (rootPrf' : CL Gamma (Symbol (rootOf M)) path).
-              { rewrite (applyAllSpec) in root_prf.
-                eapply CL_ST; [ apply root_prf | ].
+            + assert (rootPrf' : CL Gamma (Symbol (rootOf M)) path).
+              { eapply CL_ST; [ apply root_prf | ].
                 etransitivity; [ apply (ST_intersect_nth _ F1) | ].
                 reflexivity. }
+              assert (argCountPrf': (argumentCount M <= src_count path)%nat).
+              { etransitivity; [ apply le_S | eassumption ]; reflexivity. }
               assert (srcPrfs' :
-                        Forall2 (CL Gamma) (rew <- [fun M => t Term (argumentCount M)] applyAllSpec M in
-                                               argumentsOf M)
-                                (fst (split_path path (argumentCount (applyAll (Symbol (rootOf M))
-                                                                               (argumentsOf M)))
-                                                 argCountPrf'))
-                     ).
-              { clear tgtPrf.
-                revert argCountPrf srcPrfs.
-                rewrite <- (applyAll_shiftin (Symbol (rootOf M)) N (argumentsOf M)).
-              generalize (CL_ApplyPath Gamma (rootOf M)
-                                  (argumentCount (applyAll (Symbol (rootOf M)) (argumentsOf M)))
-                                  (rew <- [fun M => t Term (argumentCount M)] (applyAllSpec M) in
-                                      argumentsOf M)
-                                  path argCountPrf'
-                                  path_path rootPrf'
-                         ).
-              
-              intro 
-              revert argCountPrf'.
-              rewrite (applyAllSpec M).
-              rewrite <- (applyAllSpec M) at .
-              apply CL_ApplyPath.
-              
-              induction (argumentCount (App M N)).
+                        Forall2 (CL Gamma)
+                                (argumentsOf M)
+                                (fst (split_path path (argumentCount M) argCountPrf'))).
+              { simpl argumentCount in srcPrfs.
+                simpl argumentsOf in srcPrfs.
+                set (params_eq := (split_path_shiftin _ _ argCountPrf argCountPrf')).
+                simpl (_ + _) in params_eq.
+                rewrite params_eq in srcPrfs.
+                clear params_eq.
+                rewrite (shiftout_shiftin (argumentsOf M) N).
+                rewrite (shiftout_shiftin _
+                                          (last (fst (split_path path
+                                                                 (Datatypes.S (argumentCount M))
+                                                                 argCountPrf)))). 
+                apply (Forall2_shiftout).
+                assumption. }
+              generalize (CL_ApplyPath _ _ _ _ _ _
+                                       path_path rootPrf'
+                                       srcPrfs').
+              intro Mprf.
+              rewrite (applyAllSpec M) in Mprf.
+              rewrite (split_path_step _ _ argCountPrf' argCountPrf) in Mprf.
+              exact Mprf.
+            + simpl argumentsOf in srcPrfs.
+              generalize (Forall2_last _ _ _ srcPrfs).
+              intro Nprf.
+              rewrite (shiftin_last) in Nprf.
+              exact Nprf.
+            + assumption.
+          - apply Exists_cons_tl.
+            assert (CL Gamma (Symbol (rootOf (App M N))) (intersect paths)).
+            { eapply CL_ST; [ eassumption | ].
+              clear ...
+              destruct paths.
+              - apply ST_OmegaTop.
+              - simpl; rewrite (ST_InterMeetRight); reflexivity. }
+            auto.
+        Qed.
           
         
         Lemma TypeOf_path:
@@ -5358,113 +5398,53 @@ Module Type DisjointContexts(Symbols: SymbolSpecification) <: CombinatoryLogic(S
             apply CL_all_paths; [ assumption | ].
             generalize (factorize_typeOf _ _ (organize_typeOf _ _ n_sigma)).
             intro types_of.
+            generalize (organized_path_factors _ (organize_organized sigma)).
+            intro organized_xs.
             induction path_prfs as [ | ? ? ? [ S [ WF_S ex_prf ] ] ].
             + apply Forall_nil.
             + inversion types_of as [ | ? ? ? type_of_hd types_of_tl n_eq [ hd_eq tl_eq ] ] .
               dependent rewrite tl_eq in types_of_tl.
               apply Forall_cons; [ | auto ].
               clear types_of_tl n_eq hd_eq tl_eq types_of. 
-              induction ex_prf
-                as [ path ? ? [ path_path [ argCountPrf [ srcPrfs tgtPrf ] ] ] | ].
-              * 
-              
-          
-          intros M sigma prf.
-          generalize (CL_Path _ _ _ prf).
-          intro path_prfs.
-          intros n n_sigma.
-          eapply CL_ST; [ | apply ST_organize_le ].
-          generalize (organize_typeOf _ _ n_sigma).
-          assert (WFS : exists S, WellFormed S).
-          { revert prf.
-            clear ...
-            intro prf.
-            induction prf; try solve [ assumption ].
-            + eexists; eassumption. }
-          clear n_sigma prf.
-          revert path_prfs.
-          revert M sigma.
-          induction M as [ M argCount_eq | M argCount IH argCount_eq ] using (Term_size_ind).
-          - destruct M; [ | inversion argCount_eq ].
-            admit.
-          - destruct M as [ | M N ]; [ inversion argCount_eq | ].
-            intros sigma path_prfs n_orgsigma.
-            eapply CL_MP.
-            
-            
-          
-          remember (argumentsOf M) as args eqn:args_eq.
-          revert args args_eq.
-          
-          generalize (argumentCount M).
-          induction M.
-          - admit.
-          - 
-          
-          induction 
-          induction (argumentCount M) as [ | argCount IH ].
-          - admit.
-          - intros path_prfs n_sigma.
-            apply IH; [ | assumption ].
-            induction path_prfs as [ | ? ? ? prf prfs n_eq [ hd_eq tl_eq ] ].
-            + apply Forall_nil.
-            + apply Forall_cons.
-              * inversion prf as [ S [ WF_S ex_prf ] ].
-                exists S; split; [ assumption | ].
-                induction ex_prf
-                  as [ ? path ? [ path_path [ argCountPrf [ srcs_ge tgt_le ] ] ] | ].
-                { apply Exists_cons_hd; split; [ assumption | ].
-                  induction path using IntersectionType_rect';
-                    try solve [ inversion path_path ].
-                  - inversion argCountPrf.
-                  - simpl in srcs_ge.
-                    eexists; split.
-                    + inversion srcs_ge as [ | ? ? ? ? ? ? srcs_ge' n_eq' [ hd_eq1 tl_eq1 ] [ hd_eq2 tl_eq2 ] ].
-                      rewrite (vect_exist_eq _ _ tl_eq1) in srcs_ge'.
-                      rewrite (vect_exist_eq _ _ tl_eq2) in srcs_ge'.
-                      exact sr
-                      
-                  inversion srcs_ge.
-                  
-                  
-                  exists (Nat.lt_le_incl _ _ argCountPrf); split.
-                  - inversion srcs_ge.
-                    
-
-                    rewrite (split
-                    rewrite <- (split_path_shiftin _ _ argCountPrf (Nat.lt_le_incl _ _ argCountPrf)).
-                    
-                    simpl in srcs_ge.
-                    
-                    apply Forall2_shiftin. in srcs_ge.
-                    induction srcs_ge.
-                    +
-                  
-            
-            intros path_prfs n_sigma.
-
-            
-            apply CL_Var.
-          
-          induction (organize sigma) using IntersectionType_rect'.
-          - intros; inversion WFS; eapply CL_omega; eassumption.
-          - admit.
-          - simpl in path_prfs.
-            inversion path_prfs as [ | ? ? ? prf ].
-            inversion prf as [ S [ WF_S ex_path ] ].
-            generalize (Combinator_path_types (rootOf M) S WF_S).
-            induction ex_path as [ path ? ? [ path_path args_prf  ] | ]; intro path_types.
-            + inversion path_types as [ | ? ? ? [ k path_k ] ].
-              
-              
-            
-          - intro n_inter.
-            inversion n_inter.
-            simpl in path_prfs.
-            generalize (append_Forall1 _ _ _ path_prfs).
-            generalize (append_Forall2 _ _ _ path_prfs).
-            intros paths_r paths_l.
-            apply CL_II; auto.
+              generalize (Exist_path_unapply _ _ _ _ WF_S ex_prf).
+              intro ex_prf'.
+              clear ex_prf.
+              generalize (Combinator_path_types (rootOf (App M N)) S WF_S).
+              intro path_types.
+              induction ex_prf'
+                as [ ? path ? [ path_path [ argCountPrf [ Mprf [ Nprf tgt_le ] ] ] ]
+                   |  ].
+              * eapply CL_ST; [ | exact tgt_le ].
+                assert (n_path : TypeOf n path).
+                { inversion path_types as [ | ? ? ? [ m' m'_path ] ].
+                  assert (m'_eq : m' = n).
+                  { eapply (ST_typeOf_path);
+                      [ | | | exact type_of_hd | exact tgt_le ].
+                    - inversion organized_xs.
+                      apply Omega_path; assumption.
+                    - apply Path_split_path; assumption.
+                    - apply (split_path_typeOf_snd); assumption. }
+                  rewrite <- m'_eq.
+                  assumption. }
+                assert (argCountPrf' : (argumentCount M <= src_count path)%nat).
+                { etransitivity; [ apply le_S | eassumption ]; reflexivity. }
+                eapply CL_MP.
+                { apply IHM.
+                  - eassumption.
+                  - rewrite <- (split_path_step _ _ argCountPrf').
+                    apply (split_path_typeOf_snd).
+                    assumption. }
+                { apply IHN.
+                  - assumption.
+                  - apply Forall_last.
+                    apply (split_path_typeOf_fst).
+                    assumption. }
+              * inversion path_types as [ | ? ? ? ? path_types' n_eq' [ hd_eq' tl_eq' ] ].
+                dependent rewrite tl_eq' in path_types'.
+                auto.
+              * inversion organized_xs as [ | ? ? ? ? org_tl n_eq' [ hd_eq' tl_eq' ] ].
+                dependent rewrite tl_eq' in org_tl.
+                auto.
         Qed.
         
 

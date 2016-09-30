@@ -24,13 +24,12 @@ Proof.
 Qed.
 
 Lemma shiftout_shiftin {T : Type} {n : nat}:
-  forall (xs: t T (S n)) x,
+  forall (xs: t T n) x,
     xs = shiftout (shiftin x xs).
 Proof.
   induction n as [ | n IH ]; intro xs.
-  - apply (caseS' xs).
-    clear xs; intros x xs x'.
-    apply (fun r => case0 (fun xs => cons _ _ _ xs = shiftout (shiftin _ (cons _ _ _ xs))) r xs).
+  - intro.
+    apply (fun r => case0 (fun xs => xs = shiftout (shiftin _ xs)) r xs).
     reflexivity.
   - apply (caseS' xs).
     clear xs; intros x xs x'.
@@ -261,8 +260,26 @@ Proof.
       assumption.
 Qed.
 
-
-
+Lemma Forall_last:
+  forall {T : Type} (P : T -> Prop) m (args: t T (S m)),
+    Forall P args -> P (last args).
+Proof.
+  intros T P m.
+  induction m.
+  - intro args.
+    apply (caseS' args); clear args; intros arg args.
+    apply (fun r => case0 (fun xs => Forall _ (cons _ _ _ xs) -> P (last (cons _ _ _ xs))) r args).
+    intro prfs.
+    inversion prfs.
+    assumption.
+  - intro args.
+    apply (caseS' args); clear args; intros arg args.
+    intro prfs.
+    inversion prfs as [ | ? ? ? ? prfs' n_eq [ arg_eq args_eq ] ].
+    dependent rewrite args_eq in prfs'.
+    simpl.
+    auto.
+Qed.
    
 Lemma Forall_dec_eq:
   forall {T : Type} m
