@@ -8,6 +8,8 @@ Require Import Coq.Arith.PeanoNat.
 Require Import Coq.Arith.Compare_dec.
 Require Import Coq.Logic.Eqdep_dec.
 Require Import VectorQuantification.
+Require Import Coq.Sorting.Permutation.
+Require Import Coq.Lists.ListDec.
 
 Module Type SymbolSpecification.
   Parameter ConstructorSymbol: Set.
@@ -5138,8 +5140,7 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
              + right; auto.
          Qed.
          
-         Require Import Coq.Sorting.Permutation.
-         Require Import Coq.Lists.ListDec.
+        
 
          Lemma powerset_spec: forall (x : IntersectionType) xs ys,
              List.In x ys ->
@@ -5422,38 +5423,205 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
                apply ST_SubtypeDistrib; assumption.
              + apply List.Forall_cons; assumption.
          Qed.
-                         
-             
-         Lemma CL_finite_dec: forall Gamma M sigma, { CL Gamma M sigma } + { CL Gamma M sigma -> False }.
+
+         Lemma CL_Mintype_suffix_sound':
+          forall Gamma M
+            (M_dec: forall sigma, { CL Gamma M sigma } + { CL Gamma M sigma -> False }),
+          forall sigma',
+            List.In sigma'
+                    (filter (fun sigma' => match M_dec sigma' with | left _ => true | right _ => false end)
+                            (allPathSuffixes (argumentCount M)
+                                             (minimalInstance (Gamma (rootOf M))))) ->
+            CL Gamma M sigma'.
          Proof.
-           intros Gamma M.
-           destruct (cardinality _ SubstitutionSpace_finite) eqn:card_eq.
-           - intro sigma.
-             right.
-             intro prf.
+          intros Gamma M M_dec sigma'.
+          match goal with
+          | [ |- List.In _ (List.filter _ ?xs) -> _ ] => induction xs as [ | hd tl IH ]
+          end.
+          - intro devil; inversion devil.
+          - intro prf.
+            unfold List.In in prf.
+            simpl in prf.
+            revert prf.
+            destruct (M_dec hd).
+            + intro prf.
+              inversion prf as [ prf_hd | prf_tl ].
+              * rewrite <- prf_hd; assumption.
+              * auto.
+            + intro; auto.
+        Qed.
+
+        Lemma powerset_hd_in: forall {A: Type} (x: A) xs ys,
+            List.In (List.cons x xs) (powerset ys) ->
+            List.In x ys.
+        Proof.
+          intros A x xs ys.
+          revert xs.
+          induction ys.
+          - intros ? devil; inversion devil as [ devil' | devil']; inversion devil'.
+          - intros xxs xxs_in.
+            destruct (in_app_or _ _ _ xxs_in) as [ inl | inr ].
+            + destruct (ListIn_map_cons _ _ _ inl) as [ ? [ x_eq nil_in ] ].
+              inversion x_eq; left; reflexivity.
+            + right; eauto.
+        Qed.
+                  
+        Lemma powerset_spec_in: forall {A: Type} (xs ys: list A),
+            List.In xs (powerset ys) -> List.Forall (fun x => List.In x ys) xs.
+        Proof.
+          intros A xs.
+          induction xs as [ | x xs IH ].
+          - intros; apply List.Forall_nil.
+          - intros ys in_xs.
+            destruct ys.
+            + inversion in_xs as [ devil | devil ].
+              * inversion devil.
+              * inversion devil.
+            + simpl in in_xs.
+              destruct (in_app_or _ _ _ in_xs) as [ inl | inr ].
+              * destruct (ListIn_map_cons _ _ _ inl) as [ ys' [ xs_eq xs_in' ] ].
+                inversion xs_eq as [ [ hd_eq tl_eq ] ].
+                apply List.Forall_cons.
+                { left; reflexivity. }
+                { rewrite tl_eq in IH.
+                  apply IH.
+                  apply in_or_app; right.
+                  assumption. }
+              * apply List.Forall_cons.
+                { eapply powerset_hd_in; eassumption. }
+                { apply Forall_forall.
+                  intros x' x'_in_xs.
+                  generalize (IH _ (powerset_smaller_set_incl _ _ _ inr)).
+                  intro xs_in_ys.
+                  right.
+                  revert x'_in_xs xs_in_ys.
+                  clear ...
+                  intros x'_in_xs xs_in_ys.
+                  induction xs.
+                  - inversion x'_in_xs.
+                  - destruct x'_in_xs as [ eq | inr ].
+                    + rewrite eq in *.
+                      inversion xs_in_ys.
+                      assumption.
+                    + inversion xs_in_ys.
+                      auto. }
+        Qed.
+            
+        Lemma CL_Mintype_suffix_sound:
+           forall Gamma M
+             (M_dec: forall sigma, { CL Gamma M sigma } + { CL Gamma M sigma -> False }) S,
+             WellFormed S ->
+             forall sigma,
+               (exists sigma',
+                   sigma' <= sigma /\
+                   List.In sigma'
+                         (List.map (fun xs => intersect (of_list xs))
+                                   (powerset (filter (fun sigma' => match M_dec sigma' with
+                                                                 | left _ => true
+                                                                 | right _ => false end)
+                                                     (allPathSuffixes (argumentCount M)
+                                                                      (minimalInstance
+                                                                         (Gamma (rootOf M)))))))) ->
+               CL Gamma M sigma.
+        Proof.
+          intros Gamma M M_dec S WF_S sigma prf.
+          destruct prf as [ sigma' [ sigma'_le sigma'_in_powerset ] ].
+          eapply CL_ST; [ | apply sigma'_le ].
+          generalize (proj1 (in_map_iff (fun xs => intersect (of_list xs)) _ _) sigma'_in_powerset).
+          intros [ sigmas' [ sigmas'_eq sigmas'_in ] ].
+          generalize (powerset_spec_in _ _ sigmas'_in).
+          intro sigmas'_prfs.
+          rewrite <- sigmas'_eq.
+          destruct (sigmas') as [ | hd tl ].
+          - eapply CL_omega; eassumption.
+          - apply (CL_intersect_many).
+            apply nth_Forall.
+            intro k.
+            generalize (In_ListIn _ _ _ (eq_refl (nth (of_list (List.cons hd tl)) k))).
+            intro nth_in.
+            apply (CL_Mintype_suffix_sound' _ _ M_dec).
+            generalize (proj1 (List.Forall_forall _ _) sigmas'_prfs).
+            intro sigmas'_prf.
+            apply sigmas'_prf.
+            assumption.
+        Qed.
+            
+        Lemma CL_finite_dec: forall Gamma M sigma, { CL Gamma M sigma } + { CL Gamma M sigma -> False }.
+        Proof.
+          intros Gamma M.
+          destruct (cardinality _ SubstitutionSpace_finite) eqn:card_eq.
+          - intro sigma.
+            right.
+            intro prf.
              induction prf as [ ? S WF_S | | | ]; try solve [ contradiction ].
              generalize (toFin _ SubstitutionSpace_finite (exist _ S WF_S)).
              rewrite card_eq.
              intro k; inversion k.
-           - induction M as [ c | M IHM N IHN ].
-             + intro sigma.
-               destruct (ST_dec (minimalInstance (Gamma c)) sigma).
-               * left.
-                 eapply CL_ST; [ | eassumption ].
-                 apply MinimalType_sound.
-                 rewrite card_eq.
-                 apply (Nat.lt_0_succ).
-               * right.
-                 intro prf.
-                 generalize (MinimalType_minimal _ _ _ prf).
-                 assumption.
-             + intro sigma.
-               apply CL_MP_inv_dec_sound.
-               
-               
-               set (minType := 
-            
-
+          - induction M as [ c | M IHM N IHN ].
+            + intro sigma.
+              destruct (ST_dec (minimalInstance (Gamma c)) sigma).
+              * left.
+                eapply CL_ST; [ | eassumption ].
+                apply MinimalType_sound.
+                rewrite card_eq.
+                apply (Nat.lt_0_succ).
+              * right.
+                intro prf.
+                generalize (MinimalType_minimal _ _ _ prf).
+                assumption.
+            + intro sigma.
+              assert (exS : { S : _ | WellFormed S }).
+              { eapply (fromFin _ SubstitutionSpace_finite).
+                rewrite card_eq.
+                exact F1. }
+              destruct exS as [ S WF_S ].
+              apply CL_MP_inv_dec_sound.
+              assert (M_dec:
+                        {List.Exists
+                           (fun sigma' => CL Gamma M (Arrow sigma' sigma))
+                           (List.map (fun xs => intersect (of_list xs))
+                                     (powerset (filter (fun sigma' => match IHN sigma' with
+                                                                   | left _ => true
+                                                                   | right _ => false end)
+                                                       (allPathSuffixes (argumentCount N)
+                                                                        (minimalInstance
+                                                                           (Gamma (rootOf N)))))))} +
+                        {List.Exists
+                           (fun sigma' => CL Gamma M (Arrow sigma' sigma))
+                           (List.map (fun xs => intersect (of_list xs))
+                                     (powerset (filter (fun sigma' => match IHN sigma' with
+                                                                   | left _ => true
+                                                                   | right _ => false end)
+                                                       (allPathSuffixes (argumentCount N)
+                                                                        (minimalInstance
+                                                                           (Gamma (rootOf N))))))) -> False}).
+              { apply List.Exists_dec.
+                intro x; eapply IHM. }
+              destruct M_dec as [ Mprf | Mdisprf ].
+              * left.
+                destruct (proj1 (List.Exists_exists _ _) Mprf) as [ sigma' [ in_prf p_prf ] ].
+                { exists sigma'; split.
+                  - assumption.
+                  - apply (CL_Mintype_suffix_sound _ _ IHN S WF_S).
+                    eexists; split; [ reflexivity | eassumption ]. }
+              * right.
+                intro sigma_prf.
+                destruct sigma_prf as [ sigma' [ Mprf Nprf ] ].
+                destruct (CL_Mintype_suffix_complete _ _ IHN _ Nprf) as [ sigma'' [ sigma''_le sigma''_in ] ].
+                assert (Mprf': CL Gamma M (Arrow sigma'' sigma)).
+                { eapply CL_ST; [ eassumption | ].
+                  apply ST_CoContra; [ assumption | reflexivity ]. }
+                generalize (proj2 (List.Exists_exists _ _)
+                                  (ex_intro (fun sigma' =>
+                                               List.In sigma'
+                                                       (List.map (fun xs : list IntersectionType => intersect (of_list xs))
+                                                                 (powerset
+                                                                    (filter (fun sigma' : IntersectionType => if IHN sigma' then true else false)
+                                                                            (allPathSuffixes (argumentCount N) (minimalInstance (Gamma (rootOf N))))))) /\
+                                               CL Gamma M (Arrow sigma' sigma))
+                                            sigma'' (conj sigma''_in Mprf'))).
+                assumption.
+        Qed.
         
       Section DecidableTypeChecking.
         Variable Gamma: Context.
