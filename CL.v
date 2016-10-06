@@ -5,6 +5,7 @@ Require Import Coq.Vectors.Fin.
 Require Import Coq.Vectors.Vector.
 Require Import Coq.Classes.Morphisms.
 Require Import Coq.Arith.PeanoNat.
+Require Import Coq.Arith.Compare_dec.
 Require Import Coq.Logic.Eqdep_dec.
 Require Import VectorQuantification.
 
@@ -3667,7 +3668,7 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
       auto.
   Qed.
   
-  Definition Substitution: Type := VariableSymbol -> IntersectionType.
+  Definition Substitution: Set := VariableSymbol -> IntersectionType.
   Fixpoint Apply (S: Substitution) (sigma: TypeScheme): IntersectionType :=
     match sigma with
     | Var alpha => S alpha
@@ -3766,6 +3767,20 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
           * apply ST_OmegaArrow.
         + assumption.
     Qed.
+
+    Lemma CL_intersect_many {n}: forall Gamma M (xs: t IntersectionType (S n)),
+        Forall (CL Gamma M) xs -> CL Gamma M (intersect xs).
+    Proof.
+      intros Gamma M xs.
+      apply (caseS' xs); clear xs; intros x xs; revert x.
+      induction xs as [ | x' n xs IH ].
+      - intros x prf; inversion prf; assumption.
+      - intros x prfs.
+        generalize (append_Forall2 _ (cons _ x _ (nil _)) (cons _ x' _ xs) prfs).
+        generalize (Forall_nth _ _ prfs F1).
+        intros.
+        apply CL_II; eauto.
+    Qed.        
 
     Lemma MP_generation: forall Gamma M N tau,
         CL Gamma (App M N) tau -> exists sigma, CL Gamma M (Arrow sigma tau) /\ CL Gamma N sigma.
@@ -4188,6 +4203,76 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
           * assumption.
     Qed.
 
+    Lemma CL_Path_c: forall Gamma c sigma,
+        CL Gamma (Symbol c) sigma ->
+        Forall (fun sigma' =>
+                  exists S, WellFormed S /\
+                       Exists (fun path => Path path /\ path <= sigma')
+                              (projT2 (factorize (organize (Apply S (Gamma c))))))
+               (projT2 (factorize (organize sigma))).
+    Proof.
+      intros Gamma c sigma prf.
+      generalize (CL_Path _ _ _ prf).
+      intro path_prfs.
+      match goal with
+      | [ |- Forall _ ?tgt ] =>
+        induction tgt as [ | path n paths IH ]
+      end.
+      - apply Forall_nil.
+      - apply Forall_cons.
+        + generalize (Forall_nth _ _ path_prfs F1).
+          intro path_prf.
+          destruct path_prf as [ S [ WF_S ex_prf ] ].
+          eexists; split; [ eassumption | ].
+          simpl in ex_prf.
+          induction ex_prf as [ path' ? ? [ pathPrf [ argCountPrf [ argsPrfs tgtPrf ] ] ] | ].
+          * apply Exists_cons_hd; split; assumption.
+          * apply Exists_cons_tl; assumption.
+        + generalize (append_Forall2 _ (cons _ path _ (nil _)) paths path_prfs).
+          auto.
+    Qed.
+
+    Lemma CL_Path_c_inv: forall Gamma c sigma,
+        (exists S, WellFormed S) ->
+        Forall (fun sigma' =>
+                  exists S, WellFormed S /\
+                       Exists (fun path => Path path /\ path <= sigma')
+                              (projT2 (factorize (organize (Apply S (Gamma c))))))
+               (projT2 (factorize (organize sigma))) ->
+        CL Gamma (Symbol c) sigma.
+    Proof.
+      intros Gamma c sigma ex_WF prfs.
+      eapply CL_ST; [ | apply ST_organize_le ].
+      rewrite (factorize_organized _ (organize_organized _)).
+      match goal with
+      | [ |- CL _ _ (intersect ?tgts) ] =>
+        induction tgts as [ | factor n factors IH ]
+      end.
+      - destruct ex_WF; eapply CL_omega; eassumption.
+      - assert (factor_prf : CL Gamma (Symbol c) factor).
+        { generalize (Forall_nth _ _ prfs F1).
+          intro ex_prf.
+          simpl.
+          destruct ex_prf as [ S [ WF_S ex_prfs ] ].
+          eapply CL_ST; [ eapply CL_Var; eassumption | ].
+          rewrite ST_organize_ge.
+          rewrite (factorize_organized _ (organize_organized _)).
+          induction ex_prfs as [ ? path' ? [ path_path' path'_le ] | ? x xs ? IH' ] .
+          * rewrite (ST_intersect_nth _ F1); assumption.
+          * rewrite <- IH'.
+            rewrite (ST_intersect_append_le (cons _ x _ (nil _)) xs).
+            rewrite (ST_InterMeetRight).
+            reflexivity. }
+        destruct factors.
+        + assumption.
+        + match goal with
+          | [ |- CL _ _ (intersect (cons _ _ _ ?rest)) ] =>
+            generalize (append_Forall2 _ (cons _ factor _ (nil _)) rest prfs)
+          end.
+          intro.
+          apply CL_II; auto.
+    Qed.          
+
     Lemma CL_all_paths:
       forall Gamma M sigma,
         (exists S, WellFormed S) ->
@@ -4234,6 +4319,1328 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
           assumption.
         + apply Forall2_last; assumption.
     Qed.
+
+    Lemma CL_Path_inv:
+      forall Gamma M sigma,
+        (exists S, WellFormed S) ->
+        Forall (fun sigma' =>
+                  exists S, WellFormed S /\
+                       Exists (fun path =>
+                                 Path path /\
+                                 exists argCountPrf : (argumentCount M <= src_count path)%nat,
+                                   Forall2 (CL Gamma) (argumentsOf M)
+                                           (fst (split_path path _ argCountPrf)) /\
+                                   (snd (split_path path _ argCountPrf)) <= sigma'
+                              )
+                              (projT2 (factorize (organize (Apply S (Gamma (rootOf M)))))))
+               (projT2 (factorize (organize sigma))) ->
+        CL Gamma M sigma.
+    Proof.
+      intros Gamma M sigma ex_S prfs.
+      eapply CL_ST; [ | apply (ST_organize_le sigma) ].
+      rewrite (factorize_organized _ (organize_organized _)).
+      induction prfs as [ | n sigma' sigmas' prf prfs IH ].
+      - destruct ex_S; eapply CL_omega; eassumption.
+      - assert (CL Gamma M sigma').
+        { destruct prf as [ S [ WF_S ex_prfs ] ].
+          assert (root_prf: CL Gamma (Symbol (rootOf M))
+                     (intersect (projT2 (factorize (organize (Apply S (Gamma (rootOf M)))))))).
+          { rewrite <- (factorize_organized _ (organize_organized _)).
+            eapply CL_ST; [ | apply ST_organize_ge ].
+            apply CL_Var; assumption. }
+          revert root_prf.
+          induction ex_prfs
+            as [ ? path ? [ path_path [ argCountPrf [ argsPrfs tgtPrf ] ] ] | ? x xs ? IH' ].
+          - intro root_prf.
+            eapply CL_ST; [ | eassumption ].
+            rewrite <- (applyAllSpec M) at 1.
+            apply CL_ApplyPath; try solve [ assumption ].
+            eapply CL_ST; [ exact root_prf | ].
+            rewrite (ST_intersect_nth _ F1).
+            reflexivity.
+          - intro root_prf.
+            apply IH'.
+            eapply CL_ST; [ exact root_prf | ].
+            rewrite (ST_intersect_append_le (cons _ x _ (nil _)) xs).
+            apply ST_InterMeetRight. }
+        destruct sigmas'.
+        + assumption.
+        + apply CL_II; assumption.
+    Qed.
+    
+    Section DecidableWF.
+      Require Import Coq.Logic.ConstructiveEpsilon.
+      Variable WF_dec: forall S, { WellFormed S } + { ~ WellFormed S }.
+      Structure Countable (A: Set) : Set :=
+        { toNat : A -> nat;
+          fromNat : nat -> A;
+          fromTo_id : forall x, fromNat (toNat x) = x }.
+
+      Structure Finite (A : Set) : Set :=
+        { cardinality : nat;
+          toFin : A -> Fin.t cardinality;
+          fromFin : Fin.t cardinality -> A;
+          fromToFin_id : forall x, fromFin (toFin x) = x }.
+      
+      Context { ConstructorSymbol_countable: Countable ConstructorSymbol }.      
+      Context { Variables_countable: Countable VariableSymbol }.
+
+      (* TODO: These two are vaild and just have to be shown *)
+      Axiom SubstitutionSpace_countable: `{Countable Substitution}.
+      Axiom ST_dec: forall sigma tau, { sigma <= tau } + { sigma <= tau -> False }.
+      
+      Lemma WF_and_le_path_dec: forall sigma_pre sigma S,
+          { WellFormed S /\ Apply S sigma_pre <= sigma } + { WellFormed S /\ Apply S sigma_pre <= sigma -> False }.
+      Proof.
+        intros sigma_pre sigma S.
+        destruct (WF_dec S).
+        - destruct (ST_dec (Apply S sigma_pre) sigma).
+          + left; split; assumption.
+          + right; intro devil; destruct devil; contradiction.
+        - right; intro devil; destruct devil; contradiction.
+      Qed.
+
+      Section TypeCheckable.
+        Variable Gamma : Context.
+        Variable CL_Gamma_dec: forall M sigma, { CL Gamma M sigma } + { CL Gamma M sigma -> False }.
+
+        Lemma split_path_proof_invariant: forall path n prf prf',
+          (split_path path n prf) = (split_path path n prf').
+        Proof.
+          intro path.
+          destruct path using IntersectionType_rect';
+            intros n prf prf';
+            simpl in prf;
+            simpl in prf';
+            destruct n;
+            try solve [ reflexivity | inversion prf ].
+          simpl.
+          apply f_equal2.
+          - apply f_equal.
+            apply f_equal.
+            auto.
+          - apply f_equal.
+            auto.
+        Qed.
+        
+        Lemma S_sufficient_dec: forall M sigma S,
+            { WellFormed S /\
+              Exists (fun path =>
+                        Path path /\
+                        exists argCountPrf : (argumentCount M <= src_count path)%nat,
+                          Forall2 (CL Gamma) (argumentsOf M)
+                                  (fst (split_path path _ argCountPrf)) /\
+                          (snd (split_path path _ argCountPrf)) <= sigma
+                     )
+                     (projT2 (factorize (organize (Apply S (Gamma (rootOf M)))))) } +
+            { WellFormed S /\
+              Exists (fun path =>
+                        Path path /\
+                        exists argCountPrf : (argumentCount M <= src_count path)%nat,
+                          Forall2 (CL Gamma) (argumentsOf M)
+                                  (fst (split_path path _ argCountPrf)) /\
+                          (snd (split_path path _ argCountPrf)) <= sigma
+                     )
+                     (projT2 (factorize (organize (Apply S (Gamma (rootOf M)))))) -> False }.
+        Proof.
+          intros M sigma S.
+          destruct (WF_dec S).
+          - generalize (organized_path_factors _ (organize_organized (Apply S (Gamma (rootOf M))))).
+            induction (projT2 (factorize (organize (Apply S (Gamma (rootOf M))))))
+              as [ | path n paths IH ].
+            + intro; right; intro devil; inversion devil as [ ? ex_nil ]; inversion ex_nil.
+            + intro path_prfs.
+              generalize (append_Forall2 _ (cons _ path _ (nil _)) paths path_prfs).
+              generalize (Forall_nth _ _ path_prfs F1).
+              clear path_prfs; intros path_prf path_prfs.
+              assert (path_dec :
+                      { Path path /\
+                        exists argCountPrf,
+                          Forall2 (CL Gamma) (argumentsOf M)
+                                  (fst (split_path path (argumentCount M) argCountPrf)) /\
+                          snd (split_path path (argumentCount M) argCountPrf) <= sigma } +
+                      { (Path path /\
+                         exists argCountPrf,
+                           Forall2 (CL Gamma) (argumentsOf M)
+                                   (fst (split_path path (argumentCount M) argCountPrf)) /\
+                           snd (split_path path (argumentCount M) argCountPrf) <= sigma) -> False }).
+              { destruct (le_dec (argumentCount M) (src_count path))
+                  as [ argCountPrf | argCountDisprf ].
+                - destruct (ST_dec (snd (split_path path (argumentCount M) argCountPrf)) sigma)
+                    as [ sigma_ge | not_sigma_ge ].
+                  + assert (dec_tys : forall n (Ms : t Term n) tys, 
+                        { Forall2 (CL Gamma) Ms tys } +
+                        { Forall2 (CL Gamma) Ms tys -> False }).
+                    { revert CL_Gamma_dec.
+                      clear ...
+                      intros CL_Gamma_dec n Ms tys.
+                      induction Ms as [ | M n Ms IH ].
+                      - left.
+                        apply (fun r => case0 _ r tys).
+                        apply Forall2_nil.
+                      - apply (caseS' tys); clear tys; intros ty tys.
+                        destruct (CL_Gamma_dec M ty) as [ Mty | not_Mty ].
+                        + destruct (IH tys) as [ Mstys | not_Mstys ].
+                          * left; apply Forall2_cons; assumption.
+                          * right; intro devil.
+                            inversion devil
+                              as [ | ? ? ? ? ? ? devil' n_eq [ hd_eq tl_eq ] [ hd_eq' tl_eq' ] ].
+                            generalize (vect_exist_eq _ _ tl_eq).
+                            generalize (vect_exist_eq _ _ tl_eq').
+                            intros tys_eq terms_eq.
+                            rewrite <- terms_eq in not_Mstys.
+                            rewrite <- tys_eq in not_Mstys.
+                            contradiction.
+                        + right; intro devil; inversion devil; contradiction. }
+                    destruct (dec_tys _ (argumentsOf M)
+                                      (fst (split_path path (argumentCount M) argCountPrf))).
+                    * left; split; [ assumption | eexists; split; eassumption ].
+                    * right; intro devil;
+                        inversion devil as [ ? [ argCountPrf' [ argsPrfs ? ] ] ].
+                      assert (split_path_eq: (fst (split_path path (argumentCount M) argCountPrf)) =
+                                             (fst (split_path path (argumentCount M) argCountPrf'))).
+                      { clear ...
+                        apply f_equal.
+                        apply split_path_proof_invariant. }
+                      rewrite <- split_path_eq in argsPrfs.
+                      contradiction.
+                  + right; intro devil.
+                    inversion devil as [ ? [ argCountPrf' [ ? le_prf ] ] ].
+                    assert (split_path_eq: (snd (split_path path (argumentCount M) argCountPrf)) =
+                                           (snd (split_path path (argumentCount M) argCountPrf'))).
+                    { clear ...
+                      apply f_equal.
+                      apply split_path_proof_invariant. }
+                    rewrite <- split_path_eq in le_prf.
+                    contradiction.
+                - right; intro devil; inversion devil as [ ? [ ? ? ] ].
+                  contradiction. }
+              destruct path_dec as [ path_ok | not_path_ok ].
+              * left; split; [ assumption | apply Exists_cons_hd; assumption ].
+              * destruct (IH path_prfs) as [ paths_ok | not_paths_ok ].
+                { destruct paths_ok.
+                  left; split; [ assumption | apply Exists_cons_tl; assumption ]. }
+                { right; intro devil; destruct devil as [ ? ex_prf ].
+                  inversion ex_prf as [ | ? ? ? prfs n_eq [ hd_eq tl_eq ] ].
+                  - contradiction.
+                  - dependent rewrite tl_eq in prfs.
+                    apply not_paths_ok; split; assumption. }
+          - right; intro devil; inversion devil; contradiction.            
+        Qed.
+        
+        Lemma CL_Path_compute_S:
+          forall M sigma,
+            Forall (fun sigma' =>
+                      exists S, WellFormed S /\
+                           Exists (fun path =>
+                                     Path path /\
+                                     exists argCountPrf : (argumentCount M <= src_count path)%nat,
+                                       Forall2 (CL Gamma) (argumentsOf M)
+                                               (fst (split_path path _ argCountPrf)) /\
+                                       (snd (split_path path _ argCountPrf)) <= sigma'
+                                  )
+                                  (projT2 (factorize (organize (Apply S (Gamma (rootOf M)))))))
+                   (projT2 (factorize (organize sigma))) ->
+            ForAll' (fun sigma' =>
+                       { S : _ | WellFormed S /\
+                            Exists (fun path =>
+                                      Path path /\
+                                      exists argCountPrf : (argumentCount M <= src_count path)%nat,
+                                        Forall2 (CL Gamma) (argumentsOf M)
+                                                (fst (split_path path _ argCountPrf)) /\
+                                        (snd (split_path path _ argCountPrf)) <= sigma'
+                                   )
+                                   (projT2 (factorize (organize (Apply S (Gamma (rootOf M))))))
+                       }) 
+                    (projT2 (factorize (organize sigma))).
+        Proof.
+          intros M sigma.
+          induction (projT2 (factorize (organize sigma)))
+            as [ | h n tl IH ].
+          - intros; apply ForAll'_nil.
+          - intro prfs.
+            generalize (append_Forall2 _ (cons _ h _ (nil _)) tl prfs).
+            generalize (Forall_nth _ _ prfs F1).
+            intros h_prf tl_prfs.
+            apply ForAll'_cons.
+            + eapply (constructive_indefinite_ground_description).
+              * apply (fromTo_id _ SubstitutionSpace_countable).
+              * apply S_sufficient_dec.
+              * assumption.
+            + auto.
+        Qed.
+
+        Lemma CL_Path_path_compute_S:
+          forall M sigma,
+            Path sigma ->
+            (exists S, WellFormed S /\
+                 Exists (fun path =>
+                           Path path /\
+                           exists argCountPrf : (argumentCount M <= src_count path)%nat,
+                             Forall2 (CL Gamma) (argumentsOf M)
+                                   (fst (split_path path _ argCountPrf)) /\
+                             (snd (split_path path _ argCountPrf)) <= sigma
+                        )
+                        (projT2 (factorize (organize (Apply S (Gamma (rootOf M))))))) ->
+            { S : _ | WellFormed S /\
+                      Exists (fun path =>
+                                Path path /\
+                                exists argCountPrf : (argumentCount M <= src_count path)%nat,
+                                  Forall2 (CL Gamma) (argumentsOf M)
+                                          (fst (split_path path _ argCountPrf)) /\
+                                  (snd (split_path path _ argCountPrf)) <= sigma
+                             )
+                             (projT2 (factorize (organize (Apply S (Gamma (rootOf M))))))
+            }.
+        Proof.
+          intros M sigma path_sigma ex_S.
+          eapply (constructive_indefinite_ground_description).
+          - apply (fromTo_id _ SubstitutionSpace_countable).
+          - apply S_sufficient_dec.
+          - assumption.
+        Qed.
+      End TypeCheckable.
+     
+      Section FiniteSubstitutionCheckable.
+        Variable SubstitutionSpace_finite: Finite { S : Substitution | WellFormed S }.
+
+        Definition minimalInstance (sigma_pre: TypeScheme): IntersectionType :=
+          intersect
+            (map
+               (fun k => Apply (proj1_sig (fromFin _ SubstitutionSpace_finite k)) sigma_pre)
+               (positions (cardinality _ SubstitutionSpace_finite))).
+        
+        
+        Lemma MinimalType_sound:
+          forall Gamma c, (cardinality _ SubstitutionSpace_finite > 0) ->
+                     CL Gamma (Symbol c) (minimalInstance (Gamma c)).
+        Proof.
+          intros Gamma c.
+          assert (all_prfs: forall k, CL Gamma (Symbol c)
+                          (Apply (proj1_sig (fromFin _ SubstitutionSpace_finite k))
+                                 (Gamma c))).
+          { intro k.
+            apply CL_Var; exact (proj2_sig (fromFin _ SubstitutionSpace_finite k)). }
+          intro card_gt.
+          unfold minimalInstance.
+          revert all_prfs.
+          inversion card_gt as [ prf | ? ? prf ];
+            destruct SubstitutionSpace_finite as [ card to from id ];
+            simpl in *;
+            revert to from id;
+            rewrite <- prf in *;
+            intros;
+            apply CL_intersect_many;
+            apply nth_Forall;
+            intro k;
+            rewrite (nth_map _ _ _ _ eq_refl);
+            auto.
+        Qed.
+
+        Lemma MinimalType_minimal: forall Gamma c sigma,
+            CL Gamma (Symbol c) sigma -> (minimalInstance (Gamma c)) <= sigma.
+        Proof.
+          intros Gamma c sigma prf.
+          remember (Symbol c) as M eqn:M_eq.
+          revert c M_eq.
+          induction prf as [ ? S WF_S | | | ].
+          - intros c' M_eq.
+            inversion M_eq.
+            unfold minimalInstance.
+            assert (S_eq: S = proj1_sig (fromFin _ SubstitutionSpace_finite
+                                           (toFin _ SubstitutionSpace_finite (exist _ S WF_S)))).
+            { rewrite fromToFin_id; reflexivity. }
+            rewrite S_eq.
+            rewrite (ST_intersect_nth _ (toFin _ SubstitutionSpace_finite (exist _ S WF_S))).
+            rewrite (nth_map _ _ _ _ eq_refl).
+            rewrite (positions_spec).
+            reflexivity.
+          - intros ? MN_eq; inversion MN_eq.
+          - intros; apply ST_Both; auto.
+          - intros; etransitivity; eauto.
+        Qed.
+
+        Definition suffixes (n: nat) (sigma: IntersectionType): list IntersectionType :=
+          (fix suffixes_rec m sigma :=
+             match le_dec n m with
+             | left prf =>
+               match le_dec m (src_count sigma) with
+               | left prf' => List.cons (snd (split_path sigma _ prf'))
+                                       (match m with
+                                        | 0 => List.nil
+                                        | S m' => suffixes_rec m' sigma
+                                        end)
+               | right _ => List.nil
+               end
+             | _ => List.nil
+             end) (src_count sigma) sigma.
+
+        Definition allPathSuffixes (n: nat) (sigma: IntersectionType): list IntersectionType :=
+          (fix allPaths_rec n' sigmas :=
+            match sigmas with
+            | cons _ x _ xs =>
+              match le_dec n (src_count x) with
+              | left prf => List.cons (snd (split_path x _ prf)) (allPaths_rec _ xs)
+              | right _ => allPaths_rec _ xs
+              end
+            | nil _ => List.nil
+            end) _ (projT2 (factorize (organize sigma))).
+
+        Lemma allPathSuffixes_0: forall (sigma: IntersectionType),
+            allPathSuffixes 0 sigma = to_list (projT2 (factorize (organize sigma))).
+        Proof.
+          intro sigma.
+          unfold allPathSuffixes.
+          induction (projT2 (factorize (organize sigma))) as [ | hd n tl IH ].
+          - reflexivity.
+          - destruct (le_dec 0 (src_count hd)) as [ prf | disprf ].
+            + simpl.
+              unfold to_list.
+              apply f_equal.
+              assumption.
+            + generalize (le_0_n (src_count hd)).
+              intro; contradiction.
+        Qed.
+        
+        Lemma allPaths_paths: forall n sigma,
+            List.Forall Path (allPathSuffixes n sigma).
+        Proof.
+          intros n sigma.
+          unfold allPathSuffixes.
+          generalize (organized_path_factors _ (organize_organized sigma)).
+          induction (projT2 (factorize (organize sigma))) as [ | hd ? tl IH ].
+          - intros; apply List.Forall_nil.
+          - intro path_prf.
+            generalize (Forall_nth _ _ path_prf F1).
+            intro path_hd.
+            generalize (append_Forall2 _ (cons _ hd _ (nil _)) tl path_prf).
+            intro paths_tl.
+            destruct (le_dec n (src_count hd)).
+            + apply List.Forall_cons; auto.
+              apply (Path_split_path); assumption.
+            + auto.
+        Qed.
+
+        
+        Fixpoint powerset {A: Type} (xs: list A): list (list A) :=
+            match xs with
+            | List.nil => List.cons List.nil List.nil
+            | List.cons x xs =>
+              List.app
+                (List.map (List.cons x) (powerset xs))
+                (powerset xs)
+            end.
+
+        (*
+        Lemma allPaths_0: forall sigma,
+            allPaths 0 sigma = to_list (projT2 (factorize (organize sigma))).
+        Proof.
+          intro sigma.
+          unfold allPaths.
+          induction (projT2 (factorize (organize sigma))).
+          - reflexivity.
+          - simpl.
+            unfold to_list.
+            apply f_equal.
+            assumption.
+        Qed.
+
+        
+        Lemma Powerset_complete: forall Gamma M sigma,
+          CL Gamma M sigma ->
+          exists sigma' : _,
+            sigma' <= sigma /\
+            List.In
+              sigma'
+              (List.map (fun xs => intersect (of_list xs))
+                        (powerset (allPaths (argumentCount M)
+                                            (minimalInstance (Gamma (rootOf M)))))).
+        Proof.
+          intros Gamma M sigma prf.
+          induction prf as [ c S WF_S | | | ? ? ? ? IH ].
+          - rewrite allPaths_0.
+            unfold minimalInstance.
+            
+
+            exists (Apply S (Gamma c)); split; [ reflexivity | ].
+            admit.
+          - (* In (a -> b) => In b *)
+            admit.
+          - (* In a -> In b => In (Inter a b) *)
+            admit.
+          - destruct IH as [ sigma' [ sigma'_le sigma'_in ] ].
+            eexists sigma'; split; [ etransitivity; eassumption | assumption ].
+        Qed.
+         *)
+
+        Lemma CL_MP_inv_dec_complete: forall Gamma M N tau,
+            { CL Gamma (App M N) tau } + { CL Gamma (App M N) tau -> False } ->
+            { exists sigma, CL Gamma M (Arrow sigma tau) /\ CL Gamma N sigma } +
+            { (exists sigma, CL Gamma M (Arrow sigma tau) /\ CL Gamma N sigma) -> False }.
+        Proof.
+          intros Gamma M N tau MN_dec.
+          destruct MN_dec.
+          - left; apply MP_generation; assumption.
+          - right; intro devil.
+            inversion devil as [ sigma [ prfM prfN ] ].
+            generalize (CL_MP _ _ _ _ _ prfM prfN).
+            assumption.
+        Qed.
+
+        Lemma CL_MP_inv_dec_sound: forall Gamma M N tau,
+            { exists sigma, CL Gamma M (Arrow sigma tau) /\ CL Gamma N sigma } +
+            { (exists sigma, CL Gamma M (Arrow sigma tau) /\ CL Gamma N sigma) -> False } ->
+            { CL Gamma (App M N) tau } + { CL Gamma (App M N) tau -> False }.
+        Proof.
+          intros Gamma M N tau MN_dec.
+          destruct MN_dec as [ prf | ].
+          - left; inversion prf as [ ? [ ? ? ] ]; eapply CL_MP; eassumption.
+          - right; intro devil; generalize (MP_generation _ _ _ _ devil); contradiction.
+        Qed.
+
+
+        Lemma Path_suffixes_split:
+          forall n (xs: t IntersectionType n) path k m,
+            List.In path (allPathSuffixes m (nth xs k)) ->
+            List.In path (allPathSuffixes m (intersect xs)).
+        Proof.
+          intros n xs path k m.
+          induction k as [ | n k IH ].
+          - unfold allPathSuffixes.
+            apply (caseS' xs); clear xs; intros x xs.
+            intro prf; simpl in prf.
+            unfold allPathSuffixes.
+            simpl.
+            destruct xs as [ | x' n xs ].
+            + assumption.
+            + simpl.
+              rewrite (factorize_intersect_append (projT2 (factorize (organize x))) _).
+              rewrite <- (factorize_organized _ (organize_organized x)).
+              induction (projT2 (factorize (organize x))) as [ | y ? ys IH ].
+              * contradiction.
+              * unfold List.In in prf.
+                unfold List.In.
+                simpl.
+                destruct (le_dec m (src_count y)).
+                { destruct prf.
+                  - left; assumption.
+                  - right. apply IH. assumption. }
+                { apply IH; assumption. }
+          - apply (caseS' xs); clear xs; intros x xs.
+            intro prf; simpl in prf.
+            unfold allPathSuffixes.
+            simpl.
+            destruct xs as [ | x' n xs ].
+            + inversion k.
+            + simpl.
+              rewrite (factorize_intersect_append (projT2 (factorize (organize x))) _).
+              rewrite <- (factorize_organized _ (organize_organized x)).
+              generalize (factorize_organized _ (organize_organized (intersect (cons _ x' _ xs)))).
+              intro eq.
+              simpl in eq.
+              rewrite <- eq.
+              generalize (IH (cons _ x' _ xs) prf).
+              clear ...
+              intro prf.
+              induction (projT2 (factorize (organize x))) as [ | y ? ys ].
+              * simpl. unfold allPathSuffixes in prf.
+                simpl in prf.
+                exact prf.
+              * simpl.
+                destruct (le_dec m (src_count y)).
+                { right.
+                  assumption. }
+                { assumption. }
+        Qed.
+          
+
+        Lemma CL_Path_minimal_impl:
+          forall Gamma M sigma
+            (M_dec: forall sigma, { CL Gamma M sigma } + { CL Gamma M sigma -> False }),
+            Path sigma ->
+            ( exists S, WellFormed S /\
+                  Exists (fun path =>
+                            Path path /\
+                            exists argCountPrf : (argumentCount M <= src_count path)%nat,
+                              Forall2 (CL Gamma) (argumentsOf M)
+                                      (fst (split_path path _ argCountPrf)) /\
+                              (snd (split_path path _ argCountPrf)) <= sigma
+                         )
+                         (projT2 (factorize (organize (Apply S (Gamma (rootOf M))))))) ->
+            exists sigma',
+              sigma' <= sigma /\
+              List.In sigma'
+                      (filter (fun sigma' => match M_dec sigma' with
+                                          | left _ => true
+                                          | right _ => false end)
+                              (allPathSuffixes (argumentCount M)
+                                               (minimalInstance (Gamma (rootOf M))))).
+        Proof.
+          intros Gamma M sigma M_dec path_sigma ex_prf.
+          destruct ex_prf as [ S [ WF_S ex_prf ] ] .
+          assert (in_prf_compatible : forall sigma',
+                     List.In sigma'
+                             (filter (fun sigma' : IntersectionType =>
+                                        if M_dec sigma' then true else false)
+                                     (allPathSuffixes (argumentCount M)
+                                                      (Apply S (Gamma (rootOf M))))) ->
+                     List.In sigma'
+                             (filter (fun sigma' : IntersectionType =>
+                                        if M_dec sigma' then true else false)
+                                     (allPathSuffixes (argumentCount M)
+                                                      (minimalInstance (Gamma (rootOf M)))))).
+          { intro sigma'.
+            assert (S_fin : S = proj1_sig (fromFin _ SubstitutionSpace_finite
+                                           (toFin _ SubstitutionSpace_finite (exist _ S WF_S)))).
+            { rewrite (fromToFin_id _ SubstitutionSpace_finite).
+              reflexivity. }
+            rewrite S_fin.
+            generalize (toFin _ SubstitutionSpace_finite (exist _ S WF_S)).
+            unfold minimalInstance.
+            intros k prfs.
+            apply filter_In.
+            split.
+            - apply (Path_suffixes_split _ _ _ k).
+              rewrite (nth_map _ _ _ _ eq_refl).
+              rewrite (positions_spec _ k).
+              eapply filter_In.
+              eassumption.
+            - generalize (proj1 (filter_In _ _ _) prfs).
+              intros [ ? ? ]; assumption. }
+          assert (replace_in_prf :
+            (exists sigma' : IntersectionType,
+                sigma' <= sigma /\
+                List.In sigma'
+                        (filter (fun sigma' => if M_dec sigma' then true else false)
+                                (allPathSuffixes (argumentCount M) (Apply S (Gamma (rootOf M)))))) ->
+            (exists sigma' : IntersectionType,
+                sigma' <= sigma /\
+                List.In sigma'
+                        (filter (fun sigma' : IntersectionType => if M_dec sigma' then true else false)
+                                (allPathSuffixes (argumentCount M)
+                                                 (minimalInstance (Gamma (rootOf M))))))).
+          { intros [ sigma' [ le_prf in_prf ] ].
+            eexists; split; [ eassumption | auto ]. }
+          apply replace_in_prf.
+          clear replace_in_prf in_prf_compatible.
+          unfold allPathSuffixes.
+          assert (root_prfs :
+                    Forall (CL Gamma (Symbol (rootOf M)))
+                           (projT2 (factorize (organize (Apply S (Gamma (rootOf M))))))).
+          { apply nth_Forall.
+            intro k.
+            eapply CL_ST; [ apply CL_Var; eassumption | ].
+            etransitivity; [ eapply ST_organize_ge | ].
+            rewrite (factorize_organized _ (organize_organized (Apply S (Gamma (rootOf M))))) at 1.
+            apply ST_intersect_nth. } 
+          induction ex_prf
+            as [ ? path paths [ path_path [ argCountPrf [ args_prfs tgt_prf ] ] ]
+               | ? path paths ? IH ].
+          - eexists; split; [ eassumption | ].
+            destruct (le_dec (argumentCount M) (src_count path)) as [ prf | disprf ].
+            + simpl.
+              destruct (M_dec (snd (split_path path (argumentCount M) prf))) as [ | devil ].
+              * unfold List.In.
+                rewrite <- (split_path_proof_invariant _ _ prf argCountPrf).
+                left; reflexivity.
+              * assert False.
+                { apply devil.
+                  rewrite <- (applyAllSpec M) at 1.
+                  eapply CL_ApplyPath; [ eassumption | |].
+                  - exact (Forall_nth _ _ root_prfs F1).
+                  - rewrite (split_path_proof_invariant _ _ prf argCountPrf).
+                    assumption. }
+                contradiction.
+            + contradiction.
+          - destruct (IH (append_Forall2 _ (cons _ path _ (nil _))
+                                         paths root_prfs))
+              as [ sigma' [ le_prf in_prf ] ].
+            eexists; split; [ eassumption | ].
+            destruct (le_dec (argumentCount M) (src_count path))
+              as [ argCountPrf | ].
+            + simpl.
+              destruct (M_dec (snd (split_path path (argumentCount M) argCountPrf))).
+              * right; assumption.
+              * assumption.
+            + assumption.
+        Qed.
+
+        Lemma CL_Mintype_suffix_complete_org:
+          forall Gamma M
+            (M_dec: forall sigma, { CL Gamma M sigma } + { CL Gamma M sigma -> False }),
+          forall sigma',
+            CL Gamma M sigma' ->
+            Forall (fun path =>
+                      exists sigma'',
+                        sigma'' <= path /\
+                        List.In sigma''
+                                (filter (fun sigma' => match M_dec sigma' with
+                                                    | left _ => true
+                                                    | right _ => false end)
+                                               (allPathSuffixes (argumentCount M)
+                                                                (minimalInstance (Gamma (rootOf M))))))
+                   (projT2 (factorize (organize sigma'))).
+        Proof.
+          intros Gamma M M_dec sigma' M_sigma'.
+          generalize (organized_path_factors _ (organize_organized sigma')).
+          generalize (CL_Path _ _ _ M_sigma').
+          induction (projT2 (factorize (organize sigma')))
+            as [ | path n paths IH ].
+          - intros; apply Forall_nil.
+          - intro ex_prfs.
+            generalize (Forall_nth _ _ ex_prfs F1).
+            generalize (append_Forall2 _ (cons _ path _ (nil _)) paths ex_prfs).
+            intros ex_prf ex_prfs'.
+            intro path_prfs.
+            generalize (Forall_nth _ _ path_prfs F1).
+            generalize (append_Forall2 _ (cons _ path _ (nil _)) paths path_prfs).
+            intros path_prfs' path_prf.
+            apply Forall_cons.
+            + apply CL_Path_minimal_impl; assumption.
+            + auto.
+        Qed.
+
+         Lemma CL_Mintype_suffix_complete_org':
+          forall Gamma M
+            (M_dec: forall sigma, { CL Gamma M sigma } + { CL Gamma M sigma -> False }),
+          forall sigma',
+            CL Gamma M sigma' ->
+            exists sigmas,
+              intersect (of_list sigmas) <= sigma' /\
+              List.Forall (fun sigma' =>
+                             List.In sigma'
+                                     (filter (fun sigma' => match M_dec sigma' with
+                                                         | left _ => true
+                                                         | right _ => false end)
+                                             (allPathSuffixes (argumentCount M)
+                                                              (minimalInstance (Gamma (rootOf M))))))
+                          sigmas.
+         Proof.
+           intros Gamma M M_dec sigma' Msigma'.
+
+           match goal with
+           | [ |- exists sigmas, _ /\ ?inprfs ] =>
+             assert (proof_organized_instead:
+                 (exists sigmas,
+                     intersect (of_list sigmas) <= organize sigma' /\
+                     inprfs) ->
+                 (exists sigmas,
+                     intersect (of_list sigmas) <= sigma' /\
+                     inprfs))
+           end.
+           { intros [ sigmas [ le_prf in_prfs ] ].
+             exists sigmas; split; [ | assumption ].
+             rewrite <- (ST_organize_le sigma').
+             assumption. }
+           apply proof_organized_instead.
+           rewrite (factorize_organized _ (organize_organized sigma')).
+           generalize (CL_Mintype_suffix_complete_org _ _ M_dec _ Msigma').
+           induction (projT2 (factorize (organize sigma')))
+             as [ | path n paths IH ].
+           - intro; eexists List.nil; split; [ reflexivity | apply List.Forall_nil ].
+           - intro prfs.
+             generalize (append_Forall2 _ (cons _ path _ (nil _)) paths prfs).
+             generalize (Forall_nth _ _ prfs F1).
+             intros path_prf paths_prfs.
+             destruct (IH paths_prfs)
+               as [ sigmas [ sigmas_le sigmas_in_prfs ] ].
+             destruct path_prf
+               as [ sigma [ sigma_le sigma_in_prf ] ].
+             exists (List.cons sigma sigmas); split.
+             + apply ST_intersect.
+               apply Forall_cons.
+               * rewrite (ST_intersect_nth (of_list (List.cons sigma sigmas)) F1).
+                 assumption.
+               * apply ST_intersect_ge.
+                 rewrite <- sigmas_le.
+                 rewrite (ST_intersect_append_le (cons _ sigma _ (nil _)) (of_list sigmas)).
+                 apply ST_InterMeetRight.
+             + apply List.Forall_cons; assumption.
+         Qed.
+
+         Lemma powerset_empty_incl: forall {A} (xs: list A), List.In List.nil (powerset xs).
+         Proof.
+           intros A xs.
+           induction xs as [ | x xs IH ].
+           - left; reflexivity.
+           - simpl.
+             induction (List.map (List.cons x) (powerset xs)).
+             + assumption.
+             + right; assumption.
+         Qed.
+             
+         Lemma powerset_smaller_set_incl: forall {A} (x: A) xs ys,
+             List.In (List.cons x xs) (powerset ys) ->
+             List.In xs (powerset ys).
+         Proof.
+           intros A x xs ys.
+           induction ys as [ | y ys IH ].
+           - intro devil; inversion devil as [ devil' | devil' ]; inversion devil'.
+           - unfold powerset.
+             fold (powerset ys).
+             intro in_app.
+             destruct (in_app_or _ _ _ in_app) as [ inleft | inright ].
+             + apply in_app_iff.
+               right.
+               clear in_app IH.
+               induction (powerset ys).
+               * contradiction.
+               * inversion inleft as [ eq | ].
+                 { left; inversion eq; reflexivity. }
+                 { right; auto. }
+             + apply in_or_app; right; auto.
+         Qed.
+
+         Lemma powerset_split: forall {A} xs (y: A) ys,
+             List.In xs (powerset (List.cons y ys)) ->
+             List.In xs (List.map (List.cons y) (powerset ys)) \/
+             List.In xs (powerset ys).
+         Proof.
+           intros A xs.
+           induction xs as [ | x xs IH ].
+           - intros; right; apply powerset_empty_incl.
+           - intros y ys xxs_in.
+             unfold powerset in xxs_in.
+             fold (powerset ys) in xxs_in.
+             apply in_app_or.
+             assumption.
+         Qed.
+
+
+
+         Lemma ListIn_map_cons: forall {A} (x: A) xs ys,
+             List.In ys (List.map (List.cons x) xs) -> exists ys', ys = List.cons x ys' /\ List.In ys' xs.
+         Proof.
+           intros A x xs.
+           induction xs as [ | x' xs IH ].
+           - intros ? devil; inversion devil.
+           - intros ys in_prf.
+             destruct in_prf as [ eq | in_rest ].
+             + destruct ys as [ | y ys ].
+               * inversion eq.
+               * inversion eq.
+                 eexists; split; [ reflexivity | left; reflexivity ].
+             + destruct (IH _ in_rest) as [ ? [ ? ? ]].
+               eexists; split; [ eassumption | right; eassumption ].
+         Qed.
+
+         Lemma ListIn_map_cons': forall {A} (x: A) xs ys,
+             List.In xs ys -> List.In (List.cons x xs) (List.map (List.cons x) ys).
+         Proof.
+           intros A x xs ys.
+           revert xs.
+           induction ys.
+           - intros ? devil; inversion devil.
+           - intros xs in_prf.
+             destruct in_prf as [ eq | ].
+             + inversion eq.
+               left; reflexivity.
+             + right; auto.
+         Qed.
+         
+         Require Import Coq.Sorting.Permutation.
+         Require Import Coq.Lists.ListDec.
+
+         Lemma powerset_spec: forall (x : IntersectionType) xs ys,
+             List.In x ys ->
+             List.In xs (powerset ys) ->
+             exists xs',
+               List.In xs' (powerset ys) /\
+               Permutation (if In_dec IntersectionType_eq_dec x xs then xs else List.cons x xs) xs'.
+         Proof.
+           intros x xs ys.
+           revert xs.
+           induction ys as [ | y ys IH ].
+           - intros ? devil; inversion devil.
+           - intros xs x_in xs_in.
+             destruct (In_dec _ x xs) as [ x_in_xs | x_not_in_xs ].
+             + simpl in xs_in.
+               destruct (in_app_or _ _ _ xs_in) as [ xs_inl | xs_inr ].
+               * destruct (ListIn_map_cons _ _ _ xs_inl) as [ xs' [ xs_eq xs'_in ] ].
+                 exists (List.cons y xs'); split.
+                 { apply in_or_app; left; apply ListIn_map_cons'; assumption. }
+                 { rewrite xs_eq; reflexivity. }
+               * exists xs; split.
+                 { apply in_or_app; right; assumption. }
+                 { reflexivity. }
+             + simpl in x_in.
+               destruct x_in as [ x_eq | x_not_eq ].
+               * destruct (in_app_or _ _ _ xs_in) as [ xs_inl | xs_inr ].
+                 { destruct (ListIn_map_cons _ _ _ xs_inl) as [ xs' [ xs_eq xs'_in ] ].
+                   rewrite x_eq in xs_eq.
+                   rewrite xs_eq in x_not_in_xs.
+                   assert False; [ apply x_not_in_xs; left; reflexivity | contradiction ]. }
+                 { exists (List.cons x xs); split.
+                   - apply in_or_app.
+                     left.
+                     rewrite x_eq.
+                     apply ListIn_map_cons'.
+                     assumption.
+                   - reflexivity. }
+               * destruct (in_app_or _ _ _ xs_in) as [ xs_inl | xs_inr ].
+                 { destruct (ListIn_map_cons _ _ _ xs_inl) as [ xs' [ xs_eq xs'_in ] ].
+                   destruct (IH _ x_not_eq xs'_in) as [ xs_res [ xs_res_in xs_res_prem ] ].
+                   exists (List.cons y xs_res); split.
+                   - apply in_or_app.
+                     left.
+                     apply ListIn_map_cons'.
+                     assumption.
+                   - rewrite xs_eq.
+                     destruct (In_dec _ x xs') as [ x_in_xs' | ].
+                     + rewrite xs_eq in x_not_in_xs.
+                       assert False; [ apply x_not_in_xs; right; assumption | contradiction ].
+                     + rewrite (Permutation_middle (List.cons y List.nil) xs' x).
+                       simpl.
+                       rewrite xs_res_prem.
+                       reflexivity. }
+                 { generalize (IH _ x_not_eq xs_inr).
+                   destruct (In_dec IntersectionType_eq_dec x xs).
+                   - contradiction.
+                   - intro prf.
+                     destruct prf as [ ? [ ? ? ] ].
+                     eexists; split; [ | eassumption ].
+                     apply in_or_app.
+                     right; assumption. }
+         Qed.
+
+         Fixpoint deduplicate (xs: list IntersectionType): list IntersectionType :=
+           match xs with
+           | List.cons x xs =>
+             if In_dec IntersectionType_eq_dec x xs
+             then deduplicate xs
+             else List.cons x (deduplicate xs)
+           | List.nil => List.nil
+           end.
+
+         Lemma deduplicate_spec: forall x xs,
+             List.In x xs <-> List.In x (deduplicate xs).
+         Proof.
+           intros x xs.
+           induction xs as [ | x' xs IH ].
+           - split; intro devil; inversion devil.
+           - split.
+             + intro prf.
+               inversion prf as [ eq | in_rest ].
+               * simpl.
+                 destruct (In_dec IntersectionType_eq_dec x' xs) as [ in_xs | not_in_xs ].
+                 { rewrite eq in in_xs; apply IH; assumption. }
+                 { left; rewrite eq; reflexivity. }
+               * simpl.
+                 destruct (In_dec IntersectionType_eq_dec x' xs) as [ in_xs | not_in_xs ].
+                 { apply IH; assumption. }
+                 { right; apply IH; assumption. }
+             + intro prf.
+               simpl in prf.
+               destruct (In_dec IntersectionType_eq_dec x' xs) as [ in_xs | not_in_xs ].
+               * right; apply IH; assumption.
+               * inversion prf as [ eq | in_rest ].
+                 { rewrite eq; left; reflexivity. }
+                 { right; apply IH; assumption. }
+         Qed.
+         
+         Lemma powerset_permut_incl: forall (xs: list IntersectionType) ys,
+             List.Forall (fun x' => List.In x' ys) xs ->
+             exists xs',
+               List.In xs' (powerset ys) /\
+               Permutation (deduplicate xs) xs'.
+         Proof.
+           intros xs.
+           induction xs as [ | x xs IH ].
+           - intros.
+             exists List.nil; split.
+             + apply powerset_empty_incl.
+             + reflexivity.
+           - intros ys prf.
+             inversion prf as [ | ? ? x_prf xs_prf ].
+             simpl.
+             generalize (IH _ xs_prf).
+             intro IH'.
+             destruct IH' as [ xs' [ in_xs' perm_xs' ] ].
+             destruct (In_dec IntersectionType_eq_dec x xs) as [ in_x_xs | not_in_x_xs ].
+             + exists xs'; split.
+               * assumption.
+               * assumption.
+             + destruct (powerset_spec x xs' ys x_prf in_xs') as [ xs'' [ in_xs'' perm_xs'' ] ].
+               exists xs''; split.
+               * assumption.
+               * assert (x_dedup : List.In x (deduplicate xs) -> False).
+                 { intro devil.
+                   apply not_in_x_xs.
+                   apply deduplicate_spec.
+                   assumption. }
+                 destruct (In_dec IntersectionType_eq_dec x xs') as [ in_x_xs' | ].
+                 { assert False.
+                   { apply x_dedup.
+                     eapply Permutation_in.
+                     - symmetry; eassumption.
+                     - assumption. }
+                   contradiction. }
+                 { rewrite perm_xs'.
+                   assumption. }
+         Qed.
+
+         Lemma ListIn_In: forall {A: Type} xs (x: A), List.In x xs -> exists k, nth (of_list xs) k = x.
+         Proof.
+           intros A xs x.
+           induction xs as [ | x' xs IH ].
+           - intro devil; inversion devil.
+           - intro prf.
+             destruct prf as [ | in_rest ].
+             + exists F1; assumption.
+             + destruct (IH in_rest) as [ k prf ].
+               exists (FS k); assumption.
+         Qed.
+
+         Lemma In_ListIn: forall {A: Type} xs (x: A) k, nth (of_list xs) k = x -> List.In x xs.
+         Proof.
+           intros A xs x.
+           induction xs as [ | x' xs IH ].
+           - intro devil; inversion devil.
+           - intro k.
+             apply (Fin.caseS' k).
+             + intro; left; assumption.
+             + simpl; intros; right; eapply IH; eassumption.
+         Qed.
+
+         Lemma ST_deduplicate: forall sigmas,
+             intersect (of_list (deduplicate sigmas)) <= intersect (of_list sigmas).
+         Proof.
+           intro sigmas.
+           induction sigmas as [ | sigma sigmas IH ].
+           - reflexivity.
+           - simpl.
+             destruct (In_dec IntersectionType_eq_dec sigma sigmas) as [ in_sigma_sigmas | ].
+             + destruct sigmas as [ | ].
+               * inversion in_sigma_sigmas.
+               * apply ST_Both.
+                 { destruct (ListIn_In _ _ (proj1 (deduplicate_spec _ _) in_sigma_sigmas))
+                     as [ pos pos_eq ].
+                   rewrite <- pos_eq.
+                   apply ST_intersect_nth. }
+                 { assumption. }
+             + destruct sigmas as [ | sigma' sigmas ].
+               * reflexivity.
+               * apply ST_Both.
+                 { simpl of_list.
+                   match goal with
+                   | [ |- intersect ?xs <= _ ] => apply (ST_intersect_nth xs F1)
+                   end. }
+                 { simpl of_list.                   
+                   match goal with
+                   | [ |- intersect (cons _ sigma _ ?xs) <= _ ] =>
+                     rewrite (ST_intersect_append_le (cons _ sigma _ (nil _)) xs)
+                   end.
+                   rewrite ST_InterMeetRight.
+                   assumption. }
+         Qed.
+
+         
+         Lemma ST_permutation: forall sigmas taus,
+             Permutation sigmas taus ->
+             intersect (of_list sigmas) <= intersect (of_list taus).
+         Proof.
+           intros sigmas taus perm.
+           apply ST_intersect.
+           apply nth_Forall.
+           intro tau_pos.
+           generalize (In_ListIn _ _ _ (eq_refl (nth (of_list taus) tau_pos))).
+           intro taupos_in_taus.
+           generalize (Permutation_in _ (Permutation_sym perm) taupos_in_taus).
+           intro taupos_in_sigmas.
+           destruct (ListIn_In _ _ taupos_in_sigmas) as [ k eq ].
+           rewrite <- eq.
+           apply ST_intersect_nth.
+         Qed.
+         
+         Lemma powerset_le_permute:
+           forall sigma' sigmas',
+           (exists sigmas,
+               intersect (of_list sigmas) <= sigma' /\
+               List.Forall (fun sigma' => List.In sigma' sigmas') sigmas) ->
+           (exists sigma,
+               sigma <= sigma' /\
+               List.In sigma (List.map (fun taus => intersect (of_list taus)) (powerset sigmas'))).
+         Proof.
+           intros sigma' sigmas' prf.
+           destruct prf as [ sigmas [ sigmas_le in_prfs ] ].
+           destruct (powerset_permut_incl _ _ in_prfs) as [ taus [ in_sigmas' perm_taus ] ].
+           exists (intersect (of_list taus)); split.
+           - rewrite (ST_permutation _ _ (Permutation_sym perm_taus)).
+             rewrite ST_deduplicate.
+             assumption.
+           - apply (List.in_map (fun x => intersect (of_list x))).
+             assumption.
+         Qed.    
+         
+         Lemma CL_Mintype_suffix_complete:
+           forall Gamma M
+             (M_dec: forall sigma, { CL Gamma M sigma } + { CL Gamma M sigma -> False }),
+           forall sigma,
+             CL Gamma M sigma ->
+             exists sigma',
+               sigma' <= sigma /\
+               List.In sigma'
+                       (List.map (fun xs => intersect (of_list xs))
+                                 (powerset (filter (fun sigma' => match M_dec sigma' with
+                                                               | left _ => true
+                                                               | right _ => false end)
+                                                   (allPathSuffixes (argumentCount M)
+                                                                    (minimalInstance
+                                                                       (Gamma (rootOf M))))))).
+         Proof.
+           intros Gamma M M_dec sigma Msigma.
+           apply powerset_le_permute.
+           generalize (CL_Mintype_suffix_complete_org _ _ M_dec _ Msigma).
+           intro prfs.
+           generalize (ST_organize_le sigma).
+           rewrite (factorize_organized _ (organize_organized sigma)).
+           intro sigma_ge.
+           match goal with
+           | [ |- exists sigmas, intersect (of_list sigmas) <= sigma /\ ?rest sigmas ] =>
+             assert (proof_instead :
+                       (exists sigmas, intersect (of_list sigmas) <=
+                                  intersect (projT2 (factorize (organize sigma))) /\
+                                  rest sigmas) ->
+                       (exists sigmas, intersect (of_list sigmas) <= sigma /\
+                                  rest sigmas))
+           end.
+           { intros [ sigmas [ sigmas_le prfs' ] ].
+             eexists; split; [ | eassumption ].
+             rewrite sigmas_le.
+             assumption. }
+           apply proof_instead.
+           clear proof_instead sigma_ge.           
+           induction prfs as [ | n sigma' sigmas prf prfs IH ].
+           - exists List.nil; split.
+             + reflexivity.
+             + apply List.Forall_nil.
+           - destruct prf as [ tau [ tau_le tau_in ] ].
+             destruct IH as [ taus [ taus_le taus_in ] ].
+             exists (List.cons tau taus); split.
+             + rewrite (ST_intersect_append_le (cons _ tau _ (nil _)) (of_list taus)).
+               rewrite <- (ST_intersect_append_ge (cons _ sigma' _ (nil _))  sigmas).
+               apply ST_SubtypeDistrib; assumption.
+             + apply List.Forall_cons; assumption.
+         Qed.
+                         
+             
+         Lemma CL_finite_dec: forall Gamma M sigma, { CL Gamma M sigma } + { CL Gamma M sigma -> False }.
+         Proof.
+           intros Gamma M.
+           destruct (cardinality _ SubstitutionSpace_finite) eqn:card_eq.
+           - intro sigma.
+             right.
+             intro prf.
+             induction prf as [ ? S WF_S | | | ]; try solve [ contradiction ].
+             generalize (toFin _ SubstitutionSpace_finite (exist _ S WF_S)).
+             rewrite card_eq.
+             intro k; inversion k.
+           - induction M as [ c | M IHM N IHN ].
+             + intro sigma.
+               destruct (ST_dec (minimalInstance (Gamma c)) sigma).
+               * left.
+                 eapply CL_ST; [ | eassumption ].
+                 apply MinimalType_sound.
+                 rewrite card_eq.
+                 apply (Nat.lt_0_succ).
+               * right.
+                 intro prf.
+                 generalize (MinimalType_minimal _ _ _ prf).
+                 assumption.
+             + intro sigma.
+               apply CL_MP_inv_dec_sound.
+               
+               
+               set (minType := 
+            
+
+        
+      Section DecidableTypeChecking.
+        Variable Gamma: Context.
+        Variable CL_dec: forall M sigma, { CL Gamma M sigma } + { CL Gamma M sigma -> False }.
+
+        
+        
+      End DecidableTypeChecking.
+*)        
+        
+      
+      
+      Section DecidableSubstitution.
+
+        Variable ex_S_dec: forall sigma_pre sigma,
+          { exists S, WellFormed S /\ Apply S sigma_pre <= sigma } +
+          { (exists S, WellFormed S /\ Apply S sigma_pre <= sigma) -> False }.
+
+        Variable ex_any_S: exists S, WellFormed S.
+
+        Lemma CL_check_start:
+          forall sigma_pre sigma,
+            { Forall (fun sigma' =>
+                        exists S, WellFormed S /\
+                             Exists (fun path => Path path /\ path <= sigma')
+                                    (projT2 (factorize (organize (Apply S (sigma_pre))))))
+                     (projT2 (factorize (organize sigma))) } +
+            { Forall (fun sigma' =>
+                        exists S, WellFormed S /\
+                             Exists (fun path => Path path /\ path <= sigma')
+                                    (projT2 (factorize (organize (Apply S (sigma_pre))))))
+                     (projT2 (factorize (organize sigma))) -> False }.
+        Proof.
+          intros sigma_pre sigma.
+          generalize (organized_path_factors _ (organize_organized sigma)).
+          induction (projT2 (factorize (organize sigma))) as [ | sigma' ? sigmas' IH ].
+          - intros; left; apply Forall_nil.
+          - intro path_prfs.
+            generalize (append_Forall2 _ (cons _ sigma' _ (nil _)) sigmas' path_prfs).
+            intro sigmas'_paths.
+            generalize (Forall_nth _ _ path_prfs F1).
+            intro sigm'_path.
+            destruct (IH sigmas'_paths).
+            + destruct (ex_S_dec sigma_pre sigma') as [ prf | disprf ].
+              * left; apply Forall_cons; [ | assumption ].
+                destruct prf as [ S [ WF_S simga'_ge ] ].
+                eexists; split; [ eassumption | ].
+                apply ST_path; assumption.
+              * right.
+                intro prfs.
+                generalize (Forall_nth _ _ prfs F1).
+                intro prf.
+                destruct prf as [ S [ WF_S ex_prfs ] ].
+                assert (disprf' : (intersect (projT2 (factorize (organize (Apply S sigma_pre)))) <=
+                                   sigma') -> False).
+                { intro sigma'_ge.
+                  rewrite <- (factorize_organized _ (organize_organized _)) in sigma'_ge.
+                  rewrite <- (ST_organize_ge _) in sigma'_ge.
+                  apply disprf; eexists; split; eassumption. }
+                revert disprf'.
+                induction ex_prfs as [ ? path ? [ path_path path_le ] | ? path paths ].
+                { intro disprf'.
+                  apply disprf'.
+                  rewrite (ST_intersect_nth _ F1).
+                  assumption. }
+                { rewrite (ST_intersect_append_le (cons _ path _ (nil _)) paths).
+                  rewrite (ST_InterMeetRight).
+                  assumption. }                
+            + right.
+              intro prfs.
+              generalize (append_Forall2 _ (cons _ sigma' _ (nil _)) sigmas' prfs).
+              assumption.
+        Qed.
+
+        Lemma CL_Mintype_suffix_sound:
+          forall Gamma M
+            (M_dec: forall sigma, { CL Gamma M sigma } + { CL Gamma M sigma -> False }),
+          forall sigma',
+            List.In sigma'
+                    (filter (fun sigma' => match M_dec sigma' with | left _ => true | right _ => false end)
+                            (allPathSuffixes (argumentCount M)
+                                             (minimalInstance (Gamma (rootOf M))))) ->
+            CL Gamma M sigma'.
+        Proof.
+          intros Gamma M M_dec sigma'.
+          match goal with
+          | [ |- List.In _ (List.filter _ ?xs) -> _ ] => induction xs as [ | hd tl IH ]
+          end.
+          - intro devil; inversion devil.
+          - intro prf.
+            unfold List.In in prf.
+            simpl in prf.
+            revert prf.
+            destruct (M_dec hd).
+            + intro prf.
+              inversion prf as [ prf_hd | prf_tl ].
+              * rewrite <- prf_hd; assumption.
+              * auto.
+            + intro; auto.
+        Qed.
+
+
+        Lemma CL_check_c:
+          forall Gamma c sigma, { CL Gamma (Symbol c) sigma } + { CL Gamma (Symbol c) sigma -> False }.
+        Proof.
+          intros Gamma c sigma.
+          destruct (CL_check_start (Gamma c) sigma) as [ prf | disprf ].
+          - left; apply CL_Path_c_inv; assumption.
+          - right; intro.
+            apply disprf.
+            apply CL_Path_c.
+            assumption.
+        Qed.
+
+        Lemma CL_check_path:
+          forall Gamma M sigma,
+            {  Forall (fun sigma' =>
+                        exists S, WellFormed S /\
+                             Exists (fun path =>
+                                       Path path /\
+                                       exists argCountPrf : (argumentCount M <= src_count path)%nat,
+                                         Forall2 (CL Gamma) (argumentsOf M)
+                                                 (fst (split_path path _ argCountPrf)) /\
+                                         (snd (split_path path _ argCountPrf)) <= sigma'
+                                    )
+                                    (projT2 (factorize (organize (Apply S (Gamma (rootOf M)))))))
+                     (projT2 (factorize (organize sigma))) } +
+            {  Forall (fun sigma' =>
+                        exists S, WellFormed S /\
+                             Exists (fun path =>
+                                       Path path /\
+                                       exists argCountPrf : (argumentCount M <= src_count path)%nat,
+                                         Forall2 (CL Gamma) (argumentsOf M)
+                                                 (fst (split_path path _ argCountPrf)) /\
+                                         (snd (split_path path _ argCountPrf)) <= sigma'
+                                    )
+                                    (projT2 (factorize (organize (Apply S (Gamma (rootOf M)))))))
+                     (projT2 (factorize (organize sigma))) -> False }.
+        Proof.
+          intros Gamma M sigma.
+          induction M.
+          - admit.
+          - 
+
+        Lemma CL_check:
+          forall Gamma M sigma, { CL Gamma M sigma } + { CL Gamma M sigma -> False }.
+        Proof.
+          intros Gamma M.
+          induction M; intro sigma.
+          - apply CL_check_c.
+          - 
+            
+      
+      Lemma CL_Path_computational:
+        forall Gamma M sigma,
+        CL Gamma M sigma ->
+        ForAll' (fun sigma' =>
+                  { S : _ | WellFormed S /\
+                            Exists (fun path =>
+                                      Path path /\
+                                      exists argCountPrf : (argumentCount M <= src_count path)%nat,
+                                        Forall2 (CL Gamma) (argumentsOf M)
+                                                (fst (split_path path _ argCountPrf)) /\
+                                        (snd (split_path path _ argCountPrf)) <= sigma'
+                                   )
+                                   (projT2 (factorize (organize (Apply S (Gamma (rootOf M)))))) })
+                (projT2 (factorize (organize sigma))).
+      Proof.
+        intros Gamma M sigma prf.
+        generalize (CL_Path Gamma M sigma prf).
+        match goal with
+        | [ |- _ -> ForAll' _ ?tgt_paths ] => induction tgt_paths as [ | tgt n tgts IH ]
+        end.
+        - intros; apply ForAll'_nil.
+        - intro path_prfs.
+          apply ForAll'_cons.
+          + generalize (Forall_nth _ _ path_prfs F1).
+            intro ex_prf.
+            apply (constructive_indefinite_ground_description _ _ _ fromTo_id _ WF_dec ex_prf).
+          + generalize (append_Forall2 _ (cons _ tgt _ (nil _)) tgts path_prfs).
+            auto.
+           
+      
+        
+    End DecidableWF.
+
+    
     
 (*
     Lemma MP_generation: forall Gamma M N tau,
