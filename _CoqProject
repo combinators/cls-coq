@@ -1,4 +1,5 @@
 -R . CLAlg
 ./VectorQuantification.v
+./Cantor.v
 ./CL.v
 ./CLAlg.v

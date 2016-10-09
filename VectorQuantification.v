@@ -1,3 +1,4 @@
+Require Import Coq.Lists.List.
 Require Import Coq.Vectors.Fin.
 Require Import Coq.Vectors.Vector.
 
@@ -1010,4 +1011,64 @@ Proof.
     simpl.
     apply Exists_cons_tl.
     auto.
+Qed.
+
+Lemma Exists_in {T : Type} {m: nat}:
+  forall (xs : t T m) (P: T -> Prop), Exists P xs -> exists x, P x /\ In x xs.
+Proof.
+  intros xs P ex_prf.
+  induction ex_prf as [ ? ? ? here | ? ? ? ? IH ].
+  - eexists; split; [ eassumption | left; reflexivity ].
+  - destruct IH as [ x' [ Px' in_xs ] ].
+    eexists; split; [ eassumption | right; eassumption ].
+Qed.  
+
+Lemma nth_Exists {T : Type} {n : nat}:
+  forall (xs: t T n) (P : T -> Prop) k, P (nth xs k) -> Exists P xs.
+Proof.
+  intros xs P.
+  induction xs as [ | ? ? ? IH ].
+  - intro k; inversion k.
+  - intro k.
+    apply (Fin.caseS' k).
+    + intro; apply Exists_cons_hd; assumption.
+    + intros; apply Exists_cons_tl.
+      eapply IH; eassumption.
+Qed.
+
+Lemma ListForall_Forall {A: Type} {P : A -> Prop}: forall xs, List.Forall P xs -> Forall P (of_list xs). 
+Proof.      
+  intro xs.
+  induction xs.
+  - intro; apply Forall_nil.
+  - intro prf.
+    inversion prf.
+    apply Forall_cons; auto.
+Qed.
+
+Lemma Forall_ListForall {A: Type} {P : A -> Prop} {n: nat}: forall (xs: t A n), Forall P xs -> List.Forall P (to_list xs).
+Proof.
+  intro xs.
+  induction xs.
+  - intros; apply List.Forall_nil.
+  - intro prfs.
+    inversion prfs as [ | n' x xs' prf_x prfs_xs n_eq [ x_eq xs_eq ] ].
+    dependent rewrite xs_eq in prfs_xs.
+    apply List.Forall_cons; auto.
+Qed.
+
+Lemma ListExists_Exists {A: Type} {P : A -> Prop}: forall xs, List.Exists P xs -> Exists P (of_list xs).
+Proof.
+  intros xs prf.
+  induction prf.
+  - apply Exists_cons_hd; assumption.
+  - apply Exists_cons_tl; assumption.
+Qed.
+
+Lemma Exists_ListExists {A: Type} {P : A -> Prop} {n: nat}: forall (xs: t A n), Exists P xs -> List.Exists P (to_list xs).
+Proof.
+  intros xs prf.
+  induction prf.
+  - apply List.Exists_cons_hd; assumption.
+  - apply List.Exists_cons_tl; assumption.
 Qed.
