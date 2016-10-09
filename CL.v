@@ -6420,9 +6420,79 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
             + apply List.Exists_cons_tl; assumption.
             + assumption.
         Qed.
-              
-            
-            
+
+        Definition allPossibleInhabitants_maxcount Gamma tau c :=
+          (fix count n :=
+             match n with
+             | 0 => List.cons (existT (fun n => list (t IntersectionType n * IntersectionType))
+                                     0 (allPossibleInhabitants Gamma tau c 0)) (List.nil)
+             | S n =>
+               List.app (count n)
+                        (List.cons (existT (fun n => list (t IntersectionType n * IntersectionType))
+                                           (S n) (allPossibleInhabitants Gamma tau c (S n)))
+                                   (List.nil))
+             end) (MaximalSourceCount (minimalInstance (Gamma c))).
+
+        Lemma allPossibleInhabitants_maxcount_sound:
+          forall Gamma tau c,
+            { S : _ | WellFormed S } ->
+            List.Forall (fun possible =>
+                           List.Forall (fun arrow =>
+                                          forall arguments,
+                                            Forall2 (CL Gamma) arguments (fst arrow) ->
+                                            CL Gamma (applyAll (Symbol c) arguments) tau)
+                                       (projT2 possible))
+                        (allPossibleInhabitants_maxcount Gamma tau c).
+        Proof.
+          intros Gamma tau c ex_S.
+          unfold allPossibleInhabitants_maxcount.
+          induction (MaximalSourceCount (minimalInstance (Gamma c))) as [ | n IH ].
+          - apply List.Forall_cons; [ | apply List.Forall_nil ].
+            apply allPossibleInhabitants_sound; assumption.
+          - simpl.
+            apply List.Forall_forall.
+            intros possibilities possibilities_in.
+            destruct (in_app_or _ _ _ possibilities_in) as [ inl | inr ].
+            + exact (proj1 (List.Forall_forall _ _) IH _ inl). 
+            + destruct inr as [ here | devil ].
+              * rewrite <- here; apply allPossibleInhabitants_sound; assumption.
+              * inversion devil.
+        Qed.
+
+        Lemma allPossibleInhabitants_maxcount_complete:
+          forall Gamma tau M,
+            (Omega tau -> False) ->
+            CL Gamma M tau ->
+            List.Exists (fun possible =>
+                           exists argCountPrf : projT1 possible = argumentCount M,
+                             List.Exists (fun arrow =>
+                                            Forall2 (CL Gamma) (argumentsOf M) (rew argCountPrf in fst arrow) /\
+                                            (snd arrow) <= tau) (projT2 possible))
+                        (allPossibleInhabitants_maxcount Gamma tau (rootOf M)).
+        Proof.
+          intros Gamma tau M notOmegaTau Mtau.
+          generalize (CL_MaximalArgumentCount _ _ _ notOmegaTau Mtau).
+          intro prf.
+          unfold allPossibleInhabitants_maxcount.
+          induction prf as [ | ? ? IH ].
+          - destruct M as [ c | M N ].
+            + apply List.Exists_cons_hd.
+              exists eq_refl.
+              exact (allPossibleInhabitants_complete _ _ _ notOmegaTau Mtau).
+            + apply List.Exists_exists.
+              eexists; split.
+              * apply (List.in_or_app); right; left; reflexivity.
+              * exists eq_refl.
+                exact (allPossibleInhabitants_complete _ _ _ notOmegaTau Mtau).
+          - destruct (proj1 (List.Exists_exists _ _) IH)
+              as [ x [ inprf prf' ] ].
+            apply List.Exists_exists.
+            exists x; split.
+            * apply (List.in_or_app); left; assumption.
+            * assumption.
+        Qed.
+
+        
 (*
 
           
