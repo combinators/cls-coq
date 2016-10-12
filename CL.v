@@ -4168,7 +4168,42 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
             { apply (IH _ path_tau'' tau''_le _
                         (proj2 (Nat.succ_le_mono _ _) sigmaPrf)
                         (proj2 (Nat.succ_le_mono _ _) tauPrf)). }
-    Qed.        
+    Qed.
+
+    Lemma ST_path_src_n: forall sigma tau,
+        Path sigma -> Path tau ->
+        sigma <= tau ->
+        forall n (sigmaPrf: (n <= src_count sigma)%nat) (tauPrf: (n <= src_count tau)%nat),
+          Forall2 Subtypes (fst (split_path tau n tauPrf)) (fst (split_path sigma n sigmaPrf)).
+    Proof.
+      intros sigma tau path_sigma.
+      revert tau.
+      induction path_sigma as [ | ? ? ? IH ].
+      - intros tau path_tau sigma_le n n_le.
+        simpl in n_le.
+        destruct n.
+        + intros; apply Forall2_nil.
+        + inversion n_le.
+      - intros tau' path_tau'.
+        inversion path_tau' as [ | ? ? path_tau'' ].
+        + intro devil.
+          assert False; [ | contradiction ].
+          apply (ST_Arrow_Const _ _ _ _ devil).
+        + intro arrow_le.
+          generalize (AI_complete _ _ _ arrow_le).
+          intro AI_tau'.
+          inversion AI_tau' as [ ? omega_tau'' | ? ? ? tau''_le | | | ].
+          * assert False; [ | contradiction ].
+            eapply Omega_path; eassumption.
+          * intros n sigmaPrf tauPrf.
+            destruct n.
+            { apply Forall2_nil.  }
+            { apply Forall2_cons.
+              - assumption.
+              - apply (IH _ path_tau'' tau''_le _
+                        (proj2 (Nat.succ_le_mono _ _) sigmaPrf)
+                        (proj2 (Nat.succ_le_mono _ _) tauPrf)). }
+    Qed.    
     
     Lemma CL_Path: forall Gamma M sigma,
         CL Gamma M sigma ->

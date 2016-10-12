@@ -495,7 +495,45 @@ Module Type CLAlgebra
          induction ex_path as [ ? x ? here | ? x xs ? IH ].
          + destruct here as [ path_x [ argCountPrf [ args_inhab tgt_le ] ] ].
            eapply CL_ST.
-           * 
+           * apply (Forall2_nth _ _ _ args_inhab k').
+           * generalize (Gamma_paths (rootOf M) (unembedSubst S)).
+             rewrite unembedApply_c.
+             intro path_c.
+             rewrite (ST_intersect_nth _ Fin.F1) in root_le.
+             assert (argCountPrf' : (argumentCount M <= src_count (Apply S (Gamma (rootOf M))))%nat).
+             { generalize (Path_src_count _ _ root_le path_c path_x).
+               intro count_eq.
+               rewrite count_eq.
+               assumption. }               
+             generalize (Forall2_nth _ _ _ (ST_path_src_n _ _ path_c path_x root_le _ argCountPrf' argCountPrf) k').
+             intro arg_le.
+             rewrite arg_le.
+             unfold Gamma.
+             clear arg_le.
+             revert fully_applied k' argCountPrf'.
+             clear ...
+             intro fully_applied.
+             rewrite fully_applied.
+             unfold eq_rect_r.
+             simpl.
+             clear fully_applied.
+             unfold Gamma.
+             induction (domain (rootOf M)) as [ | ? ? ? IH ].
+             { inversion k. }
+             { intro argCountPrf.
+               apply (Fin.caseS' k).
+               - simpl.
+                 unfold blackBoxEmbed.
+                 simpl.
+                 rewrite unembedApply; [ | eexists; reflexivity ].
+                 apply (ST_Ax _ _ eq_refl); [ reflexivity | ].
+                 unfold eq_rect_r.
+                 simpl.
+                 rewrite unembedEmbed.
+                 apply Forall2_cons; [ | apply Forall2_nil ].
+                 reflexivity.
+               - intro k'.
+                 apply (IH k' (proj2 (Nat.succ_le_mono _ _) argCountPrf)). }
          + rewrite (ST_intersect_append_le (cons _ x _ (nil _)) xs) in root_le.
            rewrite (ST_InterMeetRight) in root_le.
            auto.
