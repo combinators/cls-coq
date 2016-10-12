@@ -3728,6 +3728,8 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
       dependent rewrite tl_eq in prfs'.
       auto.
   Qed.
+
+  
   
   Definition Substitution: Set := VariableSymbol -> IntersectionType.
   Fixpoint Apply (S: Substitution) (sigma: TypeScheme): IntersectionType :=
@@ -4133,6 +4135,39 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
         { reflexivity. }
         rewrite rhs_eq2.
         apply IHtau.
+    Qed.
+
+    Lemma ST_path_tgt_n: forall sigma tau,
+        Path sigma -> Path tau ->
+        sigma <= tau ->
+        forall n (sigmaPrf: (n <= src_count sigma)%nat) (tauPrf: (n <= src_count tau)%nat),
+          snd (split_path sigma n sigmaPrf) <= snd (split_path tau n tauPrf).
+    Proof.
+      intros sigma tau path_sigma.
+      revert tau.
+      induction path_sigma as [ | ? ? ? IH ].
+      - intros tau path_tau sigma_le n n_le.
+        simpl in n_le.
+        destruct n.
+        + intros; assumption.
+        + inversion n_le.
+      - intros tau' path_tau'.
+        inversion path_tau' as [ | ? ? path_tau'' ].
+        + intro devil.
+          assert False; [ | contradiction ].
+          apply (ST_Arrow_Const _ _ _ _ devil).
+        + intro arrow_le.
+          generalize (AI_complete _ _ _ arrow_le).
+          intro AI_tau'.
+          inversion AI_tau' as [ ? omega_tau'' | ? ? ? tau''_le | | | ].
+          * assert False; [ | contradiction ].
+            eapply Omega_path; eassumption.
+          * intros n sigmaPrf tauPrf.
+            destruct n.
+            { assumption. }
+            { apply (IH _ path_tau'' tau''_le _
+                        (proj2 (Nat.succ_le_mono _ _) sigmaPrf)
+                        (proj2 (Nat.succ_le_mono _ _) tauPrf)). }
     Qed.        
     
     Lemma CL_Path: forall Gamma M sigma,
@@ -4278,6 +4313,45 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
               dependent rewrite <- tl_eq.
               assumption. }             
           * assumption.
+    Qed.
+
+    Lemma CL_Path_path: forall Gamma M sigma,
+        CL Gamma M sigma ->
+        Path sigma ->
+        exists S, WellFormed S /\
+             Exists (fun path =>
+                       Path path /\
+                       exists argCountPrf : (argumentCount M <= src_count path)%nat,
+                         Forall2 (CL Gamma) (argumentsOf M)
+                                 (fst (split_path path _ argCountPrf)) /\
+                         (snd (split_path path _ argCountPrf)) <= sigma
+                    )
+                    (projT2 (factorize (organize (Apply S (Gamma (rootOf M)))))).
+    Proof.
+      intros Gamma M sigma prf path_sigma.
+      generalize (CL_Path _ _ _ prf).
+      clear prf.
+      generalize (ST_path _ _ (ST_Refl sigma) path_sigma).
+      intro ex_path.
+      induction ex_path as [ ? ? ? here | ? ? ? there ]; intro all_s.
+      - inversion all_s as [ | ? ? ? prf prfs n_eq [ hd_eq tl_eq ] ].
+        destruct prf as [ S [ WF_S ex_prf ] ].
+        exists S; split; [ assumption | ].
+        revert ex_prf here.
+        clear ...
+        intros ex_prf here.
+        destruct here as [ path_x x_le ].
+        induction ex_prf as [ ? ? ? here | there ].
+        + inversion here as [ path_x' [ argCountPrf [ argsPrfs x_ge ] ] ].
+          apply Exists_cons_hd; split.
+          * assumption.
+          * eexists; split; [ eassumption | ].
+            rewrite <- x_le.
+            assumption.
+        + apply Exists_cons_tl; assumption.
+      - inversion all_s as [ | ? ? ? prf prfs n_eq [ hd_eq tl_eq ] ].
+        dependent rewrite tl_eq in prfs.
+        auto.
     Qed.
 
     Lemma CL_Path_c: forall Gamma c sigma,

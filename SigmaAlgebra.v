@@ -1,6 +1,9 @@
 Require Import Coq.Vectors.Vector.
+Require Import VectorQuantification.
 Require Import Coq.Classes.RelationClasses.
-
+Require Import Coq.Logic.Eqdep_dec.
+Require Import Coq.Arith.PeanoNat.
+Import EqNotations.
 (*
 Class Monad (F : Set -> Set): Type :=
   mkMonad { fmap {A B: Set}: (A -> B) -> F A -> F B;
@@ -52,6 +55,22 @@ Section Algebraic.
     
     Definition SigmaAlgebra: Type := forall (s: Sort EmptySet), F s -> Carrier s.  
     Definition SigmaCoAlgebra: Type := forall (s: Sort EmptySet), Carrier s -> F s.
+
+    Definition nth_F_args:
+      forall {n : nat} {Var: Set}
+        (S : Var -> Sort EmptySet) (argSorts : t (Sort Var) n),
+        (forall k, Carrier (applySubst S (nth argSorts k))) ->
+        F_args S argSorts.
+    Proof.
+      intros n Var' S argSorts.
+      unfold F_args.
+      induction argSorts as [ | ? ? ? IH ].
+      - intro; exact tt.
+      - intro f.
+        split.
+        + apply (f (Fin.F1)).
+        + apply (IH (fun k => f (Fin.FS k))).
+    Defined.
   End WithCarrier.
   
   Definition fmap_args
@@ -187,13 +206,15 @@ Module Type SortEmbedding
   End CL.
 
   Export CL.
+
   Parameter embed: forall {A: Set}, Sort A -> @TypeScheme A.
   Parameter unembed: forall {A: Set}, @TypeScheme A -> Sort A.
   Axiom unembedEmbed: forall {A: Set} (s: Sort A), unembed (embed s) = s.
   Axiom embedUnembed: forall {A: Set} (ty: @TypeScheme A), (exists s, ty = embed s) -> embed (unembed ty) = ty.
   Axiom embed_respectful: forall (s s': Sort EmptySet), subsorts s s' -> freeze (embed s) <= freeze (embed s').
   Axiom unembed_respectful: forall (sigma tau: IntersectionType),
-      sigma <= tau -> subsorts (unembed (unfreeze sigma)) (unembed (unfreeze tau)). 
+      sigma <= tau -> subsorts (unembed (unfreeze sigma)) (unembed (unfreeze tau)).
+  Axiom embed_Path: forall s, Path (freeze (embed s)).
   
   Definition embedSubst: (Signature.Var -> Sort EmptySet) -> (VariableSymbol -> IntersectionType) :=
     fun S alpha => freeze (embed (S alpha)).
@@ -202,8 +223,8 @@ Module Type SortEmbedding
 
   Axiom embedApply: forall S s, freeze (embed (applySubst S s)) = Apply (embedSubst S) (embed s).
   Axiom unembedApply: forall S tau,
-      (exists s, @unfreeze EmptySet tau = embed s) ->
-      unembed (unfreeze (Apply S (unfreeze tau))) = applySubst (unembedSubst S) (unembed (unfreeze tau)).
+      (exists s, tau = embed s) ->
+      Apply S tau = freeze (embed (applySubst (unembedSubst S) (unembed tau))).
   
   Lemma unembed_embedSubst: forall S alpha,
       unembedSubst (embedSubst S) alpha = S alpha.
@@ -255,29 +276,51 @@ Module Type CLAlgebra
            ArrowScheme (blackBoxEmbedOpen param) (Gamma_rec _ params)
          end) _ (domain c).
 
+    Lemma Gamma_paths:
+      forall (c: CombinatorSymbol) (S: Signature.Var -> Sort EmptySet),
+        Path (Apply (embedSubst S) (Gamma c)).
+    Proof.
+      intros c S.
+      unfold Gamma.
+      induction (domain c).
+      - unfold blackBoxEmbedOpen.
+        apply Path_Const.
+        simpl.
+        apply PathArgs_cons_arg.
+        fold (Apply).
+        rewrite <- embedApply.
+        apply embed_Path.
+      - apply Path_Arr.
+        assumption.
+    Qed.
+
+    Lemma source_count_eq : forall S op, src_count (Apply (embedSubst S) (Gamma op)) = arity op.
+    Proof.
+      intros S op.
+      unfold Gamma.
+      generalize (arity op) (domain op).
+      intros arity domain.
+      induction domain as [ | ? ? ? IH ].
+      - reflexivity.
+      - simpl.
+        rewrite IH.
+        reflexivity.
+    Qed.
+          
     Definition CL_Algebra:
       forall (WellFormed : (Signature.Var -> Sort EmptySet) -> Prop),
         (forall S, WellFormed S -> TypeSystem.WellFormed (embedSubst S)) ->
-        (forall S, WellFormed S -> forall tau, Path (Apply (embedSubst S) tau)) ->
         SigmaAlgebra Sort Signature.Var subsorts WellFormed
                      (fun s => { M : Term | CL Gamma M (blackBoxEmbed s) }).
     Proof.
       unfold SigmaAlgebra.
-      intros WF WF_transport WF_Path s Fs.
+      intros WF WF_transport s Fs.
       destruct Fs as [ op S WF_S args tgt_le ].
       assert (opty : CL Gamma (Symbol op) (Apply (embedSubst S) (Gamma op))).
       { apply CL_Var.
         apply WF_transport; assumption. }
-      assert (source_count_eq : src_count (Apply (embedSubst S) (Gamma op)) = arity op).
-      { unfold Gamma.
-        clear args.
-        generalize (arity op) (domain op).
-        intros arity domain.
-        induction domain as [ | ? ? ? IH ].
-        - reflexivity.
-        - simpl.
-          rewrite IH.
-          reflexivity. }
+      generalize (source_count_eq S op).
+      intro source_count_eq.
       assert (args' :
         { Ns: t Term (src_count (Apply (embedSubst S) (Gamma op)))
         | Forall2 (CL Gamma) Ns (fst (split_path (Apply (embedSubst S) (Gamma op))
@@ -337,11 +380,187 @@ Module Type CLAlgebra
       eexists.
       eapply CL_ST; [ | apply tgt_le' ].
       eapply CL_ApplyPath.
-      - apply WF_Path; assumption.
+      - apply Gamma_paths. 
       - eassumption.
       - exact (proj2_sig args').
     Defined.
-          
-    
+
+    Lemma unembedApply_c: forall S c,
+        Apply (embedSubst (unembedSubst S)) (Gamma c) =
+        Apply S (Gamma c).
+    Proof.
+      intros S c.
+      unfold Gamma.
+      induction (domain c) as [ | ? ? ? IH ].
+      - unfold blackBoxEmbedOpen.
+        simpl Apply.
+        apply f_equal.
+        match goal with
+        |[|- cons _ ?lhs _ _ = cons _ ?rhs _ _] =>
+         assert (s_eq: lhs = rhs)
+        end.
+        { match goal with
+          |[|- _ = Apply S ?erc ] =>
+           assert (ex_s: exists s, erc = embed s); [ eexists; reflexivity | ];
+             rewrite (unembedApply S _ ex_s)
+          end.
+          rewrite <- embedApply.
+          rewrite unembedEmbed.
+          reflexivity. }
+        rewrite s_eq.
+        reflexivity.
+      - simpl.
+        apply (f_equal2); [ | exact IH ].
+        apply f_equal.
+        match goal with
+        |[|- cons _ ?lhs _ _ = cons _ ?rhs _ _] =>
+         assert (s_eq: lhs = rhs)
+        end.
+        { match goal with
+          |[|- _ = Apply S ?erc ] =>
+           assert (ex_s: exists s, erc = embed s); [ eexists; reflexivity | ];
+             rewrite (unembedApply S _ ex_s)
+          end.
+          rewrite <- embedApply.
+          rewrite unembedEmbed.
+          reflexivity. }
+        rewrite s_eq.
+        reflexivity.
+    Qed.
+
+    Definition CL_CoAlgebra:
+      forall (WellFormed : (Signature.Var -> Sort EmptySet) -> Prop),
+        (forall S, TypeSystem.WellFormed S -> WellFormed (unembedSubst S)) ->
+        (forall S, { TypeSystem.WellFormed S } + { TypeSystem.WellFormed S -> False }) ->
+        (forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}) ->
+        SigmaCoAlgebra Sort Signature.Var subsorts WellFormed
+                       (fun s => { M : Term | CL Gamma M (blackBoxEmbed s) }).
+     Proof.
+       intros WF WF_transport WF_dec CL_dec.
+       unfold SigmaCoAlgebra.
+       intros s prf.
+       destruct prf as [ M prf ].
+       assert (path_s : Path (blackBoxEmbed s)).
+       { unfold blackBoxEmbed.
+         apply Path_Const.
+         simpl.
+         apply PathArgs_cons_arg.
+         fold freeze.
+         apply embed_Path. }
+       generalize (CL_Path_path _ _ _ prf path_s).
+       intro ex_subst.
+       generalize (CL_Path_path_compute_S WF_dec _ CL_dec _ _ path_s ex_subst).
+       clear ex_subst; intro ex_subst.
+       destruct ex_subst as [ S [ WF_S ex_path ] ].
+       assert (fully_applied: argumentCount M = arity (rootOf M)).
+       { rewrite <- (source_count_eq (unembedSubst S) (rootOf M)).
+         rewrite unembedApply_c.
+         generalize (ST_organize_ge (Apply S (Gamma (rootOf M)))).
+         rewrite (factorize_organized _ (organize_organized _)).
+         induction ex_path as [ ? ? ? here | ? x xs ].
+         - destruct here as [ path_x [ argCountPrf [ _ tgt_le ] ] ].
+           intro x_ge.
+           rewrite (ST_intersect_nth _ Fin.F1) in x_ge.
+           simpl in x_ge.
+           generalize (Gamma_paths (rootOf M) (unembedSubst S)).
+           rewrite unembedApply_c.
+           intro path_c.
+           generalize (Path_src_count _ _ x_ge path_c path_x).
+           intro src_count_eq'.
+           rewrite src_count_eq'.
+           inversion argCountPrf as [ | n argCountPrf' src_count_eq'' ].
+           + reflexivity.
+           + assert (argCountPrf'' : (Datatypes.S (argumentCount M) <= Datatypes.S n)%nat).
+             { rewrite <- Nat.succ_le_mono.
+               assumption. }
+             rewrite src_count_eq'' in argCountPrf''.
+             generalize (split_path_step _ _ argCountPrf argCountPrf'').
+             intro split_path_eq.
+             rewrite split_path_eq in tgt_le.
+             unfold blackBoxEmbed in tgt_le.
+             assert False; [ | contradiction ].
+             apply (ST_Arrow_Const _ _ _ _ tgt_le).
+         - rewrite (ST_intersect_append_le (cons _ x _ (nil _)) xs).
+           rewrite (ST_InterMeetRight).
+           intro; auto. }
+       apply (mkF _ _ _ _ _ _ (rootOf M) (unembedSubst S)).
+       - apply WF_transport; assumption.
+       - generalize (ST_organize_ge (Apply S (Gamma (rootOf M)))).
+         rewrite (factorize_organized _ (organize_organized _)).
+         intro root_le.
+         apply nth_F_args.
+         intro k.
+         set (k' := rew <- fully_applied in k).
+         exists (nth (argumentsOf M) k').
+         induction ex_path as [ ? x ? here | ? x xs ? IH ].
+         + destruct here as [ path_x [ argCountPrf [ args_inhab tgt_le ] ] ].
+           eapply CL_ST.
+           * 
+         + rewrite (ST_intersect_append_le (cons _ x _ (nil _)) xs) in root_le.
+           rewrite (ST_InterMeetRight) in root_le.
+           auto.
+       - assert (source_count_le : (arity (rootOf M) <= src_count (Apply S (Gamma (rootOf M))))%nat).
+         { generalize (source_count_eq (unembedSubst S) (rootOf M)).
+           intro source_count_eq.
+           rewrite unembedApply_c in source_count_eq.
+           rewrite <- source_count_eq.
+           reflexivity. }
+         assert (split_path_eq:
+           snd (split_path (Apply S (Gamma (rootOf M))) _ source_count_le) =
+           blackBoxEmbed (applySubst (unembedSubst S) (range (rootOf M)))).
+         { clear ...
+           revert source_count_le.
+           generalize (rootOf M).
+           clear M.
+           intros c.
+           unfold Gamma.
+           unfold blackBoxEmbed.
+           induction (domain c) as [ | ? ? ? IH ].
+           - intros; simpl.
+             rewrite unembedApply; [ | eexists; reflexivity ].
+             rewrite unembedEmbed.
+             reflexivity.
+           - simpl.
+             intro source_count_le.
+             generalize (proj2 (PeanoNat.Nat.succ_le_mono _ _) source_count_le).
+             intro source_count_le'.
+             generalize (IH source_count_le').
+             intro IH'.
+             exact IH'. }
+         assert (path_tgt_le:
+           snd (split_path (Apply S (Gamma (rootOf M))) _ source_count_le) <=
+           blackBoxEmbed s).
+         { generalize (ST_organize_ge (Apply S (Gamma (rootOf M)))).
+           rewrite (factorize_organized _ (organize_organized _)).
+           induction ex_path as [ | ? x xs there IH ].
+           - intro x_ge.
+             rewrite (ST_intersect_nth _ Fin.F1) in x_ge.
+             simpl in x_ge.
+             admit.
+           - intro xs_ge.
+             rewrite (ST_intersect_append_le (cons _ x _ (nil _)) xs) in xs_ge.
+             rewrite (ST_InterMeetRight _ _) in xs_ge.
+             exact (IH xs_ge). }
+         rewrite split_path_eq in path_tgt_le.
+         unfold blackBoxEmbed in path_tgt_le.
+         simpl in path_tgt_le.
+         generalize (CI_complete _ _ _ path_tgt_le).
+         intro path_tgt_ci.
+         inversion path_tgt_ci as [ ? ? arity_eq ? args_st [ hd_eq tl_eq ] | | | ].
+         unfold eq_rect_r in args_st.
+         rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ (eq_sym arity_eq)) in args_st.
+         rewrite (vect_exist_eq _ _
+                                 (existT_fg_eq (fun x => t IntersectionType x) constructorArity _ _ _ tl_eq))
+           in args_st.
+         inversion args_st as [ | ? ? ? ? ? arg_st ].
+         generalize (unembed_respectful _ _  arg_st).
+         intro arg_subsorts.
+         rewrite freezeUnfreeze in arg_subsorts.
+         rewrite freezeUnfreeze in arg_subsorts.
+         rewrite unembedEmbed in arg_subsorts.
+         rewrite unembedEmbed in arg_subsorts.
+         exact arg_subsorts.
+     Qed.
+         
   End Algebra.
 End CLAlgebra.
