@@ -20,8 +20,6 @@ Module Type SymbolSpecification.
   Parameter VariableSymbol: Set.
   Parameter CombinatorSymbol: Set.
 
-  Parameter VariableSymbol_eq_dec:
-    forall (alpha beta: VariableSymbol), {alpha = beta} + {alpha <> beta}.
   Parameter ConstructorSymbol_eq_dec:
     forall (C1 C2: ConstructorSymbol), {C1 = C2} + {C1 <> C2}.
 
@@ -41,12 +39,13 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
   | PT_Arrow: forall (sigma tau : T), PreType
   | PT_Inter: forall (sigma tau: T), PreType.
            
-  Inductive TypeScheme: Set :=
+  Inductive TypeScheme {VariableSymbol: Set}: Set :=
   | Var: forall alpha: VariableSymbol, TypeScheme
   | Skeleton: forall skel: @PreType TypeScheme, TypeScheme.
 
   Fixpoint TypeScheme_rect'
-           (P: TypeScheme -> Type)
+           (VariableSymbol: Set)
+           (P: @TypeScheme VariableSymbol -> Type)
            (var_case: forall alpha, P (Var alpha))
            (omega_case: P (Skeleton PT_omega))
            (const_case: forall C (ts: t TypeScheme (constructorArity C))
@@ -69,7 +68,7 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
                      | nil _ => ForAll'_nil _
                      | cons _ ty _ tys =>
                        ForAll'_cons _ _ _
-                                   (TypeScheme_rect' P
+                                   (TypeScheme_rect' _ P
                                                     var_case omega_case
                                                     const_case arrow_case
                                                     inter_case ty)
@@ -77,18 +76,18 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
                      end) _ types)
     | Skeleton (PT_Arrow sigma tau) =>
       arrow_case _ _
-                 (TypeScheme_rect' P var_case omega_case
+                 (TypeScheme_rect' _ P var_case omega_case
                                   const_case arrow_case
                                   inter_case sigma)
-                 (TypeScheme_rect' P var_case omega_case
+                 (TypeScheme_rect' _ P var_case omega_case
                                   const_case arrow_case
                                   inter_case tau)
     | Skeleton (PT_Inter sigma tau) =>
       inter_case _ _
-                 (TypeScheme_rect' P var_case omega_case
+                 (TypeScheme_rect' _ P var_case omega_case
                                   const_case arrow_case
                                   inter_case sigma)
-                 (TypeScheme_rect' P var_case omega_case
+                 (TypeScheme_rect' _ P var_case omega_case
                                   const_case arrow_case
                                   inter_case tau)
     end.
@@ -188,22 +187,80 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
   Definition Inter (sigma tau: IntersectionType): IntersectionType :=
     liftPreType (PT_Inter sigma tau).
 
-  Definition omegaScheme: TypeScheme := Skeleton PT_omega.
+  Definition omegaScheme: @TypeScheme VariableSymbol := Skeleton PT_omega.
   Definition ConstScheme (C : ConstructorSymbol)
-             (sigmas: t TypeScheme (constructorArity C)): TypeScheme :=
+             (sigmas: t TypeScheme (constructorArity C)): @TypeScheme VariableSymbol :=
     Skeleton (PT_Const C sigmas).
-  Definition ArrowScheme (sigma tau: TypeScheme): TypeScheme :=
+  Definition ArrowScheme (sigma tau: TypeScheme): @TypeScheme VariableSymbol :=
     Skeleton (PT_Arrow sigma tau).
-  Definition InterScheme (sigma tau: TypeScheme): TypeScheme :=
+  Definition InterScheme (sigma tau: TypeScheme): @TypeScheme VariableSymbol:=
     Skeleton (PT_Inter sigma tau).
 
-  Fixpoint unfreeze (sigma: IntersectionType): TypeScheme :=
+  Fixpoint unfreeze {VariableSymbol: Set} (sigma: IntersectionType): @TypeScheme VariableSymbol :=
     match sigma with
     | Ty (PT_omega) => Skeleton (PT_omega)
     | Ty (PT_Const c tys) => Skeleton (PT_Const c (map unfreeze tys))
     | Ty (PT_Arrow src tgt) => Skeleton (PT_Arrow (unfreeze src) (unfreeze tgt))
     | Ty (PT_Inter l r) => Skeleton (PT_Inter (unfreeze l) (unfreeze r))
     end.
+
+  Fixpoint freeze (sigma: @TypeScheme False): IntersectionType :=
+    match sigma with
+    | Skeleton (PT_omega) => omega
+    | Skeleton (PT_Const c tys) => Const c (map freeze tys)
+    | Skeleton (PT_Arrow src tgt) => Arrow (freeze src) (freeze tgt)
+    | Skeleton (PT_Inter l r) => Inter (freeze l) (freeze r)
+    | Var alpha => False_rect _ alpha
+    end.
+
+  Lemma unfreezeFreeze: forall sigma, freeze (unfreeze sigma) = sigma.
+  Proof.
+    intro sigma.
+    induction sigma
+      as [ | c args IH | src tgt IHsrc IHtgt | l r IHl IHr ]
+           using IntersectionType_rect'.
+    - reflexivity.
+    - simpl.
+      rewrite <- map_fg.
+      unfold Const.
+      unfold liftPreType.
+      apply f_equal.
+      apply f_equal.
+      revert args IH.
+      generalize (constructorArity c).
+      clear c.
+      intros n args IH.
+      induction IH as [ | ? ? ? prf prfs IH' ].
+      + reflexivity.
+      + simpl; rewrite prf; apply f_equal; assumption.
+    - simpl; rewrite IHsrc; rewrite IHtgt; reflexivity.
+    - simpl; rewrite IHl; rewrite IHr; reflexivity.
+  Qed.
+
+  Lemma freezeUnfreeze: forall sigma, unfreeze (freeze sigma) = sigma.
+  Proof.
+    intro sigma.
+    induction sigma
+      as [ | | c args IH | src tgt IHsrc IHtgt | l r IHl IHr ]
+           using TypeScheme_rect'.
+    - contradiction.
+    - reflexivity.
+    - simpl.
+      rewrite <- map_fg.
+      unfold Const.
+      unfold liftPreType.
+      apply f_equal.
+      apply f_equal.
+      revert args IH.
+      generalize (constructorArity c).
+      clear c.
+      intros n args IH.
+      induction IH as [ | ? ? ? prf prfs IH' ].
+      + reflexivity.
+      + simpl; rewrite prf; apply f_equal; assumption.
+    - simpl; rewrite IHsrc; rewrite IHtgt; reflexivity.
+    - simpl; rewrite IHl; rewrite IHr; reflexivity.
+  Qed.
 
   Fixpoint intersect {n : nat} (sigmas: t IntersectionType n): IntersectionType :=
     match sigmas with
@@ -221,6 +278,7 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
     
   Local Open Scope type_scope.
   Import EqNotations.
+  Delimit Scope IntersectionTypes with intersection_types.
   Inductive Subtypes : IntersectionType -> IntersectionType -> Prop :=
   | ST_Ax: forall C_1 C_2 (arityEq: constructorArity C_1 = constructorArity C_2),
       ConstructorTaxonomy C_1 C_2 ->
@@ -249,8 +307,9 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
   | ST_OmegaArrow: omega <= Arrow omega omega
   | ST_Trans: forall sigma tau rho,
       sigma <= tau -> tau <= rho -> sigma <= rho
-  where "sigma <= tau" := (Subtypes sigma tau).
-
+  where "sigma <= tau" := (Subtypes sigma tau) : intersection_types.
+  Open Scope intersection_types.
+  
   Instance ST_Trans': Transitive Subtypes := ST_Trans.
   Instance ST_Refl: Reflexive Subtypes.
   Proof.
@@ -3739,7 +3798,7 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
   Module Type TypeSystem.
     Parameter WellFormed: Substitution -> Prop.
       
-    Definition Context: Type := CombinatorSymbol -> TypeScheme.
+    Definition Context: Type := CombinatorSymbol -> @TypeScheme VariableSymbol.
 
     Inductive CL (Gamma : Context): Term -> IntersectionType -> Prop :=
     | CL_Var: forall c S, WellFormed S -> CL Gamma (Symbol c) (Apply S (Gamma c))
@@ -6492,8 +6551,431 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
             * assumption.
         Qed.
 
-        
+        Definition grammarEntry (combinatorsFinite: Finite CombinatorSymbol) Gamma tau :=
+          map (fun c =>
+                 (fromFin _ combinatorsFinite c,
+                  allPossibleInhabitants_maxcount Gamma tau (fromFin _ combinatorsFinite c)))
+              (positions (cardinality _ combinatorsFinite)).
+
+
+        Lemma grammarEntry_sound:
+          forall combinatorsFinite Gamma tau,
+            { S : _ | WellFormed S } ->
+            Forall (fun entry =>
+                      List.Forall (fun possible =>
+                                     List.Forall (fun arrow =>
+                                                    forall arguments,
+                                                      Forall2 (CL Gamma) arguments (fst arrow) ->
+                                                      CL Gamma (applyAll (Symbol (fst entry)) arguments) tau)
+                                                 (projT2 possible))
+                                  (snd entry))
+                   (grammarEntry combinatorsFinite Gamma tau).
+        Proof.
+          intros cFinite Gamma tau ex_S.
+          unfold grammarEntry.
+          destruct cFinite as [ card toFin fromFin toFrom_id ].
+          simpl.
+          clear toFin toFrom_id.          
+          induction card as [ | card' IH ].
+          - apply Forall_nil.
+          - apply Forall_cons.
+            + apply allPossibleInhabitants_maxcount_sound; assumption.
+            + generalize (IH (fun k => fromFin (FS k))).
+              fold (map (fun c => (fromFin c,
+                                allPossibleInhabitants_maxcount Gamma tau
+                                                                (fromFin c)))
+                        (map FS (positions card'))).
+              rewrite <- (map_fg _ _ FS).
+              intro; assumption.
+        Qed.
+
+        Lemma grammarEntry_complete:
+          forall combinatorsFinite Gamma tau M,
+            (Omega tau -> False) ->
+            CL Gamma M tau ->
+            Exists (fun entry =>
+                      (fst entry = rootOf M) /\
+                      List.Exists (fun possible =>
+                                     exists argCountPrf : projT1 possible = argumentCount M,
+                                       List.Exists (fun arrow =>
+                                                      Forall2 (CL Gamma) (argumentsOf M)
+                                                              (rew argCountPrf in fst arrow) /\
+                                                      (snd arrow) <= tau) (projT2 possible))
+                                  (snd entry))
+                   (grammarEntry combinatorsFinite Gamma tau).
+        Proof.
+          intros cFinite Gamma tau M notOmegaTau Mtau.
+          unfold grammarEntry.
+          destruct cFinite as [ card toFin fromFin toFrom_id ].
+          simpl.
+          rewrite <- (toFrom_id (rootOf M)).
+          remember (toFin (rootOf M)) as k eqn:k_eq.
+          generalize (f_equal fromFin k_eq).
+          intro k_eq'.
+          rewrite toFrom_id in k_eq'.
+          clear k_eq toFrom_id toFin.
+          revert k_eq'.
+          induction card as [ | card' IH ].
+          - inversion k.
+          - simpl positions.
+            simpl map.
+            apply (Fin.caseS' k).
+            + intro k_eq.
+              apply Exists_cons_hd; split.
+              * reflexivity.
+              * rewrite k_eq.
+                apply (allPossibleInhabitants_maxcount_complete _ _ _ notOmegaTau Mtau).
+            + intros k' k_eq.
+              apply Exists_cons_tl.
+              rewrite <- (map_fg _ _ FS).
+              apply (IH (fun k => fromFin (FS k)) _ k_eq).
+        Qed.
+
+        Definition possibleRecursiveTargets_ofSize (Gamma: Context) c n :=
+          (List.map (fun paths =>
+                       intersect_pointwise (of_list (List.map fst paths)))
+                    (powerset (allSplitPaths n (minimalInstance (Gamma c))))).
+
+        Definition possibleRecursiveTargets_maxcount Gamma c :=
+          (fix count n :=
+             match n with
+             | 0 => List.cons (existT (fun n => list (t IntersectionType n))
+                                     0 (possibleRecursiveTargets_ofSize Gamma c 0))
+                             List.nil
+             | S n => List.cons
+                       (existT (fun n => list (t IntersectionType n))
+                               (S n) (possibleRecursiveTargets_ofSize Gamma c (S n)))
+                       (count n)
+             end) (MaximalSourceCount (minimalInstance (Gamma c))).
+
+        Definition possibleRecursiveTargets (combinatorsFinite: Finite CombinatorSymbol) Gamma :=
+          map (fun c =>
+                 possibleRecursiveTargets_maxcount Gamma (fromFin _ combinatorsFinite c))
+              (positions (cardinality _ combinatorsFinite)).
+
+        Definition IsRecurisveTarget (combinatorsFinite: Finite CombinatorSymbol) Gamma tau sigma :=
+          exists c arrows,
+            In (c, arrows) (grammarEntry combinatorsFinite Gamma tau) /\
+            List.In
+              sigma
+              (List.flat_map
+                 (fun arrowsOfSize =>
+                    List.flat_map (fun x => to_list (fst x)) (projT2 arrowsOfSize))
+                 arrows).
+
+        Definition IsPossibleRecursiveTarget (combinatorsFinite: Finite CombinatorSymbol) Gamma sigma :=
+          exists arrows,
+            In arrows (possibleRecursiveTargets combinatorsFinite Gamma) /\
+            List.In
+              sigma
+              (List.flat_map
+                 (fun arrowsOfSize => List.flat_map (to_list) (projT2 arrowsOfSize))
+                 arrows).
+
+        Lemma possibleInhabitants_finite:
+          forall Gamma tau c n sigma,
+          List.In sigma
+               (flat_map (fun x : t IntersectionType n * IntersectionType => to_list (fst x))
+                  (allPossibleInhabitants Gamma tau c n)) ->               
+          List.In sigma (flat_map to_list (possibleRecursiveTargets_ofSize Gamma c n)).
+        Proof.
+          intros Gamma tau c n sigma in_prf.
+          unfold allPossibleInhabitants in in_prf.
+          unfold possibleRecursiveTargets.
+          unfold possibleRecursiveTargets_ofSize.
+          induction (powerset (allSplitPaths n (minimalInstance (Gamma c))))
+            as [ | path paths IH ].
+          - inversion in_prf.
+          - simpl in in_prf.
+            simpl.
+            apply (List.in_or_app).
+            destruct (ST_dec (intersect (of_list (List.map snd path))) tau).
+            + simpl in in_prf.
+              destruct (List.in_app_or _ _ _ in_prf) as [ inl | inr ].
+              * left; assumption.
+              * right; auto.
+            + right; auto.
+        Qed.
+            
+
+        Lemma grammarTargetsFinite:
+          forall (combinatorsFinite: Finite CombinatorSymbol) Gamma tau sigma, 
+            IsRecurisveTarget combinatorsFinite Gamma tau sigma ->
+            IsPossibleRecursiveTarget combinatorsFinite Gamma sigma.
+        Proof.
+          intros cFinite Gamma tau sigma prf.
+          unfold IsRecurisveTarget in prf.
+          unfold IsPossibleRecursiveTarget.
+          destruct cFinite as [ card toFin fromFin fromTo_id ].
+          simpl.
+          destruct prf as [ c [ arrows [ in_entry sigma_in ] ] ].
+          exists (possibleRecursiveTargets_maxcount Gamma c); split.
+          - unfold possibleRecursiveTargets.
+            simpl.
+            rewrite <- (fromTo_id c).
+            remember (toFin c) as k eqn:k_eq.
+            clear k_eq in_entry toFin fromTo_id.
+            induction card as [ | card' IH ].
+            + inversion k.
+            + apply (Fin.caseS' k).
+              * left.
+              * intro k'.
+                right.
+                fold (map (fun c => possibleRecursiveTargets_maxcount Gamma (fromFin c))
+                          (map FS (positions card'))).
+                rewrite <- (map_fg _ _ FS).
+                apply (IH (fun c => fromFin (FS c)) k').
+          - unfold possibleRecursiveTargets_maxcount.
+            unfold grammarEntry in in_entry.
+            simpl in in_entry.
+            assert (arrows_eq: arrows = allPossibleInhabitants_maxcount Gamma tau c).
+            { destruct (In_nth _ _ in_entry) as [ k k_eq ].
+              rewrite (nth_map _ _ _ _ eq_refl) in k_eq.
+              rewrite (positions_spec) in k_eq.
+              generalize (f_equal fst k_eq).
+              intro c_eq.
+              simpl in c_eq.
+              rewrite <- c_eq.
+              generalize (f_equal snd k_eq).
+              intro arrows_eq.
+              apply eq_sym; assumption. }
+            rewrite arrows_eq in sigma_in.
+            clear arrows_eq.
+            unfold allPossibleInhabitants_maxcount in sigma_in.
+            induction (MaximalSourceCount (minimalInstance (Gamma c))) as [ | n IH ].
+            + simpl.
+              rewrite (List.app_nil_r).
+              simpl in sigma_in.
+              rewrite (List.app_nil_r) in sigma_in.
+              eapply (possibleInhabitants_finite); eassumption.
+            + apply List.in_or_app.
+              simpl in sigma_in.
+              rewrite (List.flat_map_concat_map) in sigma_in.
+              rewrite (List.map_app) in sigma_in.
+              rewrite (List.concat_app) in sigma_in.
+              destruct (List.in_app_or _ _ _ sigma_in) as [ inl | inr ].
+              * right.
+                apply IH.
+                rewrite <- (List.flat_map_concat_map) in inl.
+                assumption.
+              * rewrite <- (List.flat_map_concat_map) in inr.
+                simpl in inr.
+                rewrite (List.app_nil_r) in inr.
+                left.
+                simpl.
+                eapply (possibleInhabitants_finite); eassumption.
+        Qed.
+
+        Require Import Coq.Init.Wf.
+        Definition TreeGrammar (combinatorsFinite: Finite CombinatorSymbol): Set :=
+          list (IntersectionType *
+                t (CombinatorSymbol *
+                   list { n : nat & list (t IntersectionType n * IntersectionType)})
+                  (cardinality CombinatorSymbol combinatorsFinite)).
+        Inductive NextInhabGrammar (combinatorsFinite: Finite CombinatorSymbol) (Gamma: Context):
+          TreeGrammar combinatorsFinite -> TreeGrammar combinatorsFinite -> Prop :=
+        | Next:
+            forall (oldGrammar: TreeGrammar combinatorsFinite) lhs rhs,
+              (*(List.Forall (IsPossibleRecursiveTarget combinatorsFinite Gamma)
+                           (List.map fst oldGrammar)) ->*)
+              IsPossibleRecursiveTarget combinatorsFinite Gamma lhs ->
+              (List.In lhs (List.map fst oldGrammar) -> False) ->
+              NextInhabGrammar combinatorsFinite Gamma (List.cons (lhs, rhs) oldGrammar) oldGrammar.
+
+        Definition initialInsert
+                   (combinatorsFinite: Finite CombinatorSymbol)
+                   (Gamma: Context)
+                   (lhs: IntersectionType)
+                   (rhs: t (CombinatorSymbol *
+                            list { n : nat & list (t IntersectionType n * IntersectionType)})
+                           (cardinality CombinatorSymbol combinatorsFinite))
+                   (lhsOk: IsPossibleRecursiveTarget combinatorsFinite Gamma lhs):
+          NextInhabGrammar combinatorsFinite Gamma (List.cons (lhs, rhs) List.nil) (List.nil) :=
+          Next combinatorsFinite Gamma (List.nil) lhs rhs (*List.Forall_nil _*) lhsOk id.
 (*
+        Definition MaximalInhabGrammarTgts combinatorsFinite (Gamma: Context): list IntersectionType :=
+          List.flat_map
+            (fun tgts =>
+               List.flat_map
+                 (fun tgtsOfSize =>
+                    List.flat_map (to_list) (projT2 tgtsOfSize))
+                 tgts)
+            (to_list (possibleRecursiveTargets combinatorsFinite Gamma)).
+
+        Lemma MaximalInhabTgtsPossible:
+          forall combinatorsFinite (Gamma: Context) sigma,
+            IsPossibleRecursiveTarget combinatorsFinite Gamma sigma <->
+            List.In sigma (MaximalInhabGrammarTgts combinatorsFinite Gamma).
+        Proof.
+          intros combinatorsFinite Gamma sigma.
+          unfold IsPossibleRecursiveTarget.
+          unfold MaximalInhabGrammarTgts.
+          induction (possibleRecursiveTargets combinatorsFinite Gamma) as [ | tgt n tgts IH ]; split.
+          - intro prf; inversion prf as [ arrows [ devil _ ] ]; inversion devil.
+          - intro; contradiction.
+          - intro prf.
+            inversion prf as [ arrows [ in_arrows sigma_in ] ].
+            inversion in_arrows as [ ? ? n_eq inl | ? ? ? inr n_eq [ hd_eq tl_eq ] ].
+            + simpl.
+              apply (List.in_or_app).
+              left.
+              rewrite <- inl; assumption.
+            + dependent rewrite tl_eq in inr.
+              generalize (proj1 IH (ex_intro _ arrows (conj inr sigma_in))).
+              intro IH'.
+              apply (List.in_or_app).
+              right; assumption.
+          - 
+          
+        
+        Lemma NextInhabGrammar_wf':
+          forall (combinatorsFinite: Finite CombinatorSymbol) (Gamma: Context),
+          forall grammar, Acc (NextInhabGrammar combinatorsFinite Gamma) grammar.
+        Proof.
+          intros combinatorsFinite Gamma grammar.
+          assert (length_finite:
+                    (length (List.filter
+                               (fun x =>
+                                  if In_dec IntersectionType_eq_dec
+                                            x (List.map fst grammar)
+                                  then false else true)
+                               (MaximalInhabGrammarTgts combinatorsFinite Gamma)) <=
+                     length (MaximalInhabGrammarTgts combinatorsFinite Gamma))%nat).
+          { admit. }
+          unfold TreeGrammar in grammar.
+          revert grammar length_finite.
+          induction (length (MaximalInhabGrammarTgts combinatorsFinite Gamma)) as [ | n IH ].
+          - intros grammar length_finite.
+            apply Acc_intro.
+            intros y acc_y.
+            inversion acc_y.
+          (* possible but not in grammar => impossible because of length_finite *)
+            admit.
+          - intros grammar length_finite.
+            inversion length_finite as [ eq | le ].
+            + apply Acc_intro.
+              intros grammar' next_inhab.
+              inversion next_inhab as [ ? lhs rhs possible_lhs not_in_lhs ].
+              apply IH.
+              clear IH length_finite next_inhab.
+              induction grammar as [ | entry grammar IH ].
+              * simpl in eq.
+                assert (length (MaximalInhabGrammarTgts combinatorsFinite Gamma) = S n).
+                { revert eq.
+                  clear ...
+                  revert n.
+                  induction (MaximalInhabGrammarTgts combinatorsFinite Gamma) as [ | x xs IH ];
+                    intros n eq.
+                  - inversion eq.
+                  - destruct xs.
+                    + inversion eq; reflexivity.
+                    + destruct n as [ | n ].
+                      * inversion eq.
+                      * simpl; apply f_equal.
+                        apply IH.
+                        inversion eq.
+                        reflexivity. }
+                
+                induction (MaximalInhabGrammarTgts combinatorsFinite Gamma).
+                { apply le_0_n. }
+                { 
+                admit.
+              * apply IH.
+              admit.
+            + apply IH; assumption.
+        Qed.
+            
+
+          
+          apply Acc_intro.
+          intros grammar' prf.
+          inversion prf as [ ? tgt rhs possible_tgt not_in_tgt ].
+          unfold IsPossibleRecursiveTarget in possible_tgt.
+          destruct possible_tgt as [ arrows [ in_arrows_possible in_tgt_arrows ] ].
+          assert (not_in_tgt' :
+                    List.In
+                      tgt
+                      (List.filter
+                         (fun x =>
+                            if In_dec IntersectionType_eq_dec x
+                                      (flat_map (fun arrowsOfSize =>
+                                                   flat_map to_list (projT2 arrowsOfSize))
+                                                arrows)
+                            then true else false) (List.map fst grammar)) -> False).
+          { revert not_in_tgt.
+            clear ...
+            intros not_in devil.
+            induction grammar as [ | entry entries IH ].
+            - contradiction.
+            - simpl in devil.
+              destruct (In_dec IntersectionType_eq_dec (fst entry)
+                               (flat_map
+                                  (fun arrowsOfSize => flat_map to_list (projT2 arrowsOfSize)) arrows)).
+              + destruct devil as [ inl | inr ].
+                * apply not_in.
+                  left.                 
+                  rewrite inl.
+                  reflexivity.
+                * apply IH.
+                  { intro; apply not_in; right; assumption. }
+                  { exact inr. }
+              + apply IH.
+                { intro; apply not_in; right; assumption. }
+                { exact devil. } }
+          clear in_arrows_possible not_in_tgt.
+          induction arrows.
+          - inversion in_tgt_arrows.
+          - 
+
+          
+          induction (possibleRecursiveTargets combinatorsFinite Gamma) as [ | ptgt n ptgts IH ].
+          - inversion possible_tgt as [ arrows [ devil _ ]]; inversion devil.
+          - inversion possible_tgt as [ arrows [ arrows_in tgt_in_arrows ]].
+            inversion arrows_in as [ ? ? n_eq [ hd_eq tl_eq ] | ? ? ? inr n_eq [ hd_eq tl_eq ] ].
+            + clear IH possible_tgt n_eq hd_eq tl_eq.
+              induction arrows as [ | arrow arrows IH ].
+              * inversion tgt_in_arrows.
+              * simpl in tgt_in_arrows.
+                destruct (List.in_app_or _ _ _ tgt_in_arrows) as [ inl | inr ].
+                { clear IH tgt_in_arrows.
+                  destruct arrow as [ arrow_size arrow_components ].
+                  induction arrow_components as [ | arrow_component arrow_components IH ].
+                  - inversion inl.
+                  - simpl in inl.
+                    destruct (List.in_app_or _ _ _ inl) as [ inl' | inr ].
+                    + clear inl IH.
+                      induction arrow_component as [ | arrow_src arrow_srcs_size arrow_srcs IH ].
+                      * inversion inl'.
+                      * simpl in inl'.
+                        inversion inl' as [ here | there ].
+                        { apply Acc_intro.
+                          admit.
+
+                        }
+                        { apply IH; assumption. }
+                    + apply IH; assumption. }
+                { apply IH; assumption. }                
+            + dependent rewrite tl_eq in inr.
+              apply IH.
+              * exists arrows; split; assumption.
+              * assumption.
+              * assumption.
+        Qed.
+        
+        Lemma NextInhabGrammar_wf:
+          forall (combinatorsFinite: Finite CombinatorSymbol) (Gamma: Context),
+            well_founded (NextInhabGrammar combinatorsFinite Gamma).
+        Proof.
+          intros cFinite Gamma.
+          unfold well_founded.
+          intro treeGrammar.
+          apply Acc_intro.
+          
+        *)
+              
+          
+
+            (*
 
           
           Forall
@@ -6727,7 +7209,7 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
             + assumption.
         Qed.
           
-*)          
+        
         Lemma CL_can_inhabit_complete: forall Gamma M tau,
             CL Gamma M tau ->
             exists (m : nat),

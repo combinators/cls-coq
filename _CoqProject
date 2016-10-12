@@ -2,4 +2,4 @@
 ./VectorQuantification.v
 ./Cantor.v
 ./CL.v
-./CLAlg.v
+./SigmaAlgebra.v

@@ -1036,6 +1036,31 @@ Proof.
       eapply IH; eassumption.
 Qed.
 
+Lemma In_nth {T : Type} {n: nat}:
+  forall (xs: t T n) x, In x xs -> exists k, nth xs k = x.
+Proof.
+  intro xs.
+  induction xs as [ | x n xs IH ]; intros x' in_prf.
+  - inversion in_prf.
+  - inversion in_prf as [ ? ? n_eq here | ? ? ? there n_eq [hd_eq tl_eq]].
+    + exists F1; reflexivity.
+    + dependent rewrite tl_eq in there.
+      destruct (IH _ there) as [ k kth_eq ].
+      exists (FS k); assumption.
+Qed.
+
+Lemma nth_In {T : Type} {n: nat}:
+  forall (xs: t T n) k, In (nth xs k) xs.
+Proof.
+  intro xs.
+  induction xs as [ | x n xs IH ]; intro k.
+  - inversion k.
+  - apply (Fin.caseS' k).
+    + left; reflexivity.
+    + intro k'; right; apply IH; apply FS; assumption.
+Qed.
+  
+
 Lemma ListForall_Forall {A: Type} {P : A -> Prop}: forall xs, List.Forall P xs -> Forall P (of_list xs). 
 Proof.      
   intro xs.

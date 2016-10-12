@@ -99,7 +99,7 @@ endif
 VFILES:=VectorQuantification.v\
   Cantor.v\
   CL.v\
-  CLAlg.v
+  SigmaAlgebra.v
 
 ifneq ($(filter-out archclean clean cleanall printenv,$(MAKECMDGOALS)),)
 -include $(addsuffix .d,$(VFILES))
