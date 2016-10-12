@@ -213,6 +213,7 @@ Module Type SortEmbedding
   Axiom embedUnembed: forall {A: Set} (ty: @TypeScheme A), (exists s, ty = embed s) -> embed (unembed ty) = ty.
   Axiom embed_respectful: forall (s s': Sort EmptySet), subsorts s s' -> freeze (embed s) <= freeze (embed s').
   Axiom unembed_respectful: forall (sigma tau: IntersectionType),
+       (exists s, sigma = freeze (embed s)) -> (exists s, tau = freeze (embed s)) ->
       sigma <= tau -> subsorts (unembed (unfreeze sigma)) (unembed (unfreeze tau)).
   Axiom embed_Path: forall s, Path (freeze (embed s)).
   
@@ -602,7 +603,10 @@ Module Type CLAlgebra
                                  (existT_fg_eq (fun x => t IntersectionType x) constructorArity _ _ _ tl_eq))
            in args_st.
          inversion args_st as [ | ? ? ? ? ? arg_st ].
-         generalize (unembed_respectful _ _  arg_st).
+         generalize (unembed_respectful _ _
+                                        (ex_intro _ _ eq_refl)
+                                        (ex_intro _ _ eq_refl)
+                                        arg_st).
          intro arg_subsorts.
          rewrite freezeUnfreeze in arg_subsorts.
          rewrite freezeUnfreeze in arg_subsorts.
