@@ -570,11 +570,22 @@ Module Type CLAlgebra
            blackBoxEmbed s).
          { generalize (ST_organize_ge (Apply S (Gamma (rootOf M)))).
            rewrite (factorize_organized _ (organize_organized _)).
-           induction ex_path as [ | ? x xs there IH ].
+           induction ex_path as [ ? ? ? here | ? x xs there IH ].
            - intro x_ge.
              rewrite (ST_intersect_nth _ Fin.F1) in x_ge.
              simpl in x_ge.
-             admit.
+             destruct here as [ path_x [ argCountPrf [ inhab_args x_tgt_le ] ] ].
+             rewrite <- x_tgt_le.
+             generalize (Gamma_paths (rootOf M) (unembedSubst S)).
+             rewrite unembedApply_c.
+             intro path_c.
+             clear split_path_eq inhab_args x_tgt_le.
+             revert fully_applied source_count_le path_c path_x x_ge argCountPrf.
+             clear ...
+             intros fully_applied source_count_le path_c path_x x_ge.
+             rewrite fully_applied.
+             intro argCountPrf.            
+             apply (ST_path_tgt_n _ _ path_c path_x x_ge _ _ argCountPrf).
            - intro xs_ge.
              rewrite (ST_intersect_append_le (cons _ x _ (nil _)) xs) in xs_ge.
              rewrite (ST_InterMeetRight _ _) in xs_ge.
@@ -598,7 +609,6 @@ Module Type CLAlgebra
          rewrite unembedEmbed in arg_subsorts.
          rewrite unembedEmbed in arg_subsorts.
          exact arg_subsorts.
-     Qed.
-         
+     Defined.         
   End Algebra.
 End CLAlgebra.
