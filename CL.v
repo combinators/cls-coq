@@ -3796,6 +3796,112 @@ Module Type CombinatoryLogic(Symbols : SymbolSpecification).
       rewrite IH.
       reflexivity.
   Qed.
+
+  Lemma applyAllRoot: forall M n (Ms: t Term n), rootOf (applyAll M Ms) = rootOf M.
+  Proof.
+    intros M n Ms.
+    revert M.
+    induction Ms as [ | ? ? ? IH ].
+    - intro; reflexivity.
+    - intro M.
+      simpl.
+      rewrite IH.
+      reflexivity.
+  Qed.
+
+  Lemma applyAllArgumentCount: forall M n (Ms: t Term n),
+      argumentCount (applyAll M Ms) = (argumentCount M + n)%nat.
+  Proof.
+    intros M n Ms.
+    revert M.
+    induction Ms as [ | ? ? ? IH ].
+    - intro; rewrite (Nat.add_0_r); reflexivity.
+    - intro M.
+      simpl.
+      rewrite IH.
+      rewrite (Nat.add_succ_r).
+      reflexivity.
+  Qed.
+  
+  Lemma applyAllArguments: forall M n (Ms: t Term n),
+      argumentsOf (applyAll M Ms) =
+      (rew <- (applyAllArgumentCount M n Ms) in append (argumentsOf M) Ms).
+  Proof.    
+    intros M n Ms.
+    revert M.
+    induction Ms as [ | M' m' Ms IH ].
+    - intro M.
+      simpl.
+      generalize (argumentsOf M).
+      generalize (applyAllArgumentCount M 0 (nil _)).
+      simpl.
+      generalize (argumentCount M).
+      intro n.
+      intros eq xs.
+      revert eq.
+      induction xs as [ | x n xs IH ].
+      + simpl.
+        intro eq.
+        unfold eq_rect_r.
+        rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ (eq_sym eq)).
+        reflexivity.
+      + simpl.
+        intro eq.
+        rewrite (IH (eq_sym (Nat.add_0_r n))) at 1.
+        revert eq.
+        rewrite <- (Nat.add_0_r n).
+        intro eq.
+        unfold eq_rect_r.
+        rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ (eq_sym eq)).
+        simpl.
+        reflexivity.      
+    - intro M.
+      simpl.
+      rewrite (IH (App M M')).
+      generalize (applyAllArgumentCount (App M M') m' Ms).
+      generalize (applyAllArgumentCount M (S m') (cons _ M' _ Ms)).
+      simpl.
+      intro eq.
+      rewrite eq.
+      unfold eq_rect_r.
+      simpl.
+      clear eq.
+      intro eq.
+      generalize (argumentsOf M).
+      revert eq.
+      generalize (argumentCount M).
+      intros n'.
+      assert (append_shift:
+                forall A n (xs: t A n) m (ys: t A m) x,
+                  append (shiftin x xs) ys =
+                  rew (Nat.add_succ_r n m) in append xs (cons _ x _ ys)).
+      { intros A n'' xs.
+        induction xs as [ | ? n''' ? IH' ].
+        - simpl.
+          intro m.
+          generalize (Nat.add_succ_r 0 m).
+          simpl.
+          intros eq ys x.
+          rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ eq).
+          reflexivity.
+        - simpl.
+          intros m ys x.
+          rewrite (IH' _ ys x).
+          generalize (Nat.add_succ_r (S n''') m).
+          simpl.
+          rewrite <- (Nat.add_succ_r (n''') m).
+          intro eq.
+          rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ eq).
+          reflexivity. }
+      intros eq xs.
+      rewrite (append_shift _ _ xs _ Ms).
+      revert eq.
+      rewrite <- (Nat.add_succ_r n' m').
+      intro eq.
+      rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ (eq_sym eq)).
+      reflexivity.
+  Qed. 
+      
     
   Module Type TypeSystem.
     Parameter WellFormed: Substitution -> Prop.
