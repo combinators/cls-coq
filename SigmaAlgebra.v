@@ -3,18 +3,9 @@ Require Import VectorQuantification.
 Require Import Coq.Classes.RelationClasses.
 Require Import Coq.Logic.Eqdep_dec.
 Require Import Coq.Arith.PeanoNat.
-Import EqNotations.
-(*
-Class Monad (F : Set -> Set): Type :=
-  mkMonad { fmap {A B: Set}: (A -> B) -> F A -> F B;
-            pure {A: Set}: A -> F A;
-            join {A : Set}: F (F A) -> F A;
-            fmap_id {A : Set}: forall (x: F A), fmap id x = x;
-            fmap_fg {A B C : Set}: forall (f: B -> C) (g: A -> B) (x: F A), fmap (fun x => f (g x)) x = fmap f (fmap g x);
-            join_join {A: Set}: forall (x: F (F (F A))), join (join x) = join (fmap join x);
-            pure_join {A: Set}: forall (x: F A), join (pure x) = join (fmap pure x) }.
- *)
+Require Import CL.
 
+Import EqNotations.
 
 Class Signature (Sort: Set -> Set) (Var: Set): Type :=
   { Operation: Set;
@@ -71,6 +62,140 @@ Section Algebraic.
         + apply (f (Fin.F1)).
         + apply (IH (fun k => f (Fin.FS k))).
     Defined.
+
+    Definition F_args_nth:
+      forall {n : nat} {Var: Set}
+        (S : Var -> Sort EmptySet) (argSorts : t (Sort Var) n),
+        F_args S argSorts ->
+        (forall k, Carrier (applySubst S (nth argSorts k))).
+    Proof.
+      intros n Var' S argSorts.
+      unfold F_args.
+      induction argSorts as [ | ? ? ? IH ].
+      - intros ? k; inversion k.
+      - intros f k.
+        apply (Fin.caseS' k).
+        + exact (fst f).
+        + intro k'; exact (IH (snd f) k').
+    Defined.
+
+    Definition F_eq (carrier_eq: forall s s', Carrier s -> Carrier s' -> Prop): forall s, F s -> F s -> Prop :=
+      fun s f1 f2 =>
+      (op _ f1 = op _ f2) /\
+      (fix compare_args n (dom1: t (Sort Var) n) m (dom2: t (Sort Var) m):
+         F_args (subst _ f1) dom1 -> F_args (subst _ f2) dom2 -> Prop :=
+         match dom1 with
+         | cons _ s1 _ ss1 =>
+           match dom2 with
+           | cons _ s2 _ ss2 =>
+             fun fargs1 fargs2 =>
+               carrier_eq _ _ (fst fargs1) (fst fargs2) /\ compare_args _ ss1 _ ss2 (snd fargs1) (snd fargs2)
+           | nil _ => fun _ _ => False
+           end
+         | nil _ =>
+           match dom2 with
+           | nil _ => fun _ _ => True
+           | cons _ _ _ _ => fun _ _ => False
+           end
+         end
+      ) _ (domain (op _ f1)) _ (domain (op _ f2)) (args _ f1) (args _ f2).
+
+    Lemma F_eq_refl: forall (carrier_eq: forall s s', Carrier s -> Carrier s' -> Prop),
+        (forall s x, carrier_eq s s x x) ->
+        forall s x, F_eq carrier_eq s x x.
+    Proof.
+      intros carrier_eq carrier_eq_refl s x.
+      unfold F_eq.
+      split.
+      - reflexivity.
+      - destruct x as [ op arity dom args tgt_le ].
+        simpl.
+        induction (domain op) as [ | ? ? ? IH ].
+        + exact I.
+        + split.
+          * apply carrier_eq_refl.
+          * apply IH.
+    Qed.
+
+    Lemma F_eq_sym: forall (carrier_eq: forall s s', Carrier s -> Carrier s' -> Prop),
+        (forall s s' x y, carrier_eq s s' x y -> carrier_eq s' s y x) ->
+        forall s x y, F_eq carrier_eq s x y -> F_eq carrier_eq s y x.
+    Proof.
+      intros carrier_eq carrier_eq_sym s x y eq_xy.
+      unfold F_eq.
+      split.
+      - apply eq_sym; exact (proj1 eq_xy).
+      - destruct x as [ op xarity dom args tgt_le ].
+        destruct y as [ op' yarity dom' args' tgt_le' ].
+        simpl.
+        unfold F_eq in eq_xy.
+        generalize (proj2 eq_xy).
+        clear eq_xy.
+        simpl.
+        clear tgt_le tgt_le'.
+        revert args args'.
+        generalize (domain op) (domain op').
+        generalize (arity op) (arity op').
+        clear op op'.
+        intros n n' dom1.
+        revert n'.
+        induction (dom1) as [ | ? ? dom1' IH ];
+          intros n' dom2 args1 args2 args_eq.
+        + destruct (dom2).
+          * exact I.
+          * contradiction.
+        + destruct (dom2) as [ | ? ? dom2' ].
+          * contradiction.
+          * split.
+            { exact (carrier_eq_sym _ _ _ _ (proj1 args_eq)). }
+            { apply (IH dom1' _ dom2' (snd args1) (snd args2) (proj2 args_eq)). }
+    Qed.
+
+    Lemma F_eq_trans: forall (carrier_eq: forall s s', Carrier s -> Carrier s' -> Prop),
+        (forall s s' s'' x y z, carrier_eq s s' x y -> carrier_eq s' s'' y z -> carrier_eq s s'' x z) ->
+        forall s x y z, F_eq carrier_eq s x y -> F_eq carrier_eq s y z -> F_eq carrier_eq s x z.
+    Proof.
+      intros carrier_eq carrier_eq_trans s x y z eq_xy eq_yz.
+      unfold F_eq.
+      split.
+      - eapply eq_trans; [ exact (proj1 eq_xy) | exact (proj1 eq_yz) ].
+      - destruct x as [ op xarity dom args tgt_le ].
+        destruct y as [ op' yarity dom' args' tgt_le' ].
+        destruct z as [ op'' zarity dom'' args'' tgt_le'' ].
+        simpl.
+        unfold F_eq in eq_xy.
+        unfold F_eq in eq_yz.
+        generalize (proj2 eq_xy).
+        generalize (proj2 eq_yz).
+        clear eq_xy.
+        clear eq_yz.
+        simpl.
+        clear tgt_le tgt_le' tgt_le''.
+        revert args args' args''.
+        generalize (domain op) (domain op') (domain op'').
+        generalize (arity op) (arity op') (arity op'').
+        clear op op' op''.
+        intros n n' n'' dom1.
+        revert n' n''.
+        induction (dom1) as [ | ? ? dom1' IH ];
+          intros n' n'' dom2 dom3 args1 args2 args3 eq_xy eq_yz.
+        + destruct dom3.
+          * exact I.
+          * destruct dom2; contradiction.
+        + destruct (dom3) as [ | ? ? dom3' ].
+          * destruct dom2; contradiction.
+          * split.
+            { destruct dom2.
+              - contradiction.
+              - destruct eq_xy as [ hd_eq_xy tl_eq_xy ].
+                destruct eq_yz as [ hd_eq_yz tl_eq_yz ].
+                eapply carrier_eq_trans; eassumption. }
+            { destruct dom2.
+              - contradiction.
+              - destruct eq_xy as [ hd_eq_xy tl_eq_xy ].
+                destruct eq_yz as [ hd_eq_yz tl_eq_yz ].
+                apply (IH dom1' _ _ _ _ _ _ _ tl_eq_xy tl_eq_yz). }
+    Qed.      
   End WithCarrier.
   
   Definition fmap_args
@@ -102,11 +227,17 @@ Module Type SignatureSpecification.
   Parameter subsorts: Sort EmptySet -> Sort EmptySet -> Prop.
   Parameter Sigma: `{Signature Sort Var}.
   Axiom subsorts_pre: `{PreOrder subsorts}.
+
+  Axiom Sort_eq_dec:
+    forall (s1 s2: Sort EmptySet), {s1 = s2} + {s1 <> s2}.
+  
+  Parameter subsorts_dec:
+    forall (s1 s2: Sort EmptySet), { subsorts s1 s2 } + { subsorts s1 s2 -> False }.
+  
   Axiom SortSubst: `{CanSubst Sort}.
 End SignatureSpecification.
 
 
-Require Import CL.
 Module Type SignatureSymbolSpecification(Signature: SignatureSpecification) <: SymbolSpecification.
   Parameter ConstructorSymbol: Set.
   Parameter constructorArity: ConstructorSymbol -> nat.
@@ -118,7 +249,7 @@ Module Type SignatureSymbolSpecification(Signature: SignatureSpecification) <: S
   
   Parameter ConstructorTaxonomy_dec:
     forall (C1 C2: ConstructorSymbol), { ConstructorTaxonomy C1 C2 } + { ConstructorTaxonomy C1 C2 -> False }.
-
+  
   Definition VariableSymbol: Set := Signature.Var.
   Definition CombinatorSymbol: Set := Operation.
 End SignatureSymbolSpecification.
@@ -204,9 +335,7 @@ Module Type SortEmbedding
   Module CL : Mk.CLFromSignature.
     Include Mk.CLFromSignature.
   End CL.
-
   Export CL.
-
   Parameter embed: forall {A: Set}, Sort A -> @TypeScheme A.
   Parameter unembed: forall {A: Set}, @TypeScheme A -> Sort A.
   Axiom unembedEmbed: forall {A: Set} (s: Sort A), unembed (embed s) = s.
@@ -254,12 +383,12 @@ Module Type SortEmbedding
   End SignatureSystem.
 End SortEmbedding.
 
+
 Module Type CLAlgebra
        (Signature: SignatureSpecification)
        (ContextSymbols: SignatureSymbolSpecification(Signature))
        (Embedding: SortEmbedding(Signature)(ContextSymbols)).
   Export Embedding.
-  
   Module Type Algebra(TypeSystem: SignatureSystem).
     Export TypeSystem.
 
@@ -306,13 +435,66 @@ Module Type CLAlgebra
       - simpl.
         rewrite IH.
         reflexivity.
+    Qed. 
+
+    Definition Carrier s := { M : Term | CL Gamma M (blackBoxEmbed s) }.
+
+    Definition ProjectTerms: forall S n (args: t (Sort Signature.Var) n),
+        F_args Sort Carrier S args -> t Term n :=
+      fun S n args f => 
+        map (fun k => proj1_sig ((F_args_nth _ _ _ _ f) k)) (positions n).
+
+    Lemma blackBoxEmbed_nth:
+      forall op S k (src_count_eq: src_count (Apply (embedSubst S) (Gamma op)) = arity op),
+        blackBoxEmbed (applySubst S (nth (domain op) (rew <- eq_sym src_count_eq in k))) =
+        nth
+          (fst
+             (split_path (Apply (embedSubst S) (Gamma op)) (src_count (Apply (embedSubst S) (Gamma op)))
+                         (le_n (src_count (Apply (embedSubst S) (Gamma op)))))) k.
+    Proof.
+      intros op S k src_count_eq.
+      generalize (le_n (src_count (Apply (embedSubst S) (Gamma op)))).
+      revert k.
+      generalize src_count_eq.
+      match goal with
+      | [ |- ?tgt ] =>
+        apply (fun x =>
+               rew <- [fun n =>
+                      forall (src_count_eq: n = arity op)
+                        (k: Fin.t n)
+                        (prf: (n <= src_count (Apply (embedSubst S) (Gamma op)))%nat),
+                        blackBoxEmbed (applySubst S (nth (domain op) (rew <- [Fin.t] eq_sym src_count_eq in k))) =
+                        nth (fst (split_path (Apply (embedSubst S) (Gamma op)) n prf)) k]
+                   (src_count_eq) in x)
+      end.
+      clear src_count_eq.
+      intros src_count_eq k prf.
+      unfold eq_rect_r.
+      rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ (eq_sym _)).
+      clear src_count_eq.
+      apply (Forall2_nth (fun x y => blackBoxEmbed (applySubst S x) = y)
+                         (domain op)
+                         (fst (split_path (Apply (embedSubst S) (Gamma op)) (arity op) prf))).
+      clear k.
+      revert prf.
+      unfold Gamma.
+      induction (domain op) as [ | ? ? ? IH ].
+      - intros; apply Forall2_nil.
+      - intro prf. 
+        apply Forall2_cons.
+        + unfold blackBoxEmbed.
+          unfold blackBoxEmbedOpen.
+          simpl.
+          apply f_equal.
+          rewrite embedApply.
+          reflexivity.
+        + apply IH.
     Qed.
-          
+    
     Definition CL_Algebra:
       forall (WellFormed : (Signature.Var -> Sort EmptySet) -> Prop),
         (forall S, WellFormed S -> TypeSystem.WellFormed (embedSubst S)) ->
-        SigmaAlgebra Sort Signature.Var subsorts WellFormed
-                     (fun s => { M : Term | CL Gamma M (blackBoxEmbed s) }).
+        SigmaAlgebra Sort Signature.Var subsorts WellFormed Carrier.
     Proof.
       unfold SigmaAlgebra.
       intros WF WF_transport s Fs.
@@ -327,31 +509,25 @@ Module Type CLAlgebra
         | Forall2 (CL Gamma) Ns (fst (split_path (Apply (embedSubst S) (Gamma op))
                                                  (src_count (Apply (embedSubst S) (Gamma op)))
                                                  (le_n _))) }).
-      { unfold Gamma.
-        unfold Gamma in args.
-        revert args.
-        generalize (domain op).        
-        rewrite <- source_count_eq.
-        clear source_count_eq.
-        intros domain args.
-        induction domain as [ | domain_fst n domain IH ].
-        - exists (nil _); apply Forall2_nil.
-        - simpl.
-          destruct args as [ [term proof] args ].
-          destruct (IH args) as [ terms proofs ].
-          exists (cons _ term _ terms).
-          apply Forall2_cons.
-          + unfold blackBoxEmbed in proof.
-            simpl freeze in proof.
-            rewrite embedApply in proof.
-            exact proof.
-          + simpl.
-            match goal with
-            | [ proofs: Forall2 _ _ (fst (split_path _ _ ?prfx))
-                |- Forall2 _ _ (fst (split_path _ _ ?prfSx))] =>
-              rewrite (split_path_proof_invariant _ _ prfSx prfx)
-            end.  
-            exact proofs. }
+      { exists (rew <- source_count_eq in ProjectTerms _ _ _ args).
+        apply nth_Forall2.
+        unfold eq_rect_r.
+        intro k.
+        assert (rew_ext:
+            (rew [fun n => t Term n] eq_sym source_count_eq in (ProjectTerms S (arity op) (domain op) args)) =
+            rew [t Term] eq_sym source_count_eq in (ProjectTerms S (arity op) (domain op) args)).
+        { rewrite <- (eq_sym source_count_eq).
+          simpl.
+          reflexivity. }
+        rewrite rew_ext.
+        rewrite (nth_k (eq_sym source_count_eq) (ProjectTerms S (arity op) (domain op) args) k).
+        unfold ProjectTerms.
+        rewrite (nth_map _ _ _ _ eq_refl).
+        rewrite (positions_spec).
+        destruct (F_args_nth _ _ _ _ args (rew <- [Fin.t] eq_sym source_count_eq in k)) as [ M proof ].        
+        simpl.
+        rewrite <- (blackBoxEmbed_nth _ _ _ source_count_eq).
+        assumption. }
       clear args.
       assert (tgt_le':
           snd (split_path (Apply (embedSubst S) (Gamma op))
@@ -434,8 +610,7 @@ Module Type CLAlgebra
         (forall S, TypeSystem.WellFormed S -> WellFormed (unembedSubst S)) ->
         (forall S, { TypeSystem.WellFormed S } + { TypeSystem.WellFormed S -> False }) ->
         (forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}) ->
-        SigmaCoAlgebra Sort Signature.Var subsorts WellFormed
-                       (fun s => { M : Term | CL Gamma M (blackBoxEmbed s) }).
+        SigmaCoAlgebra Sort Signature.Var subsorts WellFormed Carrier.
      Proof.
        intros WF WF_transport WF_dec CL_dec.
        unfold SigmaCoAlgebra.
@@ -452,9 +627,9 @@ Module Type CLAlgebra
        intro ex_subst.
        generalize (CL_Path_path_compute_S WF_dec _ CL_dec _ _ path_s ex_subst).
        clear ex_subst; intro ex_subst.
-       destruct ex_subst as [ S [ WF_S ex_path ] ].
        assert (fully_applied: argumentCount M = arity (rootOf M)).
-       { rewrite <- (source_count_eq (unembedSubst S) (rootOf M)).
+       { destruct ex_subst as [ S [ WF_S ex_path ] ].
+         rewrite <- (source_count_eq (unembedSubst S) (rootOf M)).
          rewrite unembedApply_c.
          generalize (ST_organize_ge (Apply S (Gamma (rootOf M)))).
          rewrite (factorize_organized _ (organize_organized _)).
@@ -484,10 +659,12 @@ Module Type CLAlgebra
          - rewrite (ST_intersect_append_le (cons _ x _ (nil _)) xs).
            rewrite (ST_InterMeetRight).
            intro; auto. }
-       apply (mkF _ _ _ _ _ _ (rootOf M) (unembedSubst S)).
+       apply (mkF _ _ _ _ _ _ (rootOf M) (unembedSubst (proj1_sig ex_subst)));
+         destruct ex_subst as [ S [ WF_S ex_path ] ].
        - apply WF_transport; assumption.
        - generalize (ST_organize_ge (Apply S (Gamma (rootOf M)))).
-         rewrite (factorize_organized _ (organize_organized _)).
+         simpl.
+         rewrite (factorize_organized _ (organize_organized (Apply S (Gamma (rootOf M))))).
          intro root_le.
          apply nth_F_args.
          intro k.
@@ -613,6 +790,143 @@ Module Type CLAlgebra
          rewrite unembedEmbed in arg_subsorts.
          rewrite unembedEmbed in arg_subsorts.
          exact arg_subsorts.
-     Defined.         
+     Defined.
+
+     Definition carrier_eq: forall s s', Carrier s -> Carrier s' -> Prop :=
+       fun s1 s2 c1 c2 => proj1_sig c1 = proj1_sig c2.
+
+     Lemma carrier_eq_refl: forall s c, carrier_eq s s c c.
+     Proof.
+       intros; reflexivity.
+     Qed.
+     Lemma carrier_eq_sym: forall s s' c1 c2, carrier_eq s s' c1 c2 -> carrier_eq s' s c2 c1.
+     Proof.
+       intros; apply eq_sym; assumption.
+     Qed.
+     Lemma carrier_eq_trans: forall s s' s'' c1 c2 c3,
+         carrier_eq s s' c1 c2 -> carrier_eq s' s'' c2 c3 -> carrier_eq s s'' c1 c3.
+     Proof.
+       intros; eapply eq_trans; eassumption.
+     Qed.
+
+     Lemma CL_Algebra_op:
+       forall (WellFormed : (Signature.Var -> Sort EmptySet) -> Prop)
+         (WF_transport: forall S, WellFormed S -> TypeSystem.WellFormed (embedSubst S)),
+       forall s f, rootOf (proj1_sig (CL_Algebra WellFormed WF_transport s f)) = op _ _ _ _ _ _ f.
+     Proof.
+       intros WF WF_transport s f.
+       unfold CL_Algebra.
+       destruct f as [ op subst wf args tgt_le ].
+       simpl.
+       rewrite (applyAllRoot).
+       reflexivity.
+     Qed.
+     
+     Lemma CL_Algebra_argCount:
+       forall (WellFormed : (Signature.Var -> Sort EmptySet) -> Prop)
+         (WF_transport: forall S, WellFormed S -> TypeSystem.WellFormed (embedSubst S)),
+       forall s f, argumentCount (proj1_sig (CL_Algebra WellFormed WF_transport s f)) =
+              (arity (op _ _ _ _ _ _ f)).
+     Proof.
+       intros WF WF_transport s f.
+       unfold CL_Algebra.
+       destruct f as [ op subst wf args tgt_le ].
+       simpl.
+       rewrite (applyAllArgumentCount).
+       simpl.
+       rewrite (source_count_eq).
+       reflexivity.
+     Defined.
+
+     Lemma CL_Algebra_args:
+       forall (WellFormed : (Signature.Var -> Sort EmptySet) -> Prop)
+         (WF_transport: forall S, WellFormed S -> TypeSystem.WellFormed (embedSubst S)),
+       forall s f, argumentsOf (proj1_sig (CL_Algebra WellFormed WF_transport s f)) =
+              rew <- (CL_Algebra_argCount WellFormed WF_transport s f) in ProjectTerms _ _ _ (args _ _ _ _ _ _ f).
+     Proof.
+       intros WF WF_transport s f.
+       destruct f as [ op subst wf args tgt_le ].       
+       simpl.
+       rewrite (applyAllArguments).
+       simpl.
+       match goal with
+         [|- (rew <- [t Term] ?prf1 in rew <- [t Term] ?prf2 in _) =
+            (rew <- [t Term] ?prf3 in _) ] =>
+         generalize prf2 prf1 prf3
+       end.
+       intro prf1.
+       rewrite prf1.
+       unfold eq_rect_r.
+       simpl.
+       intros prf2 prf3.
+       rewrite (UIP_dec (Nat.eq_dec) prf2 prf3).
+       reflexivity.
+     Qed.
+
+     Lemma CL_CoAlgebra_op:
+       forall (WellFormed : (Signature.Var -> Sort EmptySet) -> Prop)
+         (WF_transport: forall S, TypeSystem.WellFormed S -> WellFormed (unembedSubst S))
+         (WF_dec: forall S, { TypeSystem.WellFormed S } + { TypeSystem.WellFormed S -> False })
+         (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}),
+       forall s c, op _ _ _ _ _ _ (CL_CoAlgebra WellFormed WF_transport WF_dec CL_dec s c) = rootOf (proj1_sig c).
+     Proof.
+       intros WF WF_transport WF_dec CL_dec s c.
+       destruct c as [ M prf ].
+       reflexivity.
+     Qed.
+(*
+     Lemma CL_CoAlgebra_arity:
+       forall (WellFormed : (Signature.Var -> Sort EmptySet) -> Prop)
+         (WF_transport: forall S, TypeSystem.WellFormed S -> WellFormed (unembedSubst S))
+         (WF_dec: forall S, { TypeSystem.WellFormed S } + { TypeSystem.WellFormed S -> False })
+         (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}),
+       forall s c,
+         arity (op _ _ _ _ _ _ (CL_CoAlgebra WellFormed WF_transport WF_dec CL_dec s c)) =
+         argumentCount (proj1_sig c).
+     Proof.
+       rewrite (sour
+
+     Lemma CL_CoAlgebra_args:
+       forall (WellFormed : (Signature.Var -> Sort EmptySet) -> Prop)
+         (WF_transport: forall S, TypeSystem.WellFormed S -> WellFormed (unembedSubst S))
+         (WF_dec: forall S, { TypeSystem.WellFormed S } + { TypeSystem.WellFormed S -> False })
+         (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}),
+       forall s c, ProjectTerms _ _ _
+                           (args _ _ _ _ _ _
+                                 (CL_CoAlgebra WellFormed WF_transport WF_dec CL_dec s c)) =
+              argumentsOf (proj1_sig c).
+     Proof.
+     argumentsOf (proj1_sig (CL_Algebra WellFormed WF_transport s f)) =
+              rew <- (CL_Algebra_argCount WellFormed WF_transport s f) in ProjectTerms _ _ _ (args _ _ _ _ _ _ f).
+     
+
+     Lemma CL_AlgebraCoAlgebra_inv:
+       forall (WellFormed : (Signature.Var -> Sort EmptySet) -> Prop)
+         (WF_transport1: forall S, WellFormed S -> TypeSystem.WellFormed (embedSubst S))
+         (WF_transport2: forall S, TypeSystem.WellFormed S -> WellFormed (unembedSubst S))
+         (WF_dec: forall S, { TypeSystem.WellFormed S } + { TypeSystem.WellFormed S -> False })
+         (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}),
+       forall s f, F_eq _ _ _ WellFormed _ carrier_eq s f
+                (CL_CoAlgebra WellFormed WF_transport2 WF_dec CL_dec s
+                              (CL_Algebra WellFormed WF_transport1 s f)).
+     Proof.
+       intros WellFormed WF_transport1 WF_transport2 WF_dec CL_dec s f.
+       destruct f as [ op subst WF_subst args tgt_le ].
+       split.
+       - revert args.
+         simpl Top.op at 1.
+         simpl CL_Algebra at 1.
+         set (coalg := fun x => Top.op Sort Signature.Var subsorts WellFormed Carrier s
+                                    (CL_CoAlgebra WellFormed WF_transport2 WF_dec CL_dec s x)).
+         simpl Top.op in coalg.
+         match goal with
+         | [|- _ = Top.op Sort Signature.Var subsorts WellFormed Carrier s (CL_CoAlgebra _ _ _ _ _ ?x) ] =>
+           set (alg := x)
+         end.
+         simpl in alg.
+         revert alg.
+         induction (arity).
+         + simpl in alg.
+     *)
   End Algebra.
 End CLAlgebra.
