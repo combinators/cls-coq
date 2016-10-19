@@ -1,5 +1,11 @@
 -R . CLAlg
 ./VectorQuantification.v
+./IntersectionTypes.v
+./CombinatoryTerm.v
+./CombinatoryLogic.v
 ./Cantor.v
-./CL.v
+./ComputationalPathLemma.v
+./FiniteSubstitutionSpace.v
 ./SigmaAlgebra.v
+./CombinatoryLogicAlgebra.v
+./SortEmbeddings.v

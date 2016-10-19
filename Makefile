@@ -97,9 +97,15 @@ endif
 ######################
 
 VFILES:=VectorQuantification.v\
+  IntersectionTypes.v\
+  CombinatoryTerm.v\
+  CombinatoryLogic.v\
   Cantor.v\
-  CL.v\
-  SigmaAlgebra.v
+  ComputationalPathLemma.v\
+  FiniteSubstitutionSpace.v\
+  SigmaAlgebra.v\
+  CombinatoryLogicAlgebra.v\
+  SortEmbeddings.v
 
 ifneq ($(filter-out archclean clean cleanall printenv,$(MAKECMDGOALS)),)
 -include $(addsuffix .d,$(VFILES))

@@ -825,6 +825,25 @@ Proof.
     reflexivity.
 Qed.
 
+Lemma map_rew {S T : Type} {m n: nat}:
+  forall (xs: t S m) (f: S -> T) (eq: m = n),
+    rew eq in map f xs = map f (rew eq in xs).
+Proof.
+  intros xs f.
+  destruct xs as [ | x m xs ]; intro eq.
+  - destruct n; [ | inversion eq ].
+    rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ eq).
+    rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ eq).
+    reflexivity.
+  - destruct n; inversion eq as [ eq' ].
+    revert eq.
+    rewrite <- eq'.
+    intro eq.
+    rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ eq).
+    rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ eq).
+    reflexivity.
+Qed.   
+
 Lemma map_map2_fg {S T U V: Type} {n: nat}:
   forall (xs: t S n) (ys: t T n) (f: S -> T -> U) (g: U -> V),
     map g (map2 f xs ys) = map2 (fun x y => g (f x y)) xs ys.

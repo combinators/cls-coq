@@ -8,6 +8,17 @@ Require Import Coq.Logic.Eqdep_dec.
 
 Import EqNotations.
 
+Class Countable (A: Set) : Set :=
+  { toNat : A -> nat;
+    fromNat : nat -> A;
+    fromTo_id : forall x, fromNat (toNat x) = x }.
+
+Class Finite (A : Set) : Set :=
+  { cardinality : nat;
+    toFin : A -> Fin.t cardinality;
+    fromFin : Fin.t cardinality -> A;
+    fromToFin_id : forall x, fromFin (toFin x) = x }.
+
 Lemma add_succ_succ: forall n, S (S (n + n)) = S n + S n.
 Proof.
   intro n.
