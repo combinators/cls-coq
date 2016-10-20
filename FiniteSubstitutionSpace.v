@@ -1999,7 +1999,17 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
            possibleRecursiveTargets_maxcount Gamma (fromFin c))
         (positions cardinality).
 
-  Definition IsRecurisveTarget (combinatorsFinite: Finite CombinatorSymbol) Gamma tau sigma :=
+
+  Definition MaximalInhabGrammarTgts combinatorsFinite (Gamma: Context): list IntersectionType :=
+    List.flat_map
+      (fun tgts =>
+         List.flat_map
+           (fun tgtsOfSize =>
+              List.flat_map (to_list) (projT2 tgtsOfSize))
+           tgts)
+      (to_list (possibleRecursiveTargets combinatorsFinite Gamma)).
+
+  Definition IsRecursiveTarget (combinatorsFinite: Finite CombinatorSymbol) Gamma tau sigma :=
     exists c arrows,
       In (c, arrows) (grammarEntry combinatorsFinite Gamma tau) /\
       List.In
@@ -2008,6 +2018,271 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
            (fun arrowsOfSize =>
               List.flat_map (fun x => to_list (fst x)) (projT2 arrowsOfSize))
            arrows).
+  
+  Lemma grammarTargetsFinite:
+    forall (combinatorsFinite: Finite CombinatorSymbol) Gamma tau sigma, 
+      IsRecursiveTarget combinatorsFinite Gamma tau sigma ->
+      List.In sigma (MaximalInhabGrammarTgts combinatorsFinite Gamma).
+  Proof.
+    intros combinatorsFinite Gamma tau sigma.
+    unfold IsRecursiveTarget.
+    unfold MaximalInhabGrammarTgts.
+    unfold grammarEntry.
+    unfold possibleRecursiveTargets.
+    unfold allPossibleInhabitants_maxcount.
+    unfold possibleRecursiveTargets_maxcount.
+    unfold allPossibleInhabitants.
+    unfold possibleRecursiveTargets_ofSize.
+    induction (positions cardinality) as [ | k n ks IH ].
+    - simpl.
+      intro prf.
+      inversion prf as [ c [ arrows [ devil _ ] ] ].
+      inversion devil.
+    - intro prf.
+      inversion prf as [ c [ arrows [ inprf insigma ] ] ].
+      simpl.
+      apply List.in_or_app.
+      simpl in inprf.
+      inversion inprf as [ ? ? n_eq [ c_eq here ] | ? ? ? there n_eq [ c_eq tl_eq ] ].
+      + left.
+        rewrite here in insigma.
+        revert insigma.
+        clear ...
+        induction (MaximalSourceCount (minimalInstance (Gamma (fromFin k)))) as [ | n IH ].
+        * simpl.
+          rewrite List.app_nil_r.
+          rewrite List.app_nil_r.
+          induction (powerset (allSplitPaths 0 (minimalInstance (Gamma (fromFin k))))) as [ | hd tl IH ].
+          { intro; contradiction. }
+          { intro inprf.
+            simpl in inprf.
+            apply List.in_or_app.
+            destruct (ST_dec (intersect (of_list (List.map snd hd))) tau).
+            - simpl in inprf.
+              destruct (List.in_app_or _ _ _ inprf) as [ inl | inr ].
+              + left; assumption.
+              + right; apply IH; assumption.
+            - right; apply IH; assumption. }                
+        * simpl.
+          intro inprf.
+          rewrite (List.flat_map_concat_map) in inprf.
+          rewrite (List.map_app) in inprf.
+          rewrite (List.concat_app) in inprf.
+          rewrite <- (List.flat_map_concat_map) in inprf.
+          rewrite <- (List.flat_map_concat_map) in inprf.
+          apply List.in_or_app.
+          destruct (List.in_app_or _ _ _ inprf) as [ inl | inr ].
+          { right; apply IH; assumption. }
+          { left.
+            simpl in inr.
+            rewrite List.app_nil_r in inr.
+            revert inr.
+            clear ...
+            induction (powerset (allSplitPaths (S n) (minimalInstance (Gamma (fromFin k))))) as [ | hd tl IH ].
+            - intro devil; inversion devil.
+            - intro inprf.
+              simpl in inprf.
+              apply List.in_or_app.
+              destruct (ST_dec (intersect (of_list (List.map snd hd))) tau).
+              + simpl in inprf.
+                destruct (List.in_app_or _ _ _ inprf) as [ inl | inr ].
+                * left; assumption.
+                * right; apply IH; assumption.
+              + right; apply IH; assumption. }
+      + right; apply IH.
+        exists c. exists arrows.
+        dependent rewrite tl_eq in there.
+        split; assumption.
+  Qed.
+
+  
+  Require Import Coq.Init.Wf.
+  Definition TreeGrammar (combinatorsFinite: Finite CombinatorSymbol): Set :=
+    list (IntersectionType *
+          t (CombinatorSymbol *
+             list { n : nat & list (t IntersectionType n * IntersectionType)})
+            cardinality).
+  Inductive NextInhabGrammar (combinatorsFinite: Finite CombinatorSymbol) (Gamma: Context):
+    TreeGrammar combinatorsFinite -> TreeGrammar combinatorsFinite -> Prop :=
+  | Next:
+      forall (oldGrammar: TreeGrammar combinatorsFinite) lhs rhs,
+        (*(List.Forall (IsPossibleRecursiveTarget combinatorsFinite Gamma)
+                           (List.map fst oldGrammar)) ->*)
+        List.In lhs (MaximalInhabGrammarTgts combinatorsFinite Gamma) ->
+        (List.In lhs (List.map fst oldGrammar) -> False) ->
+        NextInhabGrammar combinatorsFinite Gamma (List.cons (lhs, rhs) oldGrammar) oldGrammar.
+
+  Lemma ListLen_impl:
+    forall {A: Type} (xs: list A) (p1 p2: A -> bool),
+      (forall x, p1 x = true -> p2 x = true) ->
+      (List.length (List.filter p1 xs) <= List.length (List.filter p2 xs))%nat.
+  Proof.
+    intros A xs p1 p2 p_impl.
+    induction xs as [ | x xs IH ].
+    - reflexivity.
+    - simpl.
+      generalize (p_impl x).
+      destruct (p1 x).
+      + intro prf; rewrite (prf eq_refl).
+        simpl.
+        rewrite <- Nat.succ_le_mono.
+        assumption.
+      + intro prf; clear prf.
+        destruct (p2 x).
+        * simpl.
+          rewrite IH.
+          apply le_S.
+          reflexivity.
+        * assumption.
+  Qed.
+
+  Lemma ListLen_ineq:
+    forall {A: Type} (xs: list A) (p1 p2: A -> bool) (x: A),
+      List.In x xs -> p1 x = true -> p2 x = false ->
+      (forall y, p2 y = true -> p1 y = true) ->
+      List.length (List.filter p1 xs) > List.length (List.filter p2 xs).
+  Proof.
+    intros A xs p1 p2.
+    induction xs as [ | x xs IH ]; intros y in_xxs p1_y not_p2_y p2_impl.
+    - inversion in_xxs.
+    - destruct in_xxs as [ here | there ].
+      + rewrite here.
+        simpl.
+        rewrite p1_y.
+        rewrite not_p2_y.
+        simpl.
+        unfold "_ > _".
+        unfold "_ < _".
+        rewrite <- Nat.succ_le_mono.
+        apply ListLen_impl.
+        assumption.
+      + simpl.
+        generalize (p2_impl x).
+        destruct (p2 x).
+        * intro prf; rewrite (prf eq_refl).
+          simpl.
+          unfold "_ > _".
+          rewrite <- Nat.succ_lt_mono.
+          apply (IH y); auto.
+        * intro prf.
+          destruct (p1 x).
+          { apply le_S.
+            eapply IH; eauto. }
+          { eapply IH; eauto. }
+  Qed.
+
+  Lemma ListFilter_le:
+    forall {A: Type} (xs: list A) (p: A -> bool), (List.length (List.filter p xs) <= List.length xs)%nat.
+  Proof.
+    intros A xs p.
+    induction xs.
+    - reflexivity.
+    - simpl.
+      destruct (p a).
+      + simpl.
+        rewrite <- (Nat.succ_le_mono).
+        assumption.
+      + apply le_S.
+        assumption.
+  Qed.
+
+  Lemma NextInhabGrammar_wf':
+    forall (combinatorsFinite: Finite CombinatorSymbol) (Gamma: Context),
+    forall grammar, Acc (NextInhabGrammar combinatorsFinite Gamma) grammar.
+  Proof.
+    intros combinatorsFinite Gamma grammar.
+    unfold TreeGrammar in grammar.    
+    assert (length_le:
+              (List.length (List.filter
+                              (fun x =>
+                                 if In_dec IntersectionType_eq_dec
+                                           x (List.map fst grammar)
+                                 then false else true)
+                              (MaximalInhabGrammarTgts combinatorsFinite Gamma)) <=
+               List.length (MaximalInhabGrammarTgts combinatorsFinite Gamma))%nat).
+    { apply ListFilter_le. }
+    revert grammar length_le.
+    induction (length (MaximalInhabGrammarTgts combinatorsFinite Gamma)) as [ | n IH ].
+    - intros grammar length_le.
+      apply Acc_intro.
+      intros next_grammar prf.
+      inversion prf as [ ? lhs rhs in_max_lhs not_in_old_lhs next_eq old_eq ]; clear prf.
+      inversion length_le as [ length_eq | ]; clear length_le.
+      induction (MaximalInhabGrammarTgts combinatorsFinite Gamma) as [ | x xs IH ].
+      + inversion in_max_lhs.
+      + destruct in_max_lhs as [ here | there ].
+        * simpl in length_eq.
+          rewrite here in length_eq.
+          destruct (In_dec IntersectionType_eq_dec lhs (List.map fst grammar)) as [ devil | ].
+          { contradiction. }
+          { inversion length_eq. }
+        * apply IH; [ assumption | ].
+          simpl in length_eq.
+          destruct (In_dec IntersectionType_eq_dec x (List.map fst grammar)).
+          { assumption. }
+          { inversion length_eq. }
+    - intros grammar length_le.
+      inversion length_le as [ length_eq | ].
+      + apply Acc_intro.
+        intros next_grammar' next_next.
+        inversion next_next as [ ? lhs' rhs' in_max_lhs' not_in_old_lhs' next_eq' old_eq' ].
+        apply IH.
+        revert in_max_lhs' not_in_old_lhs' length_eq.
+        clear ...
+        revert n.
+        induction (MaximalInhabGrammarTgts combinatorsFinite Gamma) as [ | x xs IH ].
+        * intros ? devil; inversion devil.
+        * intros n in_xxs not_in_grammar length_eq.
+          assert (incl_impl:
+              forall x, (if In_dec IntersectionType_eq_dec x (List.map fst ((lhs', rhs') :: grammar))
+                    then false else true) = true ->
+                   (if In_dec IntersectionType_eq_dec x (List.map fst grammar) then false else true) = true).
+          { clear ...
+            intros x prf.
+            destruct (In_dec IntersectionType_eq_dec x (List.map fst ((lhs', rhs') :: grammar))) as [ | disprf ].
+            - inversion prf.
+            - destruct (In_dec IntersectionType_eq_dec x (List.map fst grammar)).
+              + assert False; [ apply disprf | contradiction ].
+                right; assumption.
+              + reflexivity. }
+          match goal with
+          | [ length_eq: ?l1 = _ |- (?l2 <= _)%nat ] =>
+            assert (length_gt: l1 > l2)
+          end.
+          { apply (ListLen_ineq _ _ _ lhs'); auto.
+            - destruct (In_dec IntersectionType_eq_dec lhs' (List.map fst grammar));
+                [ contradiction | reflexivity ].
+            - destruct (In_dec IntersectionType_eq_dec lhs' (List.map fst (List.cons (lhs', rhs') grammar)))
+                as [ | devil ]; [ reflexivity | ].
+              assert False; [ apply devil; left; reflexivity | contradiction ]. }
+          rewrite length_eq in length_gt.
+          unfold "_ > _" in length_gt.
+          unfold "_ < _" in length_gt.
+          rewrite <- (Nat.succ_le_mono) in length_gt.
+          assumption.
+      + auto.
+  Qed.
+      
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
 
   Definition IsPossibleRecursiveTarget (combinatorsFinite: Finite CombinatorSymbol) Gamma sigma :=
     exists arrows,
@@ -2138,41 +2413,42 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
              (lhsOk: IsPossibleRecursiveTarget combinatorsFinite Gamma lhs):
     NextInhabGrammar combinatorsFinite Gamma (List.cons (lhs, rhs) List.nil) (List.nil) :=
     Next combinatorsFinite Gamma (List.nil) lhs rhs (*List.Forall_nil _*) lhsOk id.
-  (*
-        Definition MaximalInhabGrammarTgts combinatorsFinite (Gamma: Context): list IntersectionType :=
-          List.flat_map
-            (fun tgts =>
-               List.flat_map
-                 (fun tgtsOfSize =>
-                    List.flat_map (to_list) (projT2 tgtsOfSize))
-                 tgts)
-            (to_list (possibleRecursiveTargets combinatorsFinite Gamma)).
 
-        Lemma MaximalInhabTgtsPossible:
-          forall combinatorsFinite (Gamma: Context) sigma,
-            IsPossibleRecursiveTarget combinatorsFinite Gamma sigma <->
-            List.In sigma (MaximalInhabGrammarTgts combinatorsFinite Gamma).
-        Proof.
-          intros combinatorsFinite Gamma sigma.
-          unfold IsPossibleRecursiveTarget.
-          unfold MaximalInhabGrammarTgts.
-          induction (possibleRecursiveTargets combinatorsFinite Gamma) as [ | tgt n tgts IH ]; split.
-          - intro prf; inversion prf as [ arrows [ devil _ ] ]; inversion devil.
-          - intro; contradiction.
-          - intro prf.
-            inversion prf as [ arrows [ in_arrows sigma_in ] ].
-            inversion in_arrows as [ ? ? n_eq inl | ? ? ? inr n_eq [ hd_eq tl_eq ] ].
-            + simpl.
-              apply (List.in_or_app).
-              left.
-              rewrite <- inl; assumption.
-            + dependent rewrite tl_eq in inr.
-              generalize (proj1 IH (ex_intro _ arrows (conj inr sigma_in))).
-              intro IH'.
-              apply (List.in_or_app).
-              right; assumption.
-          - 
-          
+
+  Definition MaximalInhabGrammarTgts combinatorsFinite (Gamma: Context): list IntersectionType :=
+    List.flat_map
+      (fun tgts =>
+         List.flat_map
+           (fun tgtsOfSize =>
+              List.flat_map (to_list) (projT2 tgtsOfSize))
+           tgts)
+      (to_list (possibleRecursiveTargets combinatorsFinite Gamma)).
+  
+  Lemma MaximalInhabTgtsPossible:
+    forall combinatorsFinite (Gamma: Context) sigma,
+      IsPossibleRecursiveTarget combinatorsFinite Gamma sigma <->
+      List.In sigma (MaximalInhabGrammarTgts combinatorsFinite Gamma).
+  Proof.
+    intros combinatorsFinite Gamma sigma.
+    unfold IsPossibleRecursiveTarget.
+    unfold MaximalInhabGrammarTgts.
+    induction (possibleRecursiveTargets combinatorsFinite Gamma) as [ | tgt n tgts IH ]; split.
+    - intro prf; inversion prf as [ arrows [ devil _ ] ]; inversion devil.
+    - intro; contradiction.
+    - intro prf.
+      inversion prf as [ arrows [ in_arrows sigma_in ] ].
+      inversion in_arrows as [ ? ? n_eq inl | ? ? ? inr n_eq [ hd_eq tl_eq ] ].
+      + simpl.
+        apply (List.in_or_app).
+        left.
+        rewrite <- inl; assumption.
+      + dependent rewrite tl_eq in inr.
+        generalize (proj1 IH (ex_intro _ arrows (conj inr sigma_in))).
+        intro IH'.
+        apply (List.in_or_app).
+        right; assumption.
+    - 
+      
         
         Lemma NextInhabGrammar_wf':
           forall (combinatorsFinite: Finite CombinatorSymbol) (Gamma: Context),
