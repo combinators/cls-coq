@@ -566,9 +566,51 @@ Module LiftProperEmbedding
         reflexivity.
       Qed.
 
-      Axiom bail: forall {A: Type} (P : A -> A -> Prop) {n : nat} (xs: t A n) (ys: t A n),
-          Forall2 P xs ys.
-
+      Lemma liftType_inj: forall sigma tau, liftType sigma = liftType tau -> sigma = tau.
+      Proof.
+        intro sigma.
+        induction sigma
+          as [ | C1 args1 IH1 | sigma1 tau1 IHsigma1 IHtau1 | sigma1 tau1 IHsigma1 IHtau1 ]
+               using Types.IntersectionType_rect';
+          induction tau
+          as [ | C2 args2 IH2 | sigma2 tau2 IHsigma2 IHtau2 | sigma2 tau2 IHsigma2 IHtau2 ]
+               using Types.IntersectionType_rect';
+          intro eq; simpl in eq; inversion eq as [ eq' ].
+        - reflexivity.
+        - clear IH2.
+          revert args2 eq.
+          rewrite <- eq'.
+          intros args2 eq.
+          apply f_equal.
+          apply f_equal.
+          assert (args_eq: map liftType args1 = map liftType args2).
+          { generalize (f_equal (
+                       fun (x: IntersectionType) =>
+                         match x with
+                         | Ty (PT_Const C xs) => existT (t IntersectionType) (constructorArity C) xs
+                         | _ => existT (t IntersectionType) 0 (nil _)
+                         end) eq).
+            intro ex_eq.
+            apply (vect_exist_eq _ _ ex_eq). }
+          clear eq.
+          induction IH1 as [ | ? ? ? prf prfs IH1' ]. 
+          + apply case0; reflexivity.
+          + revert args_eq.
+            apply (caseS' args2); clear args2; intros arg2 args2.
+            intro args_eq.
+            inversion args_eq as [ [ arg2_eq args2_eq ] ] .
+            rewrite (prf _ arg2_eq).
+            apply f_equal.
+            apply IH1'.
+            apply (vect_exist_eq _ _ args2_eq).
+        - assert (sigma_eq: sigma1 = sigma2); [ auto | rewrite sigma_eq ].
+          assert (tau_eq: tau1 = tau2); [ auto | rewrite tau_eq ].
+          reflexivity.
+        - assert (sigma_eq: sigma1 = sigma2); [ auto | rewrite sigma_eq ].
+          assert (tau_eq: tau1 = tau2); [ auto | rewrite tau_eq ].
+          reflexivity.
+      Qed.
+      
       Definition forall_args_map {A B: Type} (P: B -> B -> Prop) n (sigmas taus: t A n) (f: A -> B)
                (prf: Forall2 P (map f sigmas) (map f taus))
                (P': A -> A -> Prop)
@@ -649,13 +691,89 @@ Module LiftProperEmbedding
             { exact (forall_args_map _ _ _ _ liftType args_le _ unliftTypeRespectful'). }
             generalize (Forall2_nth _ _ _ prfs_rec k).
             trivial.
-        - intros sigma' tau' sigma'_eq tau'_eq.
-          simpl in sigma'_eq.
+        - unfold unliftType'.
+          rewrite sigma_eq.
+          rewrite tau_eq.
+          rewrite unliftLiftType.
+          rewrite unliftLiftType.
+          rewrite tau_eq in sigma_eq.
+          destruct sigma using Types.IntersectionType_rect'; inversion sigma_eq as [ sigma_eq' ].
+          rewrite (liftType_inj _ _ sigma_eq').
           apply Types.ST_InterMeetLeft.
-        - apply Types.ST_InterMeetRight.
-        - apply Types.ST_InterIdem.
-        - apply Types.ST_InterArrowDistrib.
-        - simpl.
+        - unfold unliftType'.
+          rewrite sigma_eq.
+          rewrite tau_eq.
+          rewrite unliftLiftType.
+          rewrite unliftLiftType.
+          rewrite tau_eq in sigma_eq.
+          destruct sigma using Types.IntersectionType_rect'; inversion sigma_eq as [ [ sigma_eq' tau_eq' ] ].
+          rewrite (liftType_inj _ _ tau_eq').
+          apply Types.ST_InterMeetRight.
+        - unfold unliftType'.
+          simpl.
+          rewrite sigma_eq.
+          rewrite unliftLiftType.
+          apply Types.ST_InterIdem.
+        - unfold unliftType'.
+          rewrite sigma_eq.
+          rewrite tau_eq.
+          rewrite unliftLiftType.
+          rewrite unliftLiftType.
+          destruct sigma
+            as [ | | | sigma1 sigma2 _ _ ]
+                 using Types.IntersectionType_rect'; inversion sigma_eq as [ [sigma1_eq sigma2_eq] ].
+          destruct sigma1
+            as [ | | sigma1' tau1 _ _ | ]
+                 using Types.IntersectionType_rect'; inversion sigma1_eq as [ [sigma1'_eq tau1_eq] ].
+          destruct sigma2
+            as [ | | sigma2' tau2 _ _ | ]
+                 using Types.IntersectionType_rect'; inversion sigma2_eq as [ [sigma2'_eq tau2_eq] ].
+          destruct tau
+            as [ | | sigma3' tau3 _ _ | ]
+                 using Types.IntersectionType_rect'; inversion tau_eq as [ [sigma3'_eq tau3_eq] ].
+          destruct tau3
+            as [ | | | tau31 tau32 _ _ ]
+                 using Types.IntersectionType_rect'; inversion tau3_eq as [ [tau31_eq tau32_eq] ].
+          rewrite (liftType_inj _ _ (eq_trans (eq_sym sigma2'_eq) sigma1'_eq)).
+          rewrite (liftType_inj _ _ (eq_trans (eq_sym sigma3'_eq) sigma1'_eq)).
+          rewrite (liftType_inj _ _ (eq_trans (eq_sym tau31_eq) tau1_eq)).
+          rewrite (liftType_inj _ _ (eq_trans (eq_sym tau32_eq) tau2_eq)).
+          apply Types.ST_InterArrowDistrib.
+        - unfold unliftType'.
+          rewrite sigma_eq.
+          rewrite tau_eq.
+          rewrite unliftLiftType.
+          rewrite unliftLiftType.
+          destruct sigma
+            as [ | | | sigma1 sigma2 _ _ ]
+                 using Types.IntersectionType_rect'; inversion sigma_eq as [ [sigma1_eq sigma2_eq] ].
+          destruct sigma1
+            as [ | C1 args1 _ | | ]
+                 using Types.IntersectionType_rect'; inversion sigma1_eq as [ [C1_eq args1_eq] ].
+          destruct sigma2
+            as [ | C2 args2 _ | | ]
+                 using Types.IntersectionType_rect'; inversion sigma2_eq as [ [C2_eq args2_eq] ].
+          destruct tau
+            as [ | C3 args3 _ | | ]
+                 using Types.IntersectionType_rect'; inversion tau_eq as [ [C3_eq args3_eq] ].          
+          clear sigma_eq tau_eq sigma1_eq sigma2_eq.
+          revert sigmas taus args1 args2 args3 args1_eq args2_eq args3_eq.
+          destruct C as [ | C ];
+            inversion C1_eq as [ C1_eq' ];
+            inversion C2_eq as [ C2_eq' ];
+            inversion C3_eq as [ C3_eq' ].
+          rewrite (eq_trans (eq_sym C2_eq') C1_eq').
+          rewrite (eq_trans (eq_sym C3_eq') C1_eq').
+          intros sigmas taus args1 args2 args3 args1_eq args2_eq args3_eq.
+          
+          
+          inversion  C1_eq.
+          inversion C2_eq.
+          revert C2_eq C3_eq.
+          rewrite C1_eq.
+          intro C2_eq.
+          
+          
           rewrite liftTypeDistrib.
           apply ST_InterConstDistrib.
         - apply ST_SubtypeDistrib; auto.
