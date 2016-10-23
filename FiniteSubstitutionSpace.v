@@ -1310,7 +1310,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
       rewrite (List.map_map).
       simpl.
       reflexivity.
-  Qed.            
+  Qed.
   
   Lemma allPossibleInhabitants_sound:
     forall Gamma tau c n,
@@ -2467,24 +2467,267 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
             start            
             (List.Forall_cons _ start_eq (List.Forall_nil _)) in
     exist _ (proj1_sig result) (proj2 (proj2_sig result)).
-(*
-  Inductive WordOf (combinatorsFinite: Finite CombinatorSymbol) (grammar: TreeGrammar combinatorsFinite):
-    IntersectionType -> Term -> Prop :=
-  | 
-    
 
+  Definition WordOf_rec (P : IntersectionType -> Term -> Prop)
+             (word: Term) n (sigmas: t IntersectionType n): Prop :=
+    (fix word_of_rec w: forall n, t IntersectionType n -> Prop :=
+       match w with
+       | App M N =>
+         fun n =>
+           match n as n' return (t IntersectionType n') -> Prop with
+           | 0 => fun _ => False
+           | S n => fun sigmas =>
+                     P (last sigmas) N /\
+                     (word_of_rec M _ (shiftout sigmas))
+           end
+       | _ =>
+         fun n =>
+           match n as n' return (t IntersectionType n') -> Prop with
+           | 0 => fun _ => True
+           | S n => fun _ => False
+           end
+       end) word n sigmas.
 
+  Lemma WordOf_rec_count:
+    forall P word n sigmas, WordOf_rec P word n sigmas -> n = argumentCount word.
+  Proof.
+    intros P word.
+    induction word as [ | ? IH ].
+    - intros n sigmas prf.
+      destruct sigmas.
+      + reflexivity.
+      + contradiction.
+    - intros n sigmas.
+      destruct sigmas as [ | sigma n sigmas ].
+      + intro devil; contradiction.
+      + simpl.
+        intro prf.
+        destruct prf as [ _ prf' ].
+        apply f_equal.
+        apply (IH _ (shiftout (cons _ sigma _ sigmas))).
+        assumption.
+  Qed.
 
-
-
-
-
-
-
-
-
-
-    
+  Lemma Forall_WordOf:
+    forall P word n sigmas (n_eq: n = argumentCount word),
+      WordOf_rec P word n sigmas -> Forall2 P sigmas (rew <- n_eq in argumentsOf word).
+  Proof.
+    intros P word.
+    induction word as [ | ? IH ].
+    - intros n sigmas n_eq.
+      destruct sigmas.
+      + simpl.
+        simpl in n_eq.
+        unfold eq_rect_r.
+        rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ (eq_sym n_eq)).
+        intro; apply Forall2_nil.
+      + inversion n_eq.
+    - intros n sigmas n_eq.
+      simpl in n_eq.
+      destruct n.
+      + inversion n_eq.
+      + intro prf.
+        simpl in prf.
+        destruct prf as [ last_prf prfs ].
+        inversion n_eq as [ n_eq' ].
+        generalize (IH _ (shiftout sigmas) n_eq' prfs).
+        clear prfs.
+        revert n_eq sigmas last_prf.
+        rewrite n_eq'.
+        unfold eq_rect_r.
+        simpl.
+        intro n_eq.
+        rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ (eq_sym n_eq)).
+        intros sigmas prf prfs.
+        rewrite (shiftin_shiftout sigmas).
+        apply Forall2_shiftin; assumption.
+  Qed.
+  
+  Fixpoint WordOf (combinatorsFinite: Finite CombinatorSymbol)
+           (grammar: TreeGrammar combinatorsFinite)
+           (tau: IntersectionType)
+           (word: Term) {struct word}: Prop :=
+    exists entry,
+      List.In (tau, entry) grammar /\
+      exists arrows,
+        In (rootOf word, arrows) entry /\
+        List.Exists
+          (fun arrowsOfSize =>
+             List.Exists
+               (fun arrow => WordOf_rec (WordOf combinatorsFinite grammar) word _ (fst arrow))
+               (projT2 arrowsOfSize)
+          )
+          arrows.
+  
+  Lemma inhabit_sound:
+    forall (combinatorsFinite: Finite CombinatorSymbol)
+      (ex_S: { S : Substitution | WellFormed S })
+      (Gamma: Context)
+      (M: Term)
+      (tau: IntersectionType),
+      WordOf _ (proj1_sig (inhabit combinatorsFinite Gamma tau)) tau M ->
+      CL Gamma M tau.
+  Proof.
+    intros combinatorsFinite ex_S Gamma M tau prf.
+    apply (arguments_ind (fun M => forall tau', WordOf combinatorsFinite (proj1_sig (inhabit combinatorsFinite Gamma tau)) tau' M -> CL Gamma M tau')); [ | assumption ].
+    clear M prf; intros M.
+    rewrite <- (applyAllSpec M).
+    generalize (argumentsOf M).
+    generalize (argumentCount M).
+    intro argCount.
+    destruct argCount as [ | argc ];
+      intros args IH tau' prf.
+    - revert prf.
+      apply (fun r => case0 (fun xs => WordOf _ _ _ (applyAll _ xs) -> CL _ (applyAll _ xs) _) r args).
+      clear args IH.
+      simpl.
+      intro prf.
+      inversion prf as [ entry [ entry_in_g [ arrows [ root_arrows_in_entry ex_args ] ] ] ].
+      assert (entry_sound: entry = grammarEntry combinatorsFinite Gamma tau').
+      { generalize (proj1 (List.Forall_forall _ _) (proj2_sig (inhabit combinatorsFinite Gamma tau))).
+        intro mk_prf.
+        apply (mk_prf (tau', entry) entry_in_g). }
+      generalize (Forall_nth _ _ (grammarEntry_sound combinatorsFinite Gamma tau' ex_S)).
+      intro mk_prf.
+      destruct (In_nth _ _ root_arrows_in_entry) as [ k nth_eq ].
+      generalize (mk_prf k).
+      rewrite entry_sound in nth_eq.
+      rewrite nth_eq.
+      simpl.
+      intro arrowsOfSize_sound.
+      clear entry_in_g root_arrows_in_entry nth_eq.
+      induction ex_args as [ arrowsOfSize arrows  args_ok | ? arrows there IH' ].
+      + inversion arrowsOfSize_sound as [ | ? ? arrowsOfSize_sound' arrows_sound' [ hd_eq tl_eq ]].
+        destruct arrowsOfSize as [ arity arrowsOfSize ].
+        simpl in arrowsOfSize_sound.
+        clear prf entry entry_sound mk_prf k.
+        revert combinatorsFinite args_ok arrowsOfSize_sound'.
+        clear ...
+        intros combinatorsFinite args_ok arrowsOfSize_sound.
+        simpl in arrowsOfSize_sound.
+        induction arrowsOfSize_sound as [ | [ arrow_srcs arrow_tgt ] ? arrow_sound arrowsOfSize_sound' IH ].
+        * inversion args_ok.
+        * generalize (proj1 (List.Exists_exists _ _) args_ok).
+          clear args_ok.
+          intro args_ok.
+          destruct args_ok as [ ? [ in_prf wordOf_rec_prf ] ].
+          generalize (WordOf_rec_count (WordOf combinatorsFinite (proj1_sig (inhabit combinatorsFinite Gamma tau')))
+                                       (Symbol (rootOf M)) arity _ wordOf_rec_prf).
+          intro arity_eq.
+          simpl in arity_eq.
+          revert arity_eq arrow_sound.
+          clear ...
+          intro arity_eq.
+          revert arrow_srcs.
+          rewrite arity_eq.
+          intros arrow_srcs.
+          apply (fun r => case0 (fun (xs: t IntersectionType 0) =>
+                                (forall arguments, Forall2 _ _ (fst (xs, arrow_tgt)) -> _) -> _) r arrow_srcs).
+          intro soundness.
+          simpl in soundness.
+          apply (soundness (nil _) (Forall2_nil _)).
+      + inversion arrowsOfSize_sound.
+        auto.
+    - unfold WordOf in prf.
+      revert prf.
+      rewrite (shiftin_shiftout args).
+      rewrite applyAll_shiftin.
+      intro prf.
+      inversion prf as [ entry [ entry_in_g [ arrows [ root_arrows_in_entry ex_args ] ] ] ].
+      assert (entry_sound: entry = grammarEntry combinatorsFinite Gamma tau').
+      { generalize (proj1 (List.Forall_forall _ _) (proj2_sig (inhabit combinatorsFinite Gamma tau))).
+        intro mk_prf.
+        apply (mk_prf (tau', entry) entry_in_g). }
+      generalize (Forall_nth _ _ (grammarEntry_sound combinatorsFinite Gamma tau' ex_S)).
+      intro mk_prf.
+      destruct (In_nth _ _ root_arrows_in_entry) as [ k nth_eq ].
+      generalize (mk_prf k).
+      rewrite entry_sound in nth_eq.
+      rewrite nth_eq.
+      simpl.
+      intro arrowsOfSize_sound.
+      clear entry_in_g root_arrows_in_entry nth_eq.
+      induction ex_args as [ arrowsOfSize arrows args_ok | ? arrows there IH' ].
+      + inversion arrowsOfSize_sound as [ | ? ? arrowsOfSize_sound' arrows_sound' [ hd_eq tl_eq ]].
+        destruct arrowsOfSize as [ arity arrowsOfSize ].
+        simpl in arrowsOfSize_sound.
+        assert (arity_eq: arity = S argc).
+        { generalize (proj1 (List.Exists_exists _ _) args_ok).
+          clear args_ok; intro args_ok.
+          destruct args_ok as [ ? [ ? wordOf_rec_prf ] ].
+          generalize (WordOf_rec_count _ _ _ _ wordOf_rec_prf).
+          intro arity_eq.
+          simpl in arity_eq.
+          rewrite applyAllArgumentCount in arity_eq.
+          exact arity_eq. }
+        clear prf.
+        revert IH arity_eq args_ok arrowsOfSize_sound'.
+        clear ...
+        intros IH arity_eq args_ok arrowsOfSize_sound.
+        simpl in arrowsOfSize_sound.
+        induction arrowsOfSize_sound as [ | [ arrow_srcs arrow_tgt ] arrows' soundness arrowsOfSize_sound' IH' ].
+        * inversion args_ok.
+        * revert arity_eq IH IH' args_ok soundness.
+          clear ...
+          simpl.
+          intro arity_eq.
+          revert arrow_srcs arrows'.
+          rewrite arity_eq.
+          simpl.
+          fold WordOf.
+          intros arrow_srcs arrows' IH IH' args_ok.          
+          generalize (proj1 (List.Exists_exists _ _) args_ok);
+            clear args_ok; intros [ args' [ args_in args_ok ] ].
+          match goal with
+          |[ args_ok: ?ty |- _ ] =>
+           assert (fold_prf : ty = WordOf_rec (WordOf combinatorsFinite
+                                                      (proj1_sig (inhabit combinatorsFinite Gamma tau)))
+                                              (applyAll (Symbol (rootOf M)) args) _ (fst args'))
+          end.
+          { rewrite (shiftin_shiftout args).
+            rewrite (applyAll_shiftin).
+            rewrite <- (shiftin_shiftout).
+            reflexivity. }
+          rewrite fold_prf in args_ok.
+          clear fold_prf.          
+          inversion args_in as [ here | there ].
+          { intro soundness.
+            rewrite <- applyAll_shiftin.
+            rewrite applyAllRoot in soundness.
+            simpl rootOf in soundness.
+            rewrite <- shiftin_shiftout.
+            apply (soundness args).
+            set (argCount_eq := applyAllArgumentCount (Symbol (rootOf M)) _ args).
+            simpl in argCount_eq.
+            generalize (Forall_WordOf _ _ _ _ (eq_sym argCount_eq) args_ok).
+            intro prfs.
+            rewrite <- here in prfs.
+            simpl fst in prfs.
+            rewrite applyAllArguments in prfs.
+            unfold argCount_eq in prfs.
+            unfold eq_rect_r in prfs at 2.
+            rewrite (rew_opp_l) in prfs.
+            apply nth_Forall2.
+            intro k.
+            apply IH.
+            - rewrite applyAllArguments.
+              rewrite (applyAllArgumentCount (Symbol (rootOf M)) (S argc) args).
+              simpl.
+              apply nth_In.
+            - generalize (Forall2_nth _ _ _ prfs k).
+              intro prf.
+              simpl append in prf.
+              exact prf. }
+          { intros.
+            apply IH'.
+            - apply List.Exists_exists; eexists; split.
+              + eassumption.
+              + rewrite (shiftin_shiftout args) in args_ok.
+                rewrite (applyAll_shiftin) in args_ok.
+                simpl in args_ok.
+                assumption. }
+      + inversion arrowsOfSize_sound; auto.
+  Qed.
 
   Definition IsPossibleRecursiveTarget (combinatorsFinite: Finite CombinatorSymbol) Gamma sigma :=
     exists arrows,

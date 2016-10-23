@@ -1078,7 +1078,58 @@ Proof.
     + left; reflexivity.
     + intro k'; right; apply IH; apply FS; assumption.
 Qed.
-  
+
+Lemma In_last {T: Type} {n: nat}:
+  forall (xs: t T (S n)) x,
+    In x xs <-> In x (shiftout xs) \/ x = last xs.
+Proof.
+  intros xs x.
+  rewrite (shiftin_shiftout xs).
+  generalize (last xs).
+  generalize (shiftout xs).
+  clear xs.
+  intro xs.
+  induction xs as [ | x' n xs' IH ]; intro lastx.
+  - split.
+    + intro inprf.
+      inversion inprf as [ ? ? n_eq [ hd_eq tl_eq ]| ? ? ? devil n_eq [ hd_eq tl_eq ]  ].
+      * dependent rewrite tl_eq.
+        right; reflexivity.
+      * dependent rewrite tl_eq in devil; inversion devil.
+    + intro inprf.
+      inversion inprf as [ devil | inprf' ].
+      * inversion devil.
+      * simpl in *.
+        rewrite inprf'.
+        left.
+  - split.
+    + rewrite <- (shiftout_shiftin).
+      intro inprf.
+      inversion inprf as [ ? ? n_eq [ hd_eq tl_eq] | ? ? ? inprf' n_eq [ hd_eq tl_eq ] ].
+      * left; left.
+      * dependent rewrite tl_eq in inprf'.
+        generalize (proj1 (IH _) inprf').
+        intro inprf''.
+        rewrite <- (shiftout_shiftin) in inprf''.
+        simpl.
+        inversion inprf''.
+        { left; right; assumption. }
+        { right; assumption. }
+    + rewrite <- shiftout_shiftin.
+      intro inprf.
+      inversion inprf as [ inl | inr ].
+      * inversion inl as [ ? ? n_eq [ hd_eq tl_eq ] | ? ? ? inprf' n_eq [hd_eq tl_eq ] ].
+        { left. }
+        { right.
+          dependent rewrite tl_eq in inprf'.
+          generalize (proj2 (IH lastx)).
+          rewrite <- shiftout_shiftin.
+          intro; tauto. }
+      * right.
+        simpl in inr.
+        generalize (proj2 (IH lastx)).
+        tauto.
+Qed.   
 
 Lemma ListForall_Forall {A: Type} {P : A -> Prop}: forall xs, List.Forall P xs -> Forall P (of_list xs). 
 Proof.      

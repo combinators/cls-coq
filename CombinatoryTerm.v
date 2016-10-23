@@ -1,6 +1,9 @@
 Require Import Coq.Vectors.Vector.
+Require Import VectorQuantification.
 Require Import Coq.Arith.PeanoNat.
 Require Import Coq.Logic.Eqdep_dec.
+Require Import Coq.Arith.Wf_nat.
+
 
 Module Type TermSignature.
   Parameter CombinatorSymbol: Set.
@@ -166,5 +169,76 @@ Module Type Terms(Import TermSig: TermSignature).
       rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ (eq_sym eq)).
       reflexivity.
   Qed.
+
+  Fixpoint sizeOf (M: Term): nat :=
+    match M with
+    | Symbol _ => 1
+    | App M N => sizeOf M + sizeOf N
+    end.
+
+  Lemma sizeOf_S: forall (M: Term), 0 < sizeOf M.
+  Proof.
+    intro M.
+    induction M.
+    - unfold "_ < _".
+      reflexivity.
+    - simpl.
+      apply (Nat.lt_lt_add_r).
+      assumption.
+  Qed.
+
+  Lemma argumentsOf_size:
+    forall M N, In N (argumentsOf M) -> sizeOf N < sizeOf M.
+  Proof.
+    intro M.
+    rewrite <- (applyAllSpec M).
+    generalize (argumentsOf M).
+    induction (argumentCount M) as [ | n IH ].
+    - intro args.
+      apply (fun r => case0 (fun xs => forall N, In N (argumentsOf (applyAll _ xs)) -> _ < sizeOf (applyAll _ xs)) r args).
+      clear args.
+      intros N devil; inversion devil.
+    - intros args.
+      intros N inprf.
+      assert (inprf' : In N args).
+      { rewrite applyAllArguments in inprf.
+        revert inprf.
+        clear ...
+        unfold eq_rect_r.
+        rewrite (rewrite_vect (fun x xs => In N xs) _ args).
+        intro; assumption. }
+      clear inprf.      
+      destruct (proj1 (In_last _ _) inprf') as [ here | there ].
+      + clear inprf'.
+        revert here.
+        rewrite (shiftin_shiftout args).
+        rewrite <- (shiftout_shiftin).
+        intro inprf.
+        rewrite (applyAll_shiftin).
+        simpl.
+        apply (Nat.lt_lt_add_r).
+        apply IH.
+        rewrite (applyAllArguments).
+        simpl.
+        rewrite (applyAllArgumentCount (Symbol (rootOf M)) n (shiftout args)).
+        unfold eq_rect_r.
+        simpl.
+        assumption.
+      + rewrite (shiftin_shiftout args).
+        rewrite applyAll_shiftin.
+        rewrite there.
+        simpl.
+        apply (Nat.lt_add_pos_l).
+        apply (sizeOf_S).
+  Qed.    
+  Definition arguments_ind
+             (P: Term -> Prop)
+             (app_case: forall M, (forall (arg: Term), In arg (argumentsOf M) -> P arg) -> P M)
+             (M: Term): P M :=
+    @Fix Term (fun (M N: Term) => sizeOf M < sizeOf N) (well_founded_ltof _ sizeOf) P
+          (fun (M: Term) (applyAll_rec: forall N, sizeOf N < sizeOf M -> P N) =>
+             app_case M (fun arg inprf => applyAll_rec _ (argumentsOf_size _ _ inprf))
+          )
+          M.
 End Terms.
   
