@@ -281,6 +281,24 @@ Proof.
     simpl.
     auto.
 Qed.
+
+Lemma Forall_shiftout:
+  forall {T : Type} (P : T -> Prop) m (args: t T (S m)),
+    Forall P args -> Forall P (shiftout args).
+Proof.
+  intros T P m.
+  induction m.
+  - intro args.
+    apply (caseS' args); clear args; intros arg args.
+    apply (fun r => case0 (fun xs => Forall P (cons _ _ _ xs) -> Forall P (shiftout (cons _ _ _ xs))) r args).
+    intro; apply Forall_nil.
+  - intro args.
+    apply (caseS' args); clear args; intros arg args.
+    intro prfs.
+    inversion prfs as [ | ? ? ? prf prfs' n_eq [ hd_eq tl_eq ] ].
+    dependent rewrite tl_eq in prfs'.
+    apply Forall_cons; [ assumption | auto ].
+Qed.
    
 Lemma Forall_dec_eq:
   forall {T : Type} m
