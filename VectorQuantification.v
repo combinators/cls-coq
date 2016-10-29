@@ -1185,3 +1185,29 @@ Proof.
   - apply List.Exists_cons_hd; assumption.
   - apply List.Exists_cons_tl; assumption.
 Qed.
+
+Inductive IsSuffix {A: Type} (s: list A): list A -> Prop :=
+| IsSuffix_tl: forall x l, IsSuffix s l -> IsSuffix s (List.cons x l)
+| IsSuffix_hd: IsSuffix s s.
+
+Lemma in_suffix {A: Type}:
+  forall (x : A) xs, List.In x xs -> exists l, IsSuffix (List.cons x l) xs.
+Proof.
+  intros x xs.
+  induction xs as [ | x' xs IH ].
+  - intro devil; inversion devil.
+  - intro inprf.
+    destruct inprf as [ here | there ].
+    + exists xs; rewrite here; apply IsSuffix_hd.
+    + destruct (IH there) as [ l prf ].
+      eexists; apply IsSuffix_tl; eassumption.
+Qed.
+
+Lemma suffix_in {A: Type}:
+  forall (x: A) s l, IsSuffix (List.cons x s) l -> List.In x l.
+Proof.
+  intros x s l suffix.
+  induction suffix.
+  + right; assumption.
+  + left; reflexivity.
+Qed.
