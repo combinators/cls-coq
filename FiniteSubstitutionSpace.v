@@ -2516,6 +2516,19 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
           assumption.
   Qed.
 
+  Lemma recursiveTargetClosedNext_start:
+    forall combinatorsFinite Gamma tau entry  grammar,
+      recursiveTargetClosedNext combinatorsFinite Gamma (List.cons (tau, entry) List.nil)  grammar ->
+      List.In (tau, entry) grammar.
+  Proof.
+    intros combinatorsFinite Gamma tau entry grammar closed.
+    unfold recursiveTargetClosedNext in closed.
+    destruct closed as [ newRules [ eqPrf  _ ] ].
+    rewrite eqPrf.
+    apply List.in_or_app.
+    right; left; reflexivity.
+  Qed.
+
   Definition inhabit_step
              (combinatorsFinite: Finite CombinatorSymbol) (Gamma: Context)
              (grammar : TreeGrammar combinatorsFinite)
@@ -2940,11 +2953,12 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
   Definition inhabit (combinatorsFinite: Finite CombinatorSymbol) (Gamma: Context) (tau: IntersectionType):
     { g: TreeGrammar combinatorsFinite |
       (List.Forall (fun entry => snd entry = grammarEntry combinatorsFinite Gamma (fst entry)) g) /\
-       forall tau,
-        List.In tau (List.map fst g) ->
-        forall sigma,
-          List.In sigma (recursiveTargets (grammarEntry combinatorsFinite Gamma tau)) ->
-          List.In sigma (List.map fst g) } :=
+      (forall tau,
+          List.In tau (List.map fst g) ->
+          forall sigma,
+            List.In sigma (recursiveTargets (grammarEntry combinatorsFinite Gamma tau)) ->
+            List.In sigma (List.map fst g)) /\
+      List.In (tau, grammarEntry combinatorsFinite Gamma tau) g } :=
     let first_entry :=
         (tau, grammarEntry combinatorsFinite Gamma tau) in
     let start :=
@@ -2968,9 +2982,11 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
             (List.Forall_cons _ start_eq (List.Forall_nil _)) in
     exist _ (proj1_sig result)
           (conj (proj1 (proj2 (proj2_sig result)))
-                (recursiveTargetClosedNext_complete combinatorsFinite Gamma _ _ _
-                                                    (proj2 (proj2 (proj2_sig result)))
-                                                    (proj1 (proj2 (proj2_sig result))))).
+                (conj (recursiveTargetClosedNext_complete combinatorsFinite Gamma _ _ _
+                                                          (proj2 (proj2 (proj2_sig result)))
+                                                          (proj1 (proj2 (proj2_sig result))))
+                      (recursiveTargetClosedNext_start combinatorsFinite Gamma _ _ _
+                                                       (proj2 (proj2 (proj2_sig result)))))).
 
   Definition WordOf_rec (P : IntersectionType -> Term -> Prop)
              (word: Term) n (sigmas: t IntersectionType n): Prop :=
@@ -4072,6 +4088,9 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
               (proj1_sig (inhabit combinatorsFinite Gamma tau)).
   Proof.
     intros combinatorsFinite Gamma tau.
+    destruct (proj2_sig (inhabit combinatorsFinite Gamma tau)) as [ sane complete ].
+    
+    
     unfold inhabit.
     simpl.
     unfold Fix.
@@ -4092,7 +4111,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
     - intro; destruct M; left; assumption.
     - revert not_omega_tau.
       (*generalize (inGrammarStart combinatorsFinite Gamma tau).*)
-      apply (arguments_ind
+      apply (fun prf => arguments_ind
                (fun M =>
                   forall tau',
                     List.In (tau', grammarEntry combinatorsFinite Gamma tau')
@@ -4100,7 +4119,9 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
                     (Omega tau' -> False) ->
                     CL Gamma M tau' ->
                     WordOf combinatorsFinite (proj1_sig (inhabit combinatorsFinite Gamma tau))
-                           tau' M)).
+                           tau' M)
+               prf _ _
+               (proj2 (proj2 (proj2_sig (inhabit combinatorsFinite Gamma tau))))).
       clear M; intros M IH.
       intros tau' in_start not_omega_tau' prf.
       generalize (Exists_in _ _ (grammarEntry_complete combinatorsFinite Gamma tau' M not_omega_tau' prf)).
@@ -4248,7 +4269,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
                       reflexivity.
                     - generalize (proj2_sig (inhabit combinatorsFinite Gamma tau)).
                       intro sane_and_complete.
-                      destruct sane_and_complete as [ sane complete ].
+                      destruct sane_and_complete as [ sane [ complete _ ] ].
                       generalize (complete _ (in_map fst _ _ in_start)).
                       intro mkprf.
                       generalize (recursiveTargets_complete _ _ _ _ (Forall_last _ _ _ allrec)).
@@ -4284,12 +4305,12 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
                   clear prfs; intro prfs.
                   rewrite <- shiftout_shiftin in prfs.
                   rewrite <- shiftout_shiftin in prfs.
-                  revert prfs IH.
+                  revert prfs IH in_start.
                   generalize (Forall_shiftout _ _ _ allrec).
                   rewrite <- (shiftout_shiftin).
                   clear ...
                   generalize (shiftout hd'); clear hd'.
-                  intros hd' allrec prfs IH.
+                  intros hd' allrec prfs IH in_start.
                   apply (WordOf_Forall _ M _ hd' eq_refl).
                   unfold eq_rect_r; simpl eq_rect.
                   assert (IH': forall (arg: Term),
@@ -4319,18 +4340,47 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
                     clear tl_eq1 tl_eq2; intros tl_eq2 tl_eq1.
                     rewrite tl_eq1 in prfs'.
                     rewrite tl_eq2 in prfs'.
-                    apply Forall2_cons.
-                    - destruct arg as [ c | M' N' ];
+                    assert (sigma_in: List.In (sigma, grammarEntry combinatorsFinite Gamma sigma)
+                                              (proj1_sig (inhabit combinatorsFinite Gamma tau))).
+                    { generalize (proj2_sig (inhabit combinatorsFinite Gamma tau)).
+                      intro sane_and_complete.
+                      destruct sane_and_complete as [ sane [ complete _ ] ].
+                      generalize (complete _ (in_map fst _ _ in_start)).
+                      intro mkprf.
+                      inversion allrec as [ | ? ? ? sigma_rec ].
+                      generalize (recursiveTargets_complete _ _ _ _ sigma_rec).
+                      intro isrec.
+                      generalize (mkprf sigma isrec).
+                      revert sane.
+                      clear ...
+                      intros sane tgt_in_prf.
+                      induction (proj1_sig (inhabit combinatorsFinite Gamma tau)) as [ | [ tau' entry ] entries IH ].
+                      - inversion tgt_in_prf.
+                      - destruct tgt_in_prf as [ here | there ].
+                        + inversion sane as [ | ? ? hd_sane ].
+                          left.
+                          simpl in hd_sane.
+                          rewrite hd_sane.
+                          simpl in here.
+                          rewrite here.
+                          reflexivity.
+                        + right; apply IH.
+                          * inversion sane as [ | ? ? ? tl_sane ].
+                            assumption.
+                          * assumption.
+                    }
+                    apply Forall2_cons.                    
+                      - destruct arg as [ c | M' N' ];
                         destruct (Omega_dec sigma);
                         try solve [ left; assumption ].
                       + apply (IH (Symbol c)).
                         * apply In_cons_hd.
-                        * admit.
                         * assumption.
                         * assumption.
+                        * assumption. 
                       + apply (IH (App M' N')).
                         * apply In_cons_hd.
-                        * admit.
+                        * assumption.
                         * assumption.
                         * assumption.
                     - apply IH'.
