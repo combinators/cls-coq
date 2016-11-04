@@ -2365,7 +2365,156 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
         eexists; eexists; split.
         * eassumption.
         * assumption.
-  Qed.     
+  Qed.
+
+  (*
+
+  Definition new_entries
+             (combinatorsFinite: Finite CombinatorSymbol)
+             (grammar' grammar: TreeGrammar combinatorsFinite) :=
+    List.firstn (List.length grammar' - List.length grammar) grammar'.
+
+  Lemma  new_entries_app:
+    forall (combinatorsFinite: Finite CombinatorSymbol)
+      (grammar' grammar: TreeGrammar combinatorsFinite),
+      new_entries combinatorsFinite (List.app grammar' grammar) grammar = grammar'.
+  Proof.
+    intros combinatorsFinite grammar'.
+    induction grammar' as [ | entry entries IH ].
+    - unfold new_entries.
+      simpl.
+      intro grammar.
+      rewrite (Nat.sub_diag (length grammar)).
+      reflexivity.
+    - intro grammar.
+      generalize (IH grammar).
+      unfold new_entries.
+      simpl List.app.
+      simpl List.length.
+      rewrite app_length.
+      rewrite (Nat.sub_succ_l _ _
+                              (rew (Nat.add_comm _ _) in Nat.le_add_r _ _)).
+      simpl.
+      intro IH'.
+      rewrite IH'.
+      reflexivity.
+  Qed.
+  
+  Lemma new_entries_spec:
+    forall (combinatorsFinite: Finite CombinatorSymbol) (Gamma: Context)
+      (grammar' grammar : TreeGrammar combinatorsFinite),
+      NextInhabGrammarTrans combinatorsFinite Gamma grammar' grammar ->
+      List.app (new_entries combinatorsFinite grammar' grammar) grammar = grammar'.
+  Proof.
+    intros combinatorsFinite Gamma grammar' grammar next.
+    induction next as [ g1 g2 next_prf | g1 g2 g3 next_prf1 IH1 next_prf2 IH2 ].
+    - inversion next_prf as [ ? lhs rhs ? g1_eq g2_eq ].
+      fold (List.app (List.cons (lhs, rhs) List.nil) g2).
+      rewrite new_entries_app.
+      reflexivity.      
+    - rewrite <- IH1.
+      rewrite <- IH2.
+      rewrite List.app_assoc.
+      apply (f_equal (fun xs => List.app xs g3)).
+      rewrite new_entries_app.
+      reflexivity.
+  Qed.
+   *)
+
+  Definition recursiveTargetClosedNext
+             (combinatorsFinite: Finite CombinatorSymbol) (Gamma: Context)
+             (grammar grammar': TreeGrammar combinatorsFinite) :=
+    match grammar with
+    | List.nil =>  grammar' = List.nil
+    | List.cons (tau, entry) grammar =>
+      exists newRules,
+      grammar' = List.app newRules (List.cons (tau, entry) grammar) /\
+      (*forall tau',
+          List.In tau' (List.map fst (List.tl grammar')) ->
+          forall tgt, List.In tgt (recursiveTargets (grammarEntry combinatorsFinite Gamma tau')) ->
+                 List.In tgt (List.map fst (List.cons (tau, entry) grammar))) /\*)
+      (forall tgt, List.In tgt (recursiveTargets entry) ->
+              List.In tgt (List.map fst grammar')) /\
+      (forall tau,
+          List.In tau (List.map fst newRules) ->
+          forall tgt, List.In tgt (recursiveTargets (grammarEntry combinatorsFinite Gamma tau)) ->
+                 List.In tgt (List.map fst grammar'))
+    end.
+
+  (*Definition recursiveTargetClosedNext_Focus
+        (combinatorsFinite: Finite CombinatorSymbol) (Gamma: Context)
+        (grammar grammar': TreeGrammar combinatorsFinite) :=
+    match grammar with
+    | List.nil =>  grammar' = List.nil
+    | List.cons (tau, entry) grammar =>
+      exists newRules,
+      grammar' = List.app newRules (List.cons (tau, entry) grammar) /\
+      (forall tau',
+          List.In tau' (List.map fst grammar) ->
+          forall tgt, List.In tgt (recursiveTargets (grammarEntry combinatorsFinite Gamma tau')) ->
+                 List.In tgt (List.map fst (List.cons (tau, entry) grammar))) /\
+      (forall tau,
+          List.In tau (List.map fst newRules) ->
+          forall tgt, List.In tgt (recursiveTargets (grammarEntry combinatorsFinite Gamma tau)) ->
+                 List.In tgt (List.map fst grammar'))
+    end.*)
+
+  Lemma recursiveTargetClosedNext_complete:
+    forall combinatorsFinite Gamma tau entry  grammar,
+      recursiveTargetClosedNext combinatorsFinite Gamma (List.cons (tau, entry) List.nil)  grammar ->
+      List.Forall (fun entry => snd entry = grammarEntry combinatorsFinite Gamma (fst entry)) grammar ->
+      forall tau,
+        List.In tau (List.map fst grammar) ->
+        forall sigma,
+          List.In sigma (recursiveTargets (grammarEntry combinatorsFinite Gamma tau)) ->
+          List.In sigma (List.map fst grammar).
+  Proof.
+    intros combinatorsFinite Gamma tau entry grammar.
+    unfold recursiveTargetClosedNext.
+    induction grammar as [ | [ tau' entry' ] grammar IH ].
+    - intros closedprf sanity tau'' devil.
+      inversion devil.
+    - intros rec_closed sanity tau'' inprf sigma rec_tgt_sigma.
+      destruct rec_closed as [ newRules [ eqPrf [ entryPrf newPrf ] ] ].
+      destruct newRules as [ | [ tau''' entry''' ] newRules ].
+      + simpl in eqPrf.
+        inversion eqPrf as [ [ tau_eq entry_eq grammar_eq ] ].
+        rewrite grammar_eq in *.
+        rewrite tau_eq in *.
+        rewrite entry_eq in *.
+        apply entryPrf.
+        inversion inprf as [ here | devil ]; [ | inversion devil ].
+        simpl in here.
+        rewrite <- here in rec_tgt_sigma.
+        inversion sanity as [ | ? ? entry_sane ].
+        simpl in entry_sane.
+        rewrite entry_sane.
+        assumption.
+      + simpl in eqPrf.
+        inversion eqPrf as [ [ tau'_eq entry'_eq grammar_eq ] ].
+        rewrite tau'_eq in *.
+        rewrite entry'_eq in *.
+        rewrite grammar_eq in *.
+        rewrite List.app_comm_cons in inprf.
+        rewrite List.map_app in inprf.
+        generalize (List.in_app_or _ _ _ inprf).
+        clear inprf; intro inprf.
+        destruct inprf as [ inNewRules | inStart ].
+        * eapply newPrf; eassumption.
+        * apply entryPrf.
+          assert (entry_sane: entry = grammarEntry combinatorsFinite Gamma tau).
+          { generalize (proj1 (Forall_forall _ _) sanity).
+            clear sanity; intro sanity.
+            rewrite List.app_comm_cons in sanity.
+            apply (sanity (tau, entry)).
+            apply List.in_or_app.
+            right; left; reflexivity. }
+          rewrite entry_sane.
+          destruct inStart as [ here | devil]; [ | inversion devil ].
+          simpl in here.
+          rewrite here.
+          assumption.
+  Qed.
 
   Definition inhabit_step
              (combinatorsFinite: Finite CombinatorSymbol) (Gamma: Context)
@@ -2379,19 +2528,21 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
                   | (forall g', NextInhabGrammar combinatorsFinite Gamma g' g ->
                            NextInhabGrammarTrans combinatorsFinite Gamma g' grammar') /\
                     (List.Forall (fun entry => snd entry = grammarEntry combinatorsFinite Gamma (fst entry))
-                                 g)
+                                 g) /\
+                    recursiveTargetClosedNext combinatorsFinite Gamma grammar' g
                   }
              )
              (grammar_sane: List.Forall (fun entry => snd entry = grammarEntry combinatorsFinite Gamma (fst entry))
-                                        grammar):
+                                        grammar):             
     { g: TreeGrammar combinatorsFinite
     | (forall g', NextInhabGrammar combinatorsFinite Gamma g' g ->
              NextInhabGrammarTrans combinatorsFinite Gamma g' grammar) /\
-      (List.Forall (fun entry => snd entry = grammarEntry combinatorsFinite Gamma (fst entry)) g)
+      (List.Forall (fun entry => snd entry = grammarEntry combinatorsFinite Gamma (fst entry)) g) /\
+      recursiveTargetClosedNext combinatorsFinite Gamma grammar g
     }.
   Proof.
     destruct grammar as [ | entry entries ].
-    - exists List.nil; split.
+    - exists List.nil; repeat split.
       + intros ? next; apply t_step; exact next.
       + apply List.Forall_nil.
     - assert (entry_sane: snd entry = grammarEntry combinatorsFinite Gamma (fst entry)).
@@ -2399,24 +2550,76 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
       generalize (recursiveTargets_sound combinatorsFinite Gamma (fst entry)).
       intro tgts_sound.
       rewrite <- entry_sane in tgts_sound.
-      induction (recursiveTargets (snd entry)) as [ | tgt tgts IH ].
-      + exists (List.cons entry entries); split.
+      unfold recursiveTargetClosedNext.
+      unfold recursiveTargetClosedNext in inhabit_rec.
+      destruct entry as [ tau entry ].
+      simpl in tgts_sound.
+      simpl in inhabit_rec.
+      revert inhabit_rec.
+      induction (recursiveTargets entry) as [ | tgt tgts IH ]; intro inhabit_rec.
+      + exists (List.cons (tau, entry) entries); repeat split.
         * intros ? prf; apply t_step; exact prf.
         * assumption.
-      + assert (tgts_sound': List.Forall (IsRecursiveTarget combinatorsFinite Gamma (fst entry)) tgts).
+        * exists List.nil; repeat split.
+          { intros tgt devil; inversion devil. }
+          { intros tau' devil; inversion devil. }          
+      + assert (tgts_sound': List.Forall (IsRecursiveTarget combinatorsFinite Gamma tau) tgts).
         { inversion tgts_sound as [ | ? ? tgt_sound tgts_sound' [ tgt_eq tgts_eq ] ].
           assumption. }
-        destruct (IH tgts_sound') as [ next_grammar [ mk_next_acc next_grammar_sound ] ].
+        match goal with
+        |[IH: _ -> ?rec_prf -> _ |- _] =>
+         assert (inhabit_rec': rec_prf)
+        end.
+        { intros grammar' acc sane.
+          destruct (inhabit_rec grammar' acc sane)
+            as [ next_grammar [ mk_next_acc [ next_grammar_sound next_grammar_closed ]] ].
+          exists next_grammar; repeat split; try solve [ assumption ].
+          (*destruct next_grammar_closed as [ newRules [ eqPrf [ entryPrf newPrf ] ] ].
+          exists newRules; repeat split; try solve [ assumption ].
+          intros; apply entryPrf; right; assumption.*) }
+        destruct (IH tgts_sound' inhabit_rec')
+          as [ next_grammar [ mk_next_acc [ next_grammar_sound next_grammar_closed ]] ].        
         destruct (In_dec IntersectionType_eq_dec tgt (List.map fst next_grammar)) as [ | fresh_tgt ].
-        * eexists; split; eassumption.
+        * eexists; repeat split; try solve [ eassumption ].
+          destruct next_grammar_closed
+            as [ newRules [ eqPrf [ entryPrf nextPrf ] ]].
+          exists newRules; repeat split.
+          { assumption. }
+          { intros tgt' inprf.
+            destruct inprf as [ here | there ].
+            - rewrite <- here; assumption.
+            - apply entryPrf; assumption. }
+          { assumption. }
         * set (next_next_grammar :=
                  List.cons (tgt, grammarEntry combinatorsFinite Gamma tgt) next_grammar).
-          assert (rec_result :
-                    { g: TreeGrammar combinatorsFinite
-                    | (forall g', NextInhabGrammar combinatorsFinite Gamma g' g ->
-                             NextInhabGrammarTrans combinatorsFinite Gamma g' next_next_grammar) /\
-                      (List.Forall (fun entry => snd entry = grammarEntry combinatorsFinite Gamma (fst entry))
-                                   g)
+          (*match goal with
+          | [|- { g : _ | ?P1 /\ ?P2 /\ ?P3 }] =>
+            assert (rec_result:
+                     { g: TreeGrammar combinatorsFinite
+                     | (forall g', NextInhabGrammar combinatorsFinite Gamma g' g ->
+                              NextInhabGrammarTrans combinatorsFinite Gamma g' next_next_grammar) /\
+                       (List.Forall (fun entry => snd entry = grammarEntry combinatorsFinite Gamma (fst entry))
+                                    g) /\
+                       P3            
+                     })
+          end.
+          { eapply inhabit_rec.
+            - apply mk_next_acc.
+              apply Next.
+              + inversion tgts_sound as [ | ? ? tgt_sound ].
+                eapply grammarTargetsFinite.
+                eassumption.
+              + exact fresh_tgt.
+            - apply List.Forall_cons.
+              + simpl; reflexivity.
+              + exact next_grammar_sound. }*)
+          assert (rec_result:
+                     { g: TreeGrammar combinatorsFinite
+                     | (forall g', NextInhabGrammar combinatorsFinite Gamma g' g ->
+                              NextInhabGrammarTrans combinatorsFinite Gamma g' next_next_grammar) /\
+                       (List.Forall (fun entry => snd entry = grammarEntry combinatorsFinite Gamma (fst entry))
+                                    g) /\
+                       recursiveTargetClosedNext combinatorsFinite Gamma next_next_grammar g            
                  }).
           { apply inhabit_rec.
             - apply mk_next_acc.
@@ -2428,8 +2631,8 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
             - apply List.Forall_cons.
               + simpl; reflexivity.
               + exact next_grammar_sound. }
-          destruct rec_result as [ g [ mk_next_next_acc next_next_sound ] ].
-          exists g; split.
+          destruct rec_result as [ g [ mk_next_next_acc [ next_next_sound next_next_closed ] ] ].
+          exists g; repeat split.
           { intros g' g'g.
             generalize (mk_next_next_acc g' g'g).
             intro g'_next_next.
@@ -2441,8 +2644,47 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
               inversion tgts_sound; eassumption.
             - assumption. }
           { assumption. }
+          { unfold recursiveTargetClosedNext in next_next_closed.
+            unfold next_next_grammar in next_next_closed.
+            destruct next_grammar_closed as [ newRules [ eqPrf [ entryPrf newPrf ] ] ].
+            destruct next_next_closed as [ newRules' [ eqPrf' [ entryPrf' newPrf' ] ] ].
+            rewrite eqPrf in eqPrf'.
+            exists (List.app newRules' (List.cons (tgt, grammarEntry combinatorsFinite Gamma tgt) newRules));
+              repeat split.
+            - rewrite <- List.app_assoc.
+              simpl.
+              assumption.
+            - rewrite eqPrf'.
+              intros tgt' inprf.
+              destruct inprf as [ here | there ].
+              + rewrite here.
+                rewrite List.map_app.
+                apply List.in_or_app.
+                right.
+                left; reflexivity.
+              + rewrite <- eqPrf.
+                rewrite List.map_app.
+                apply List.in_or_app.
+                right; right.
+                apply entryPrf.
+                assumption.
+            - intros tau' tau'_in tgt' inprf.
+              rewrite List.map_app in tau'_in.
+              destruct (List.in_app_or _ _ _ tau'_in) as [ inNewRules' | inOtherRules ].
+              + eapply newPrf'; eassumption.
+              + destruct inOtherRules as [ here | there ].
+                * simpl in here.
+                  rewrite <- here in inprf.
+                  apply entryPrf'.
+                  assumption.
+                * rewrite eqPrf'.
+                  rewrite <- eqPrf.
+                  rewrite List.map_app.
+                  apply List.in_or_app.
+                  right; right.
+                  eapply newPrf; eassumption. }                  
   Defined.
-
+(*
   Lemma inhabit_step_nondestructive:
     forall (combinatorsFinite: Finite CombinatorSymbol)
       (Gamma: Context)
@@ -2689,11 +2931,20 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
          eapply grammar_complete; eassumption.
      - intros all_rec hd_prf tau'_in.*)
        
+ *)
+
   
+          
+        
       
   Definition inhabit (combinatorsFinite: Finite CombinatorSymbol) (Gamma: Context) (tau: IntersectionType):
     { g: TreeGrammar combinatorsFinite |
-      (List.Forall (fun entry => snd entry = grammarEntry combinatorsFinite Gamma (fst entry)) g) } :=
+      (List.Forall (fun entry => snd entry = grammarEntry combinatorsFinite Gamma (fst entry)) g) /\
+       forall tau,
+        List.In tau (List.map fst g) ->
+        forall sigma,
+          List.In sigma (recursiveTargets (grammarEntry combinatorsFinite Gamma tau)) ->
+          List.In sigma (List.map fst g) } :=
     let first_entry :=
         (tau, grammarEntry combinatorsFinite Gamma tau) in
     let start :=
@@ -2708,13 +2959,18 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
                { g: TreeGrammar combinatorsFinite
                | (forall g', NextInhabGrammar combinatorsFinite Gamma g' g ->
                         NextInhabGrammarTrans combinatorsFinite Gamma g' grammar) /\
-                 (List.Forall (fun entry => snd entry = grammarEntry combinatorsFinite Gamma (fst entry)) g)
+                 (List.Forall (fun entry => snd entry = grammarEntry combinatorsFinite Gamma (fst entry)) g) /\
+                 recursiveTargetClosedNext combinatorsFinite Gamma grammar g
                }
             )
             (inhabit_step combinatorsFinite Gamma)
             start            
             (List.Forall_cons _ start_eq (List.Forall_nil _)) in
-    exist _ (proj1_sig result) (proj2 (proj2_sig result)).
+    exist _ (proj1_sig result)
+          (conj (proj1 (proj2 (proj2_sig result)))
+                (recursiveTargetClosedNext_complete combinatorsFinite Gamma _ _ _
+                                                    (proj2 (proj2 (proj2_sig result)))
+                                                    (proj1 (proj2 (proj2_sig result))))).
 
   Definition WordOf_rec (P : IntersectionType -> Term -> Prop)
              (word: Term) n (sigmas: t IntersectionType n): Prop :=
@@ -2873,7 +3129,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
           | apply Omega_sound; assumption ] | ].
       inversion prf as [ entry [ entry_in_g [ arrows [ root_arrows_in_entry ex_args ] ] ] ].
       assert (entry_sound: entry = grammarEntry combinatorsFinite Gamma tau').
-      { generalize (proj1 (List.Forall_forall _ _) (proj2_sig (inhabit combinatorsFinite Gamma tau))).
+      { generalize (proj1 (List.Forall_forall _ _) (proj1 (proj2_sig (inhabit combinatorsFinite Gamma tau)))).
         intro mk_prf.
         apply (mk_prf (tau', entry) entry_in_g). }
       generalize (Forall_nth _ _ (grammarEntry_sound combinatorsFinite Gamma tau' ex_S)).
@@ -2928,7 +3184,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
           | apply Omega_sound; assumption ] | ].
       inversion prf as [ entry [ entry_in_g [ arrows [ root_arrows_in_entry ex_args ] ] ] ].
       assert (entry_sound: entry = grammarEntry combinatorsFinite Gamma tau').
-      { generalize (proj1 (List.Forall_forall _ _) (proj2_sig (inhabit combinatorsFinite Gamma tau))).
+      { generalize (proj1 (List.Forall_forall _ _) (proj1 (proj2_sig (inhabit combinatorsFinite Gamma tau)))).
         intro mk_prf.
         apply (mk_prf (tau', entry) entry_in_g). }
       generalize (Forall_nth _ _ (grammarEntry_sound combinatorsFinite Gamma tau' ex_S)).
@@ -3021,6 +3277,8 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
                 assumption. }
       + inversion arrowsOfSize_sound; auto.
   Qed.
+
+  (*
 
   Lemma Fix_F_stable:
     forall (A: Type) (R: A -> A -> Prop) (P: A -> Type)
@@ -3440,8 +3698,134 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
     apply inhabit_step_prf_invariant.
     assumption.
   Qed.
-    
+
+  Lemma inhabit_step_complete:
+    forall (combinatorsFinite: Finite CombinatorSymbol)
+      (Gamma: Context)
+      (grammar : TreeGrammar combinatorsFinite)
+      (inhabit_rec:
+         forall grammar',
+           NextInhabGrammarTrans combinatorsFinite Gamma grammar' grammar ->
+           List.Forall (fun entry => snd entry = grammarEntry combinatorsFinite Gamma (fst entry))
+                       grammar' ->
+           { g: TreeGrammar combinatorsFinite
+           | (forall g', NextInhabGrammar combinatorsFinite Gamma g' g ->
+                    NextInhabGrammarTrans combinatorsFinite Gamma g' grammar') /\
+             (List.Forall (fun entry => snd entry = grammarEntry combinatorsFinite Gamma (fst entry))
+                          g)
+           }
+      )
+      (grammar_sane: List.Forall (fun entry => snd entry = grammarEntry combinatorsFinite Gamma (fst entry))
+                                 grammar)
+      (inhabit_rec_nondestructive:
+         forall grammar acc grammar_sane entry,
+           List.In entry grammar ->
+           List.In entry (proj1_sig (inhabit_rec grammar acc grammar_sane)))      
+      (inhabit_rec_suffix_stable:
+         forall grammar acc grammar_sane grammar',
+           IsSuffix grammar' grammar ->
+           IsSuffix grammar' (proj1_sig (inhabit_rec grammar acc grammar_sane)))
+      (grammar_tl_complete:
+         forall tau sigma, List.In tau (List.map fst (List.tl grammar)) ->
+                      IsRecursiveTarget combinatorsFinite Gamma tau sigma ->
+                      List.In (sigma, grammarEntry combinatorsFinite Gamma sigma)
+                              (List.tl grammar)),
+    forall tau sigma, List.In tau (List.map fst (proj1_sig (inhabit_step combinatorsFinite Gamma
+                                                                    grammar inhabit_rec grammar_sane))) ->
+                 IsRecursiveTarget combinatorsFinite Gamma tau sigma ->
+                 List.In (sigma, grammarEntry combinatorsFinite Gamma sigma)
+                         (proj1_sig (inhabit_step combinatorsFinite Gamma grammar inhabit_rec grammar_sane)).
+  Proof.
+    intros combinatorsFinite Gamma grammar inhabit_rec grammar_sane
+           inhabit_rec_nondestructive inhabit_rec_suffix_stable
+           grammar_tl_complete tau sigma.
+    destruct grammar as [ | [ tau' entry ] grammar ];
+      [ intro devil; inversion devil | ].
+    intros inprf rec_tgt_sigma.
+    generalize (recursiveTargets_complete combinatorsFinite Gamma tau sigma rec_tgt_sigma).
+    clear rec_tgt_sigma.
+    revert inprf.    
+    unfold inhabit_step.
+    match goal with
+    |[|- List.In tau (List.map fst (proj1_sig (list_rec ?P ?nil_case ?cons_case ?tgts ?prfs))) -> _ ] =>
+     set (rec := fun ys prfs' => list_rec P nil_case cons_case ys prfs');
+       fold (rec tgts prfs);
+       generalize prfs     
+    end.
+    simpl.
+    destruct entry.
+    induction (recursiveTargets entry).
+    - simpl rec.
+      simpl proj1_sig.
       
+    
+    intro inprf.
+    destruct inprf as [ here | there ].
+    - inversion grammar_sane as [ | ? ? entry_eq ].
+      simpl in entry_eq.
+      revert inhabit_rec inhabit_rec_nondestructive inhabit_rec_suffix_stable grammar_sane.
+      rewrite entry_eq.
+      intros inhabit_rec inhabit_rec_nondestructive inhabit_rec_suffix_stable grammar_sane.
+      intro tgt_prf.
+      simpl in here; rewrite <- here in tgt_prf.
+      generalize
+        (inhabit_step_complete_hd combinatorsFinite Gamma grammar
+                                  tau' inhabit_rec grammar_sane
+                                  inhabit_rec_nondestructive
+                                  sigma tgt_prf).
+      intro; assumption.
+    - intro tgt_prf.
+      generalize (grammar_tl_complete tau sigma there tgt_prf).
+      intro inprf'.
+      destruct (in_suffix _ _ inprf') as [ s suffix_prf ].
+      generalize (inhabit_step_suffix_stable combinatorsFinite Gamma _ inhabit_rec
+                                             grammar_sane inhabit_rec_suffix_stable
+                                             _ (IsSuffix_tl _ _ _ suffix_prf)).
+      eapply suffix_in.
+  Qed.
+
+  Lemma fix_inhabit_step_complete:
+    forall (combinatorsFinite: Finite CombinatorSymbol)
+      (Gamma: Context)
+      (grammar : TreeGrammar combinatorsFinite)
+      (grammar_sane: List.Forall (fun entry => snd entry = grammarEntry combinatorsFinite Gamma (fst entry))
+                                 grammar)
+      (grammar_tl_complete:
+         forall tau sigma, List.In tau (List.map fst (List.tl grammar)) ->
+                      IsRecursiveTarget combinatorsFinite Gamma tau sigma ->
+                      List.In (sigma, grammarEntry combinatorsFinite Gamma sigma)
+                              (List.tl grammar)) acc,
+    forall tau sigma, List.In tau (List.map fst grammar) ->
+                 IsRecursiveTarget combinatorsFinite Gamma tau sigma ->
+                 List.In (sigma, grammarEntry combinatorsFinite Gamma sigma)
+                         (proj1_sig (Fix_F _ (inhabit_step combinatorsFinite Gamma) acc grammar_sane)).
+  Proof.
+    intros combinatorsFinite Gamma grammar grammar_sane grammar_tl_complete acc.
+    revert grammar_sane grammar_tl_complete.    
+    eapply (Fix_F_stable_nested
+              _ (NextInhabGrammarTrans combinatorsFinite Gamma)
+              _ (inhabit_step combinatorsFinite Gamma)
+              (fun x inhabit_rec =>
+                 (forall grammar acc grammar_sane entry,
+                      List.In entry grammar ->
+                      List.In entry (proj1_sig (inhabit_rec grammar acc grammar_sane))) /\      
+                 (forall grammar acc grammar_sane grammar',
+                      IsSuffix grammar' grammar ->
+                      IsSuffix grammar' (proj1_sig (inhabit_rec grammar acc grammar_sane))))).
+    - intros grammar'' inhabit_rec IH inhabit_rec_props grammar''_sane grammar''_tl_complete.
+      apply inhabit_step_complete.
+      + exact (proj1 inhabit_rec_props).
+      + exact (proj2 inhabit_rec_props).
+      + exact grammar''_tl_complete.
+    - intros; split.
+      + intros.
+        apply fix_inhabit_step_nondestructive.
+        assumption.
+      + intros.
+        apply fix_inhabit_suffix_stable.
+        assumption.
+  Qed.
+(*        
   Lemma fix_inhabit_suffix_eq:
     forall (combinatorsFinite: Finite CombinatorSymbol)
       (Gamma: Context)
@@ -3451,10 +3835,9 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
       (grammar': TreeGrammar combinatorsFinite) acc
       (grammar_tl_closed:
          forall (acc': Acc (NextInhabGrammarTrans combinatorsFinite Gamma) grammar') grammar'_sane,
-           IsSuffix grammar'
-                    (List.tl (proj1_sig (Fix_F _ (inhabit_step combinatorsFinite Gamma) acc grammar_sane))) ->
+           IsSuffix grammar' (List.tl grammar) ->
            IsSuffix (proj1_sig (Fix_F _ (inhabit_step combinatorsFinite Gamma) acc' grammar'_sane))
-                    (List.tl (proj1_sig (Fix_F _ (inhabit_step combinatorsFinite Gamma) acc grammar_sane)))),
+                    (List.tl grammar)),
       (proj1_sig (Fix_F _ (inhabit_step combinatorsFinite Gamma) acc grammar_sane) = grammar) ->
       IsSuffix grammar'
                (proj1_sig (Fix_F _ (inhabit_step combinatorsFinite Gamma) acc grammar_sane)) ->
@@ -3466,8 +3849,10 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
            grammar' acc grammar_tl_closed grammar_eq suffix_prf
            acc' grammar'_sane.    
     revert grammar_tl_closed grammar_eq.
-    inversion suffix_prf as [ | suffix_eq ].
-    - intros grammar_tl_closed grammar_eq.
+    inversion suffix_prf as [ [tau entry] grammar_tl suffix_prf' suffix_eq | suffix_eq ].
+    - intros grammar_tl_closed grammar_eq.      
+      rewrite <- grammar_eq in grammar_tl_closed.
+      simpl in grammar_tl_closed.
       apply IsSuffix_tl.
       apply grammar_tl_closed.
       assumption.
@@ -3484,7 +3869,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
       apply IsSuffix_hd.
   Qed.
 
-  (*Lemma inhabit_step_suffix:
+  Lemma inhabit_step_suffix:
     forall (combinatorsFinite: Finite CombinatorSymbol)
       (Gamma: Context)
       (grammar : TreeGrammar combinatorsFinite)
@@ -3506,78 +3891,85 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
          forall grammar acc grammar_sane grammar',
            IsSuffix grammar' grammar ->
            IsSuffix grammar' (proj1_sig (inhabit_rec grammar acc grammar_sane)))
-      (inhabit_rec_suffix_eq:
-         forall grammar acc grammar_sane grammar',
-           forall (grammar_tl_closed:
-                forall (acc': Acc (NextInhabGrammarTrans combinatorsFinite Gamma) grammar') grammar'_sane,
-                  IsSuffix grammar'
-                           (List.tl (proj1_sig (inhabit_rec grammar acc grammar_sane))) ->
-                  IsSuffix (proj1_sig (Fix_F _ (inhabit_step combinatorsFinite Gamma) acc' grammar'_sane))
-                           (List.tl (proj1_sig (inhabit_rec grammar acc grammar_sane)))),
-             (proj1_sig (inhabit_rec grammar acc grammar_sane) = grammar) ->
-             IsSuffix grammar'
-                      (proj1_sig (inhabit_rec grammar acc grammar_sane)) ->
-             forall (acc': Acc (NextInhabGrammarTrans combinatorsFinite Gamma) grammar') grammar'_sane,
-               IsSuffix (proj1_sig (Fix_F _ (inhabit_step combinatorsFinite Gamma) acc' grammar'_sane))
-                        (proj1_sig (inhabit_rec grammar acc grammar_sane)))      
-      (grammar': TreeGrammar combinatorsFinite),
+      (grammar': TreeGrammar combinatorsFinite)
+      (inhabit_rec_suffix:
+         forall grammar acc grammar_sane
+           (grammar_tl_closed:
+              forall (acc': Acc (NextInhabGrammarTrans combinatorsFinite Gamma) grammar') grammar'_sane,
+                IsSuffix grammar' (List.tl grammar) ->
+                IsSuffix (proj1_sig (Fix_F _ (inhabit_step combinatorsFinite Gamma) acc' grammar'_sane))
+                         (List.tl grammar))
+           (acc': Acc (NextInhabGrammarTrans combinatorsFinite Gamma) grammar') grammar'_sane,
+           IsSuffix grammar' (proj1_sig (inhabit_rec grammar acc grammar_sane)) ->
+           IsSuffix (proj1_sig (Fix_F _ (inhabit_step combinatorsFinite Gamma) acc' grammar'_sane))
+                    (proj1_sig (inhabit_rec grammar acc grammar_sane))
+      )
+      (grammar_tl_closed:
+         forall (acc': Acc (NextInhabGrammarTrans combinatorsFinite Gamma) grammar') grammar'_sane,
+           IsSuffix grammar' (List.tl grammar) ->
+           IsSuffix (proj1_sig (Fix_F _ (inhabit_step combinatorsFinite Gamma) acc' grammar'_sane))
+                    (List.tl grammar)),
       IsSuffix grammar'
                (proj1_sig (inhabit_step combinatorsFinite Gamma grammar inhabit_rec grammar_sane)) ->
       forall (acc: Acc (NextInhabGrammarTrans combinatorsFinite Gamma) grammar') grammar'_sane,
         IsSuffix (proj1_sig (Fix_F _ (inhabit_step combinatorsFinite Gamma) acc grammar'_sane))
-                 (proj1_sig (inhabit_step combinatorsFinite Gamma grammar inhabit_rec grammar_sane))(* \/
-      grammar = proj1_sig (inhabit_step combinatorsFinite Gamma grammar inhabit_rec grammar_sane)*).
+                 (proj1_sig (inhabit_step combinatorsFinite Gamma grammar inhabit_rec grammar_sane)) \/
+        (grammar = proj1_sig (inhabit_step combinatorsFinite Gamma grammar inhabit_rec grammar_sane)).
   Proof.
     intros combinatorsFinite Gamma grammar
            inhabit_rec grammar_sane
-           inhabit_rec_suffix_stable inhabit_rec_suffix_eq.
+           inhabit_rec_suffix_stable.
     destruct grammar as [ | [tau entry] grammar ];
-      [ simpl; intros ? suffix_prf;
-                      inversion suffix_prf; intro acc; destruct acc; simpl; intros; apply IsSuffix_hd | ].
+      [ simpl; intros ? ? ? suffix_prf;
+                      inversion suffix_prf; intro acc; destruct acc; simpl; intros; left; apply IsSuffix_hd | ].
     simpl.
     match goal with
-    |[|- forall grammar', IsSuffix grammar'
+    |[|- forall grammar', _ -> _ -> IsSuffix grammar'
                              (proj1_sig (list_rec ?P ?nil_case ?cons_case ?tgts ?prfs)) -> _] =>
      set (rec := fun ys prfs' => list_rec P nil_case cons_case ys prfs');
        fold (rec tgts prfs);
        generalize prfs
     end.
     induction (recursiveTargets entry) as [ | tgt tgts IH ].
-    - intros ? eq_prf.
-      intros.
-      apply eq_prf.
-      simpl; reflexivity.
-    - intros prfs eq_prf grammar'.
+    - intros; right; reflexivity.
+    - intros prfs grammar'.
       unfold rec.
       simpl.
       match goal with
-      |[|- IsSuffix grammar' (proj1_sig (
+      |[|- _ ->  _ -> IsSuffix grammar' (proj1_sig (
                                  let (_, _) :=
                                      list_rec ?P ?nil_case ?cons_case ?tgts ?prfs in _)) -> _ ] =>
        generalize (IH prfs grammar');
          unfold rec;
-         destruct (list_rec P nil_case cons_case tgts prfs) as [ next_gen [ mknext sanity ] ]
+         inversion (list_rec P nil_case cons_case tgts prfs) as [ next_gen [ mknext sanity ] ]
       end.
       simpl.
       destruct (In_dec IntersectionType_eq_dec tgt (List.map fst next_gen)).
       + simpl; intro; assumption.
-      + intros IH' suffix_prf acc' grammar'_sane.
+      + intros IH' inhabit_rec_suffix grammar_tl_closed suffix_prf acc' grammar'_sane.
         revert IH' suffix_prf.
+        simpl.
         match goal with
         |[|- _ ->
             IsSuffix grammar' (proj1_sig (
                                    let (_, _) :=
                                        inhabit_rec ?ng ?acc ?nsanity in _)) -> _ ] =>
-         generalize (inhabit_rec_suffix ng acc nsanity grammar' acc' grammar'_sane);
+         generalize (inhabit_rec_suffix ng acc nsanity acc' grammar'_sane);
            destruct (inhabit_rec ng acc nsanity) as [ grammar_next_next [ mknext_next next_sanity ] ]
         end.
         simpl.
-        intros mk_suffix IH' suffix_prf eq_prf.
+        intros mk_suffix IH' suffix_prf.
         generalize (mk_suffix suffix_prf).
-        intros.
+        intro prf.
+        destruct prf as [ | eq_prf ].
+        * left; assumption.
+        * rewrite <- eq_prf in suffix_prf.
+          
+        generalize (IH' inhabit_rec_suffix).
         eapply IH'.
-        left. assumption.
-  Qed.*)
+        intro; assumption.
+        left; assumption.
+  Qed.
   
   Lemma fix_inhabit_suffix:
     forall (combinatorsFinite: Finite CombinatorSymbol)
@@ -3588,10 +3980,9 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
       (grammar': TreeGrammar combinatorsFinite) acc
       (grammar_tl_closed:
          forall (acc': Acc (NextInhabGrammarTrans combinatorsFinite Gamma) grammar') grammar'_sane,
-           IsSuffix grammar'
-                    (List.tl (proj1_sig (Fix_F _ (inhabit_step combinatorsFinite Gamma) acc grammar_sane))) ->
+           IsSuffix grammar' (List.tl grammar) ->
            IsSuffix (proj1_sig (Fix_F _ (inhabit_step combinatorsFinite Gamma) acc' grammar'_sane))
-                    (List.tl (proj1_sig (Fix_F _ (inhabit_step combinatorsFinite Gamma) acc grammar_sane)))),
+                    (List.tl grammar)),
       IsSuffix grammar'
                (proj1_sig (Fix_F _
                                  (inhabit_step combinatorsFinite Gamma)
@@ -3600,29 +3991,29 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
           IsSuffix (proj1_sig (Fix_F _ (inhabit_step combinatorsFinite Gamma) acc' grammar'_sane))
                    (proj1_sig (Fix_F _ (inhabit_step combinatorsFinite Gamma) acc grammar_sane)).
   Proof.
-    intros combinatorsFinite Gamma grammar grammar_sane grammar' acc.
-    revert grammar_sane grammar'.
+    intros combinatorsFinite Gamma grammar grammar_sane grammar' acc grammar_tl_closed.
+    revert grammar_sane grammar_tl_closed (*grammar' grammar_tl_closed*).    
     eapply (Fix_F_stable_nested
               _ (NextInhabGrammarTrans combinatorsFinite Gamma)
               _ (inhabit_step combinatorsFinite Gamma)
               (fun x inhabit_rec =>
-                 forall grammar acc grammar_sane grammar',
-                   (IsSuffix grammar' grammar ->
-                      IsSuffix grammar' (proj1_sig (inhabit_rec grammar acc grammar_sane))) /\
-                   (forall (grammar_tl_closed:
+                   (forall grammar acc grammar_sane grammar',
+                       IsSuffix grammar' grammar ->
+                       IsSuffix grammar' (proj1_sig (inhabit_rec grammar acc grammar_sane))) /\
+                   (forall  grammar_sane
+                       (grammar_tl_closed:
                          forall (acc': Acc (NextInhabGrammarTrans combinatorsFinite Gamma) grammar') grammar'_sane,
-                           IsSuffix grammar'
-                                    (List.tl (proj1_sig (inhabit_rec grammar acc grammar_sane))) ->
+                           IsSuffix grammar' (List.tl x) ->
                            IsSuffix (proj1_sig (Fix_F _ (inhabit_step combinatorsFinite Gamma) acc' grammar'_sane))
-                                    (List.tl (proj1_sig (inhabit_rec grammar acc grammar_sane)))),
-                       (proj1_sig (inhabit_rec grammar acc grammar_sane) = grammar) ->
+                                    (List.tl x)),
+                       (proj1_sig (inhabit_step combinatorsFinite Gamma x inhabit_rec grammar_sane) = x) ->
                        IsSuffix grammar'
-                                (proj1_sig (inhabit_rec grammar acc grammar_sane)) ->
+                                (proj1_sig (inhabit_step combinatorsFinite Gamma x inhabit_rec grammar_sane)) ->
                        forall (acc': Acc (NextInhabGrammarTrans combinatorsFinite Gamma) grammar') grammar'_sane,
                          IsSuffix (proj1_sig (Fix_F _ (inhabit_step combinatorsFinite Gamma) acc' grammar'_sane))
-                                  (proj1_sig (inhabit_rec grammar acc grammar_sane))))
+                                  (proj1_sig (inhabit_step combinatorsFinite Gamma x inhabit_rec grammar_sane))))
            ).
-    - intros grammar'' inhabit_rec IH inhabit_rec_stable grammar''_sane grammar' grammar_tl_closed
+    - intros grammar'' inhabit_rec IH inhabit_rec_stable grammar''_sane grammar''_tl_closed (*grammar' grammar_tl_closed*)
              suffix_prf acc' grammar'_sane.
       destruct grammar'' as [ | [ tau entry ] ].
       + simpl.
@@ -3638,29 +4029,42 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
       + assert (entry_eq: entry = grammarEntry combinatorsFinite Gamma tau).
         { inversion grammar''_sane as [ | ? ? prf prfs ] .
           exact prf. }
-        revert grammar''_sane grammar_tl_closed acc' grammar'_sane suffix_prf inhabit_rec_stable IH.
+        revert grammar''_sane grammar''_tl_closed acc' grammar'_sane suffix_prf inhabit_rec_stable IH.
         generalize inhabit_rec; clear inhabit_rec.
         rewrite entry_eq.
-        intros inhabit_rec grammar''_sane inhabit_tl_closed acc' grammar'_sane
+        intros inhabit_rec grammar''_sane grammar''_tl_closed acc' grammar'_sane
                suffix_prf inhabit_rec_stable IH.
         destruct (inhabit_step_suffix combinatorsFinite Gamma
                                       (List.cons (tau, grammarEntry combinatorsFinite Gamma tau) grammar'')
                                       inhabit_rec grammar''_sane
-                                      inhabit_rec_stable
-                                      (fun grammar acc gs grammar' acc' g's prf =>
-                                         IH grammar acc gs grammar' prf acc' g's)
-                                      grammar' suffix_prf acc' grammar'_sane) as [ | eq_prf ].
+                                      (fun grammar acc grammar_sane grammar' =>
+                                         ((proj1 inhabit_rec_stable) grammar acc grammar_sane grammar'))
+                                      grammar'
+                                      (fun grammar acc gs acc' g's suffix =>
+                                         IH grammar acc gs suffix acc' g's)
+                                      suffix_prf acc' grammar'_sane) as [ | eq_prf ].
         * assumption.
-        * rewrite <- eq_prf.
+        * generalize ((proj2 inhabit_rec_stable) grammar''_sane inhabit_tl_closed ).
+          
+          apply fix_inhabit_suffix_eq.
+          rewrite <- eq_prf.
           inversion suffix_prf.
           { admit. }
           { destruct acc'.
-            simpl. }
+            simpl. } admit.
     - intros; split.
-      + apply fix_inhabit_suffix_stable.
-      + apply fix_inhabit_suffix_eq.
+      + intros; apply fix_inhabit_suffix_stable; assumption.        
+      + clear grammar_tl_closed.
+        intros grammar_sane grammar_tl_closed grammar_eq suffix_prf acc' grammar'_sane.
+        rewrite (Fix_F_eq _ (inhabit_step combinatorsFinite Gamma)).
+        rewrite (Fix_F_eq _ (inhabit_step combinatorsFinite Gamma)) in suffix_prf.
+        rewrite (Fix_F_eq _ (inhabit_step combinatorsFinite Gamma)) in grammar_eq.
+        apply fix_inhabit_suffix_eq.
+        * exact grammar_tl_closed.
+        * exact grammar_eq.
+        * exact suffix_prf.
  Qed.
-
+*)
       
   Lemma inGrammarStart:
     forall combinatorsFinite Gamma tau,
@@ -3674,7 +4078,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
     apply fix_inhabit_step_nondestructive.
     left; reflexivity.
   Qed.      
-  
+  *)
   Lemma inhabit_complete:
     forall (combinatorsFinite: Finite CombinatorSymbol)
       (Gamma: Context)
@@ -3687,7 +4091,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
     destruct (Omega_dec tau) as [ | not_omega_tau ].
     - intro; destruct M; left; assumption.
     - revert not_omega_tau.
-      generalize (inGrammarStart combinatorsFinite Gamma tau).
+      (*generalize (inGrammarStart combinatorsFinite Gamma tau).*)
       apply (arguments_ind
                (fun M =>
                   forall tau',
@@ -3736,9 +4140,9 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
           { destruct x as [ c entry ].
             simpl in hd_eq.
             rewrite hd_eq in inprf.
-            revert exprf prf IH inprf.
+            revert exprf prf IH inprf in_start.
             clear ...
-            intros exprf prf IH inprf.
+            intros exprf prf IH inprf in_start.
             simpl in exprf.
             assert (exprf':
                       List.Exists
@@ -3748,6 +4152,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
                                (fun arrow =>
                                   Forall2 (CL Gamma) (shiftin N (argumentsOf M)) (rew argCountPrf in fst arrow) /\
                                   snd arrow <= tau' /\
+                                  
                                   Forall (IsRecursiveTarget combinatorsFinite Gamma tau')
                                          (fst arrow))
                                (projT2 possible)) entry).
@@ -3841,13 +4246,32 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
                       simpl.
                       rewrite shiftin_last.
                       reflexivity.
-                    - unfold inhabit.
-                      simpl.
-                      unfold Fix.
-                      apply fix_inhabit_step_complete.
-                      generalize (Forall_last _ _ _ allrec).
+                    - generalize (proj2_sig (inhabit combinatorsFinite Gamma tau)).
+                      intro sane_and_complete.
+                      destruct sane_and_complete as [ sane complete ].
+                      generalize (complete _ (in_map fst _ _ in_start)).
+                      intro mkprf.
+                      generalize (recursiveTargets_complete _ _ _ _ (Forall_last _ _ _ allrec)).
                       rewrite shiftin_last.
-                      intro; assumption.
+                      intro isrec.
+                      generalize (mkprf (last hd') isrec).
+                      revert sane.
+                      clear ...
+                      intros sane tgt_in_prf.
+                      induction (proj1_sig (inhabit combinatorsFinite Gamma tau)) as [ | [ tau' entry ] entries IH ].
+                      + inversion tgt_in_prf.
+                      + destruct tgt_in_prf as [ here | there ].
+                        * inversion sane as [ | ? ? hd_sane ].
+                          left.
+                          simpl in hd_sane.
+                          rewrite hd_sane.
+                          simpl in here.
+                          rewrite here.
+                          reflexivity.
+                        * right; apply IH.
+                          { inversion sane as [ | ? ? ? tl_sane ].
+                            assumption. }
+                          { assumption. }
                     - assumption.
                     - generalize (Forall2_last _ _ _ prfs).
                       simpl.
