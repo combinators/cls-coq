@@ -101,6 +101,7 @@ VFILES:=VectorQuantification.v\
   CombinatoryTerm.v\
   CombinatoryLogic.v\
   Cantor.v\
+  ConstructiveExtensionalEpsilon.v\
   ComputationalPathLemma.v\
   FiniteSubstitutionSpace.v\
   SigmaAlgebra.v\

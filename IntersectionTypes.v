@@ -307,7 +307,22 @@ Module Type IntersectionTypes(Import TySig: TypeSignature).
       | PT_Arrow sigma tau => Arrow (Apply S sigma) (Apply S tau)
       | PT_Inter sigma tau => Inter (Apply S sigma) (Apply S tau)
       end
-    end.  
+    end.
+
+  Lemma Apply_ext: forall S S', (forall alpha, S alpha = S' alpha) -> forall tau, Apply S tau = Apply S' tau.
+  Proof.
+    intros S S' S_eq tau.
+    induction tau as [ | | C args IH | | ] using TypeScheme_rect'.
+    - simpl; apply S_eq.
+    - reflexivity.
+    - simpl.
+      apply f_equal.
+      induction IH as [ | n arg args prf prfs IH ].
+      + reflexivity.
+      + simpl; rewrite prf; apply f_equal; assumption.
+    - simpl; apply f_equal2; assumption.
+    - simpl; apply f_equal2; assumption.
+  Qed.
 
   Fixpoint intersect {n : nat} (sigmas: t IntersectionType n): IntersectionType :=
     match sigmas with

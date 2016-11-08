@@ -1,4 +1,5 @@
 Require Import Coq.Arith.PeanoNat.
+Require Import Coq.Arith.Compare_dec.
 Require Import Coq.NArith.NArith.
 Require Import Coq.NArith.Nnat.
 Require Import Coq.NArith.Ndigits.
@@ -18,6 +19,48 @@ Class Finite (A : Set) : Set :=
     toFin : A -> Fin.t cardinality;
     fromFin : Fin.t cardinality -> A;
     fromToFin_id : forall x, fromFin (toFin x) = x }.
+
+Class NonEmptyFinite (A: Set): Set :=
+  { IsFinite :> Finite A;
+    cardinality_nonempty: cardinality = 0 -> False }.
+
+Definition toNatFromToFin {A: Set} {card: nat} (toFin: A -> Fin.t card): A -> nat :=
+  fun x => proj1_sig (Fin.to_nat (toFin x)).
+
+Definition fromNatFromFromFin {A: Set} {card: nat} (fromFin: Fin.t card -> A) (not_empty: card = 0 -> False): nat -> A:=
+  fun n =>
+    match lt_dec n card with
+    | left ltprf => fromFin (Fin.of_nat_lt ltprf)
+    | _ =>
+      match card as card' return (card' = 0 -> False) -> (Fin.t card' -> A) -> A with
+      | S n => fun ne fromFin => fromFin Fin.F1
+      | 0 => fun ne _ => False_rect _ (ne eq_refl)
+      end not_empty fromFin
+    end.
+
+Lemma fromTo_of_FromFin:
+  forall {A: Set} {card: nat} (toFin: A -> Fin.t card) (fromFin: Fin.t card -> A)
+    (not_empty: card = 0 -> False)
+    (fromToFin_id : forall x, fromFin (toFin x) = x) x,
+    fromNatFromFromFin fromFin not_empty (toNatFromToFin toFin x) = x.
+Proof.
+  intros A card toFin fromFin not_empty fromToFin_id x.
+  unfold toNatFromToFin.
+  unfold fromNatFromFromFin.
+  generalize (proj2_sig (Fin.to_nat (toFin x))).
+  intro lt_prf.
+  destruct (lt_dec (proj1_sig (Fin.to_nat (toFin x))) card) as [ prf | disprf ].
+  - rewrite (Fin.of_nat_ext prf (proj2_sig (Fin.to_nat (toFin x)))).
+    rewrite Fin.of_nat_to_nat_inv.
+    auto.
+  - contradiction.
+Qed.
+
+Instance CountableFromFinite A `{NonEmptyFinite A}: Countable A :=
+  {| toNat := toNatFromToFin toFin;
+     fromNat := fromNatFromFromFin fromFin cardinality_nonempty;
+     fromTo_id := fromTo_of_FromFin toFin fromFin cardinality_nonempty fromToFin_id
+  |}.
 
 Lemma add_succ_succ: forall n, S (S (n + n)) = S n + S n.
 Proof.
@@ -408,3 +451,34 @@ Definition cantor_fin_fun_inv (card: nat) (n: nat): Fin.t card -> nat :=
           | S card => cons _ (fst (cantor_pair_inv n))
                           _ (cantor_fin_fun_inv_rec card (snd (cantor_pair_inv n)))
           end) card n).
+
+Lemma cantor_fin_fun_ext_inj:
+  forall (card: nat) (f: Fin.t card -> nat) x, f x = cantor_fin_fun_inv _ (cantor_fin_fun card f) x.
+Proof.
+  intros card f x.
+  unfold cantor_fin_fun.
+  unfold cantor_fin_fun_inv.
+  induction x as [ | card x IH ].
+  - simpl.
+    rewrite <- cantor_pair_inj.
+    reflexivity.
+  - rewrite (IH (fun x => f (Fin.FS x))).
+    simpl.
+    rewrite <- map_fg.
+    rewrite <- cantor_pair_inj.
+    reflexivity.
+Qed.
+
+Lemma cantor_fin_fun_idem:
+  forall (card: nat) (f: Fin.t card -> nat),
+    cantor_fin_fun_inv _ (cantor_fin_fun card f) =
+    cantor_fin_fun_inv card (cantor_fin_fun card (cantor_fin_fun_inv _ (cantor_fin_fun card f))).
+Proof.
+  intros card f.
+  unfold cantor_fin_fun_inv at 2.
+  unfold cantor_fin_fun at 2.
+  rewrite <- (map_extensional _ _ _ (cantor_fin_fun_ext_inj card f)).
+  unfold cantor_fin_fun.
+  unfold cantor_fin_fun_inv.
+  reflexivity.
+Qed.
