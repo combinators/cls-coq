@@ -9,4 +9,5 @@
 ./FiniteSubstitutionSpace.v
 ./SigmaAlgebra.v
 ./CombinatoryLogicAlgebra.v
+./DisjointContexts.v
 ./SortEmbeddings.v

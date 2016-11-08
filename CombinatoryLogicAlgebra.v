@@ -30,7 +30,6 @@ Module Type CompatibleCLSignature <: SignatureWithCLSig.
   Parameter BlackBoxArity: constructorArity BlackBox = 1.
 End CompatibleCLSignature.  
 
-
 Module Type SortEmbedding(Import SigSpec: CompatibleCLSignature)(Import Types: IntersectionTypes(SigSpec)).
   Class Embedding (A: Set) :=
     { embed: Sort A -> TypeScheme (VariableSymbol := A);
