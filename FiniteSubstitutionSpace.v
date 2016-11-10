@@ -26,11 +26,17 @@ Module Type FiniteWellFormedPredicate
        (Signature: TypeSignature)
        (Import Types: IntersectionTypes.IntersectionTypes Signature) <: WellFormedPredicate(Signature)(Types).
   Include WellFormedPredicate(Signature)(Types).
-  Declare Instance SubstitutionSpace_finite: Finite { S : Substitution | WellFormed S }.
+  Parameter SubstitutionSpace : Set.
+  Parameter SubstitutionSpace_sound: SubstitutionSpace -> { S : Substitution | WellFormed S }.
+  Parameter SubstitutionSpace_complete: { S : Substitution | WellFormed S } -> SubstitutionSpace.
+  Parameter SubstitutionSpace_eq:
+    forall WFS alpha, proj1_sig (SubstitutionSpace_sound (SubstitutionSpace_complete WFS)) alpha =
+                 proj1_sig WFS alpha.
+  Declare Instance SubstitutionSpace_finite: Finite SubstitutionSpace.
 End FiniteWellFormedPredicate.
 
 Module Type FiniteCombinators(Import TermSig: TermSignature).
-  Declare Instance combinatorsFinite: `{Finite CombinatorSymbol}.
+  Declare Instance combinatorsFinite: Finite CombinatorSymbol.
 End FiniteCombinators.
 
 Module Type CombinatoryLogicWithFiniteSubstitutionSpace
@@ -42,7 +48,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
   Definition minimalInstance (sigma_pre: TypeScheme): IntersectionType :=
     intersect
       (map
-         (fun k => Apply (proj1_sig (fromFin k)) sigma_pre) (positions cardinality)).
+         (fun k => Apply (proj1_sig (SubstitutionSpace_sound (fromFin k))) sigma_pre) (positions cardinality)).
   
   Lemma MinimalType_sound:
     forall Gamma c, (cardinality > 0) ->
@@ -50,10 +56,10 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
   Proof.
     intros Gamma c.
     assert (all_prfs: forall k, CL Gamma (Symbol c)
-                              (Apply (proj1_sig (fromFin k))
+                              (Apply (proj1_sig (SubstitutionSpace_sound (fromFin k)))
                                      (Gamma c))).
     { intro k.
-      apply CL_Var; exact (proj2_sig (fromFin k)). }
+      apply CL_Var; exact (proj2_sig (SubstitutionSpace_sound (fromFin k))). }
     intro card_gt.
     unfold minimalInstance.
     revert all_prfs.
@@ -80,12 +86,12 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
     - intros c' M_eq.
       inversion M_eq.
       unfold minimalInstance.
-      assert (S_eq: S = proj1_sig (fromFin (toFin (exist _ S WF_S)))).
-      { rewrite fromToFin_id; reflexivity. }
-      rewrite S_eq.
-      rewrite (ST_intersect_nth _ (toFin (exist _ S WF_S))).
+      rewrite (ST_intersect_nth _ (toFin (SubstitutionSpace_complete (exist _ S WF_S)))).      
       rewrite (nth_map _ _ _ _ eq_refl).
       rewrite (positions_spec).
+      rewrite (fromToFin_id).
+      transitivity (Apply (proj1_sig (exist _ S WF_S)) (Gamma c')); [ | reflexivity ].
+      rewrite (Apply_ext _ _ (SubstitutionSpace_eq (exist _ S WF_S))).
       reflexivity.
     - intros ? MN_eq; inversion MN_eq.
     - intros; apply ST_Both; auto.
@@ -280,11 +286,17 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
                                (allPathSuffixes (argumentCount M)
                                                 (minimalInstance (Gamma (rootOf M)))))).
     { intro sigma'.
-      assert (S_fin : S = proj1_sig (fromFin (toFin (exist _ S WF_S)))).
-      { rewrite (fromToFin_id).
-        reflexivity. }
+      assert (S_fin: Apply S (Gamma (rootOf M)) =
+                     Apply (proj1_sig (SubstitutionSpace_sound
+                                         (fromFin (toFin (SubstitutionSpace_complete (exist _ S WF_S))))))
+                           (Gamma (rootOf M))).
+      { rewrite fromToFin_id.
+        transitivity (Apply (proj1_sig (exist _ S WF_S)) (Gamma (rootOf M))); [ reflexivity | ].
+        apply Apply_ext.
+        intro; apply eq_sym.
+        apply (SubstitutionSpace_eq (exist _ S WF_S)). }      
       rewrite S_fin.
-      generalize (toFin (exist _ S WF_S)).
+      generalize (toFin (SubstitutionSpace_complete (exist _ S WF_S))).
       unfold minimalInstance.
       intros k prfs.
       apply filter_In.
@@ -962,7 +974,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
       right.
       intro prf.
       induction prf as [ ? S WF_S | | | ]; try solve [ contradiction ].
-      generalize (toFin (exist _ S WF_S)).
+      generalize (toFin (SubstitutionSpace_complete (exist _ S WF_S))).
       destruct cardinality.
       + intro k; inversion k.
       + inversion card_eq.
@@ -980,7 +992,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
           assumption.
       + intro sigma.
         assert (exS : { S : _ | WellFormed S }).
-        { eapply (fromFin).
+        { eapply (fun k => SubstitutionSpace_sound (fromFin k)).
           destruct cardinality; [ contradict (card_ineq eq_refl) | ].
           exact F1. }
         destruct exS as [ S WF_S ].
@@ -1164,12 +1176,14 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
       intro prf.
       apply nth_Forall.
       intro k.
-      generalize (prf (toFin (exist _ S WF_S))).
+      generalize (prf (toFin (SubstitutionSpace_complete (exist _ S WF_S)))).
       intro nth_le.
       rewrite <- nth_le.
       rewrite (nth_map _ _ _ _ eq_refl).
       rewrite (positions_spec).
-      rewrite (fromToFin_id (exist _ S WF_S)).
+      rewrite (fromToFin_id (SubstitutionSpace_complete (exist _ S WF_S))).
+      rewrite (Apply_ext _ _ (SubstitutionSpace_eq (exist _ S WF_S)) (Gamma c)).
+      simpl.
       unfold MaximalSourceCount.
       apply max_count_nth.
     Qed.
@@ -1367,7 +1381,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
                     eapply CL_ST; [ | apply ST_organize_ge ].
                     apply MinimalType_sound.
                     destruct SubstitutionSpace_finite as [ card toFin fromFin toFrom_id ].
-                    generalize (toFin ex_S).
+                    generalize (toFin (SubstitutionSpace_complete ex_S)).
                     intro k.
                     destruct card.
                     - inversion k.
@@ -1754,18 +1768,26 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
               unfold minimalInstance.
               destruct (SubstitutionSpace_finite) as [ card toFin fromFin toFrom_id ].
               simpl.
-              generalize (f_equal (proj1_sig (P := WellFormed)) (toFrom_id (exist WellFormed S WF_S))).
-              intro S_eq.
+              assert (S_eq: Apply S (Gamma (rootOf M)) =
+                            Apply (proj1_sig (SubstitutionSpace_sound
+                                                (fromFin (toFin (SubstitutionSpace_complete (exist _ S WF_S))))))
+                                  (Gamma (rootOf M))).
+              { simpl.
+                rewrite (toFrom_id (SubstitutionSpace_complete (exist _ S WF_S))).
+                rewrite (Apply_ext _ _ (SubstitutionSpace_eq (exist _ S WF_S))).
+                reflexivity. }                
               simpl in S_eq.
-              rewrite <- S_eq in in_y.
-              remember (toFin (exist WellFormed S WF_S)) as k eqn:k_eq.
+              rewrite S_eq in in_y.
+              remember (toFin (SubstitutionSpace_complete (exist WellFormed S WF_S))) as k eqn:k_eq.
               clear k_eq toFin S_eq toFrom_id.
               assert (in_y' :
                         List.In (split_path y (argumentCount M) arg_count_y)
                                 (allSplitPaths (argumentCount M)
-                                               (Apply (proj1_sig (fromFin k)) (Gamma (rootOf M))))).
+                                               (Apply (proj1_sig (SubstitutionSpace_sound (fromFin k)))
+                                                      (Gamma (rootOf M))))).
               { unfold allSplitPaths.
-                destruct (factorize (organize (Apply (proj1_sig (fromFin k)) (Gamma (rootOf M)))))
+                destruct (factorize (organize (Apply (proj1_sig (SubstitutionSpace_sound (fromFin k)))
+                                                     (Gamma (rootOf M)))))
                   as [ n paths ].
                 simpl.
                 induction paths as [ | path' n paths IH ] .
