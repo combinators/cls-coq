@@ -107,6 +107,7 @@ VFILES:=VectorQuantification.v\
   SigmaAlgebra.v\
   CombinatoryLogicAlgebra.v\
   DisjointContexts.v\
+  VarianceLabeledTree.v\
   SortEmbeddings.v
 
 ifneq ($(filter-out archclean clean cleanall printenv,$(MAKECMDGOALS)),)

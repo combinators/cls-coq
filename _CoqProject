@@ -10,4 +10,5 @@
 ./SigmaAlgebra.v
 ./CombinatoryLogicAlgebra.v
 ./DisjointContexts.v
+./VarianceLabeledTree.v
 ./SortEmbeddings.v
