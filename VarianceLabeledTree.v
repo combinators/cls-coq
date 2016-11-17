@@ -529,117 +529,245 @@ Proof.
     assumption.
 Qed.
 
-
-(* TODO: *)
 Instance VLOrderTrans (Label: Set) (LOrder: Label -> Label -> Prop)
          `{LabelInfo Label}
          `{Transitive _ LOrder}: Transitive (VLTreeOrder Label LOrder).
 Proof.
   unfold Transitive.
-  intro t1.
+  intros t1 t2.
+  apply (fun tgt =>
+           @Fix_F_2 _ _ (fun x y => max (VLTree_size _ _ (fst x)) (VLTree_size _ _ (snd x)) <
+                                 max (VLTree_size _ _ (fst y)) (VLTree_size _ _ (snd y)))
+                    (fun x y => forall z, VLTreeOrder Label LOrder x y ->
+                                  VLTreeOrder Label LOrder y z ->
+                                  VLTreeOrder Label LOrder x z)
+                    tgt t1 t2 (WF_VLTree_size_max _ (t1, t2))).
+  clear t1 t2; intro t1.
   destruct t1 as [ l1 ts1 | alpha];
-    [ | intros ? ? devil; inversion devil ].
-  - intros t2 t3 t1t2 t2t3. 
-    inversion t1t2 as [ ? l2 arityEq12 varianceEq12 ? ts2 lOrder12 forestOrder12 [ t1_eq ts1_eq ] [ t2_eq ] ].
-    rewrite (vect_exist_eq _ _ (existT_fg_eq _ _ _ _ _ ts1_eq)) in forestOrder12.
-    clear ts1_eq xs.
-    inversion t2t3 as [ l2' l3 arityEq23 varianceEq23 ts2' ts3 lOrder23 forestOrder23 [ t2_eq' ] [ t3_eq ]].
-    rewrite <- t2_eq' in t2_eq.
-    inversion t2_eq as [ [ l2_eq ts2_eq ] ].
-    clear t2_eq t2_eq'.
-    assert (arityEq23' : labelArity l2 = labelArity l3).
-    { rewrite l2_eq; assumption. }
-    assert (varianceEq23' : forall k : Fin.t (labelArity l2),
-               successorVariance l2 k = successorVariance l3 (rew [Fin.t] arityEq23' in k)).
-    { revert varianceEq23.
-      revert l2_eq.
-      clear ...
-      intro l2_eq.
-      revert arityEq23'.
-      rewrite l2_eq.
-      intros arityEq23'.
-      rewrite (UIP_dec (Nat.eq_dec) arityEq23' arityEq23).
-      intro; assumption. }
-    assert (lOrder23': LOrder l2 l3).
-    { rewrite l2_eq; assumption. }
-    assert (forestOrder23':
-              VLForestOrder Label LOrder (map (successorVariance l2) (positions (labelArity l2))) ts2
-                            (rew <- [t (VLTree Label False)] arityEq23' in ts3)).
-    { clear varianceEq23' varianceEq23 forestOrder12.
-      revert l2_eq ts2 ts2' ts2_eq arityEq23 arityEq23' forestOrder23.
-      clear ...
-      intro l2_eq.
-      rewrite l2_eq.
-      intros ts2 ts2' ts2_eq.
-      rewrite (vect_exist_eq _ _ (existT_fg_eq (t (VLTree Label False)) (labelArity) _ _ _ ts2_eq)).
-      intros arityEq23 arityEq23'.
-      rewrite (UIP_dec (Nat.eq_dec) arityEq23 arityEq23').
-      intros; assumption. }
-    clear t1t2 t2t3 arityEq23 varianceEq23 forestOrder23 t3_eq ts2_eq.
-    revert arityEq23' arityEq12 ts1 ts2 ts3 varianceEq12 varianceEq23' forestOrder12 forestOrder23'.
+    [ | intros ? ? ? devil; inversion devil ].
+  intros t2 IH t3 t1t2 t2t3.
+  revert IH.
+  inversion t1t2 as [ ? l2 arityEq12 varianceEq12 ? ts2 lOrder12 forestOrder12 [ t1_eq ts1_eq ] [ t2_eq ] ].
+  rewrite (vect_exist_eq _ _ (existT_fg_eq _ _ _ _ _ ts1_eq)) in forestOrder12.
+  clear ts1_eq xs.
+  inversion t2t3 as [ l2' l3 arityEq23 varianceEq23 ts2' ts3 lOrder23 forestOrder23 [ t2_eq' ] [ t3_eq ]].
+  rewrite <- t2_eq' in t2_eq.
+  inversion t2_eq as [ [ l2_eq ts2_eq ] ].
+  clear t2_eq t2_eq'.
+  assert (arityEq23' : labelArity l2 = labelArity l3).
+  { rewrite l2_eq; assumption. }
+  assert (varianceEq23' : forall k : Fin.t (labelArity l2),
+             successorVariance l2 k = successorVariance l3 (rew [Fin.t] arityEq23' in k)).
+  { revert varianceEq23.
+    revert l2_eq.
+    clear ...
+    intro l2_eq.
+    revert arityEq23'.
+    rewrite l2_eq.
+    intros arityEq23'.
+    rewrite (UIP_dec (Nat.eq_dec) arityEq23' arityEq23).
+    intro; assumption. }
+  assert (lOrder23': LOrder l2 l3).
+  { rewrite l2_eq; assumption. }
+  assert (forestOrder23':
+            VLForestOrder Label LOrder (map (successorVariance l2) (positions (labelArity l2))) ts2
+                          (rew <- [t (VLTree Label False)] arityEq23' in ts3)).
+  { clear varianceEq23' varianceEq23 forestOrder12.
+    revert l2_eq ts2 ts2' ts2_eq arityEq23 arityEq23' forestOrder23.
+    clear ...
+    intro l2_eq.
+    rewrite l2_eq.
+    intros ts2 ts2' ts2_eq.
+    rewrite (vect_exist_eq _ _ (existT_fg_eq (t (VLTree Label False)) (labelArity) _ _ _ ts2_eq)).
+    intros arityEq23 arityEq23'.
+    rewrite (UIP_dec (Nat.eq_dec) arityEq23 arityEq23').
+    intros; assumption. }
+  simpl.
+  intro IH.
+  apply (NodesOrdered _ _ l1 l3 (eq_trans arityEq12 arityEq23')).
+  - intro k.
+    rewrite (eq_trans (varianceEq12 k) (varianceEq23' (rew arityEq12 in k))).
+    apply f_equal.
+    clear ...
+    rewrite <- arityEq23'.
+    simpl.
+    rewrite <- arityEq12.
+    simpl.
+    reflexivity.
+  - transitivity l2; assumption.
+  - clear ts2_eq.
+    generalize (VLTree_size_lt _ _ l1 ts1).
+    generalize (VLTree_size_lt _ _ l2 ts2).
+    revert arityEq23' ts2 forestOrder12 forestOrder23' varianceEq12 varianceEq23' IH.
     clear ...
     generalize (successorVariance l2).
-    induction (labelArity l2).
-    + admit.
-    + 
-    
-    intro  arityEq12.
-    
-    rewrite <- arityEq12.
-    unfold eq_rect_r at 1.
     simpl.
-    clear arityEq12.
-    
-    induction (labelArity l1).
-    
-    intros succVar_l2 arityEq23.
-    revert succVar_l2.
+    rewrite <- arityEq12.
+    unfold eq_rect_r.
+    simpl.
+    intros succVar2 arityEq23'.
     generalize (successorVariance l3).
-    intro succVar_l3.
-    
-    rewrite <- arityEq23.
-    
-    
-    apply (NodesOrdered _ _ l1 l3 (eq_trans arityEq12 arityEq23')).
-    + intro k.
-      rewrite (eq_trans (varianceEq12 k) (varianceEq23' (rew arityEq12 in k))).
-      apply f_equal.
-      clear ...
-      rewrite <- arityEq23'.
+    revert ts3.
+    rewrite <- arityEq23'.
+    simpl.
+    intros ts3 succVar3 ts2  forestOrder12 forestOrder23 succVar2_eq succVar3_eq IH sizes_ts1 sizes_ts2.
+    assert (varEq: map (successorVariance l1) (positions (labelArity l1)) =
+                   map succVar2 (positions (labelArity l1))).
+    { apply map_extensional.
+      intro k.
+      rewrite (succVar2_eq k).
+      reflexivity. }
+    rewrite <- varEq in forestOrder23.
+    revert ts1 ts2 ts3 forestOrder12 forestOrder23 IH sizes_ts1 sizes_ts2.
+    clear ...
+    generalize (@map _ _ (successorVariance l1) (labelArity l1) (positions (labelArity l1))).
+    intros variances ts1 ts2 ts3 forestOrder12 forestOrder23 IH sizes_ts2 sizes_ts1.
+    assert (subtreeOrder: forall k,
+               match nth variances k with
+               | Co => VLTreeOrder _ LOrder (nth ts1 k) (nth ts2 k) /\
+                      VLTreeOrder _ LOrder (nth ts2 k) (nth ts3 k)                                    
+               | Contra => VLTreeOrder _ LOrder (nth ts2 k) (nth ts1 k) /\
+                          VLTreeOrder _ LOrder (nth ts3 k) (nth ts2 k)
+               | In => VLTreeOrder _ LOrder (nth ts1 k) (nth ts2 k) /\
+                      VLTreeOrder _ LOrder (nth ts2 k) (nth ts3 k) /\
+                      VLTreeOrder _ LOrder (nth ts2 k) (nth ts1 k) /\
+                      VLTreeOrder _ LOrder (nth ts3 k) (nth ts2 k)
+               end).
+    { intro k.
+      clear IH sizes_ts1 sizes_ts2.
+      induction forestOrder12
+        as [
+          | t1 t2 ? variances ts1 ts2 prf prfs IH
+          | t1 t2 ? variances ts1 ts2 prf prfs IH 
+          | t1 t2 ? variances ts1 ts2 prf prf' prfs IH  ].
+      - inversion k.
+      - revert forestOrder23.
+        apply (caseS' ts3); clear ts3; intros t3 ts3 forestOrder23.
+        inversion forestOrder23
+          as [
+            | ? ? ? ? ? ? prf23 prfs23 n_eq [ variances_eq ] [ t2_eq ts2_eq ] [ t3_eq ts3_eq ]
+            |
+            | ].
+        apply (Fin.caseS' k).
+        + simpl; split; assumption.
+        + intro k'.
+          simpl.
+          apply IH.
+          rewrite (vect_exist_eq _ _ variances_eq) in prfs23.
+          rewrite (vect_exist_eq _ _ ts2_eq) in prfs23.
+          rewrite (vect_exist_eq _ _ ts3_eq) in prfs23.
+          assumption.
+      - revert forestOrder23.
+        apply (caseS' ts3); clear ts3; intros t3 ts3 forestOrder23.
+        inversion forestOrder23
+          as [
+            |
+            | ? ? ? ? ? ? prf23 prfs23 n_eq [ variances_eq ] [ t2_eq ts2_eq ] [ t3_eq ts3_eq ]
+            | ].
+        apply (Fin.caseS' k).
+        + simpl; split; assumption.
+        + intro k'.
+          simpl.
+          apply IH.
+          rewrite (vect_exist_eq _ _ variances_eq) in prfs23.
+          rewrite (vect_exist_eq _ _ ts2_eq) in prfs23.
+          rewrite (vect_exist_eq _ _ ts3_eq) in prfs23.
+          assumption.
+      - revert forestOrder23.
+        apply (caseS' ts3); clear ts3; intros t3 ts3 forestOrder23.
+        inversion forestOrder23
+          as [
+            |
+            |
+            | ? ? ? ? ? ? prf23 prf23' prfs23 n_eq [ variances_eq ] [ t2_eq ts2_eq ] [ t3_eq ts3_eq ]
+            ].
+        apply (Fin.caseS' k).
+        + simpl; repeat split; assumption.
+        + intro k'.
+          simpl.
+          apply IH.
+          rewrite (vect_exist_eq _ _ variances_eq) in prfs23.
+          rewrite (vect_exist_eq _ _ ts2_eq) in prfs23.
+          rewrite (vect_exist_eq _ _ ts3_eq) in prfs23.
+          assumption. }
+    assert (subtreeOrder_trans: forall k,
+               match (nth variances k) with
+               | Co => VLTreeOrder Label LOrder (nth ts1 k) (nth ts3 k)
+               | Contra => VLTreeOrder Label LOrder (nth ts3 k) (nth ts1 k)
+               | In =>
+                 VLTreeOrder Label LOrder (nth ts1 k) (nth ts3 k) /\
+                 VLTreeOrder Label LOrder (nth ts3 k) (nth ts1 k)
+               end).
+    { revert IH sizes_ts1 sizes_ts2.
+      generalize (fold_right (fun t max => Nat.max (VLTree_size Label False t) max) ts1 0).
+      intro max_size_ts1.
+      generalize (fold_right (fun t max => Nat.max (VLTree_size Label False t) max) ts2 0).
+      intro max_size_ts2.
+      intros IH sizes_ts1 sizes_ts2.
+      intro k.
+      generalize (subtreeOrder k).
+      destruct (nth variances k).
+      - intro args; destruct args as [ ts12 ts23 ].
+        apply (IH _ (nth ts2 k)); try solve [ assumption ].
+        unfold "_ < _".
+        apply (proj1 (Nat.succ_le_mono _ _ )).
+        apply (Nat.max_le_compat).
+        + apply (proj2 (Nat.succ_le_mono _ _) (Forall_nth _ _ sizes_ts1 k)).
+        + apply (proj2 (Nat.succ_le_mono _ _) (Forall_nth _ _ sizes_ts2 k)).
+      - intro args; destruct args as [ ts12 ts23 ].
+        apply (IH _ (nth ts2 k)); try solve [ assumption ].
+        unfold "_ < _".
+        apply (proj1 (Nat.succ_le_mono _ _ )).
+        rewrite (Nat.max_comm _ _).
+        apply (Nat.max_le_compat).
+        + rewrite (VLTree_size_order _ _ _ _ ts12).
+          apply (proj2 (Nat.succ_le_mono _ _) (Forall_nth _ _ sizes_ts1 k)).
+        + rewrite (VLTree_size_order _ _ _ _ ts23).
+          apply (proj2 (Nat.succ_le_mono _ _) (Forall_nth _ _ sizes_ts2 k)).
+      - intro args; destruct args as [ ts12 [ ts23 [ ts21 ts32 ] ] ].
+        split.
+        + apply (IH _ (nth ts2 k)); try solve [ assumption ].
+          unfold "_ < _".
+          apply (proj1 (Nat.succ_le_mono _ _ )).
+          apply (Nat.max_le_compat).
+          * apply (proj2 (Nat.succ_le_mono _ _) (Forall_nth _ _ sizes_ts1 k)).
+          * apply (proj2 (Nat.succ_le_mono _ _) (Forall_nth _ _ sizes_ts2 k)).
+        + apply (IH _ (nth ts2 k)); try solve [ assumption ].
+          unfold "_ < _".
+          apply (proj1 (Nat.succ_le_mono _ _ )).
+          rewrite (Nat.max_comm _ _).
+          apply (Nat.max_le_compat).
+          * rewrite <- (VLTree_size_order _ _ _ _ ts12).
+            apply (proj2 (Nat.succ_le_mono _ _) (Forall_nth _ _ sizes_ts1 k)).
+          * rewrite <- (VLTree_size_order _ _ _ _ ts23).
+            apply (proj2 (Nat.succ_le_mono _ _) (Forall_nth _ _ sizes_ts2 k)). }
+    clear forestOrder12 forestOrder23 IH sizes_ts1 sizes_ts2 subtreeOrder.
+    revert variances ts1 ts3 subtreeOrder_trans.
+    clear ...
+    generalize (labelArity l1).
+    intros arity variances.
+    induction variances as [ | variance n variances IH ].
+    + intros ts1 ts3 subtreeOrder_trans.
+      clear subtreeOrder_trans.
+      apply (fun r => case0 (fun xs => VLForestOrder _ _ _ xs _) r ts1).
+      apply (fun r => case0 (fun xs => VLForestOrder _ _ _ _ xs) r ts3).
+      apply VLForestOrder_empty.
+    + intros ts1 ts3.
+      apply (caseS' ts1); clear ts1; intros t1 ts1.
+      apply (caseS' ts3); clear ts3; intros t3 ts3.
+      intro subtreeOrder_trans.
+      generalize (IH ts1 ts3 (fun k => subtreeOrder_trans (FS k))).
+      clear IH; intro IH.
+      generalize (subtreeOrder_trans F1).
+      clear subtreeOrder_trans.
       simpl.
-      rewrite <- arityEq12.
-      simpl.
-      reflexivity.
-    + transitivity l2; assumption.
-    + clear ts2_eq.
-      revert arityEq23' ts2 forestOrder12 forestOrder23' varianceEq12 varianceEq23'.
-      clear ...
-      generalize (successorVariance l2).
-      rewrite <- arityEq12.
-      unfold eq_rect_r.
-      simpl.
-      intros succVar2 arityEq23'.
-      generalize (successorVariance l3).
-      revert ts3.
-      rewrite <- arityEq23'.
-      simpl.
-      intros ts3 succVar3 ts2  forestOrder12 forestOrder23 succVar2_eq succVar3_eq.
-      assert (varEq: map (successorVariance l1) (positions (labelArity l1)) =
-                     map succVar2 (positions (labelArity l1))).
-      { apply map_extensional.
-        intro k.
-        rewrite (succVar2_eq k).
-        reflexivity. }
-      rewrite <- varEq in forestOrder23.
-      revert ts1 ts2 ts3 forestOrder12 forestOrder23.
-      clear ...
-      generalize (map (successorVariance l1)).
-      intros forestOrder12.
-      revert 
-      induction forestOrder12.
-      * intros; assumption.
-      * apply (caseS' ts3); clear ts3; intros t3 ts3.
-        intros forestOrder23 IH.
-        inversion forestOrder23 as [ | ? ? ? ? ? ? prf prfs n_eq [ var_eq ] [ y_eq ys_eq ] [ t3_eq ts3_eq ] | | ].
-        apply VLForestOrder_cons_Co.
-*)
+      destruct variance; intro t1t3.
+      { apply VLForestOrder_cons_co; assumption. }
+      { apply VLForestOrder_cons_contra; assumption. }
+      { destruct t1t3; apply VLForestOrder_cons_in; assumption. }
+Qed.
+Instance VLOrderPre (Label: Set) (LOrder: Label -> Label -> Prop)
+         `{LabelInfo Label}
+         `{PreOrder _ LOrder}: PreOrder (VLTreeOrder Label LOrder) :=
+  {| PreOrder_Reflexive := VLOrderRefl Label LOrder;
+     PreOrder_Transitive := VLOrderTrans Label LOrder |}.
