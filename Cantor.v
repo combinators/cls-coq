@@ -482,3 +482,36 @@ Proof.
   unfold cantor_fin_fun_inv.
   reflexivity.
 Qed.
+
+Definition vectToNat {A: Set} (toNat: A -> nat) {n: nat} (xs: t A n): nat :=
+  (fix vectToNat_rec (n: nat) (xs: t A n): nat :=
+     match xs with
+     | nil _ => 0
+     | cons _ x n xs => cantor_pair (toNat x) (vectToNat_rec _ xs)
+     end) _ xs.
+
+Definition vectFromNat {A: Set} (fromNat: nat -> A) (m: nat) (n: nat): t A m :=
+  (fix vectFromNat_rec m n: t A m :=
+     match m with
+     | 0 => nil _
+     | S m => cons _ (fromNat (fst (cantor_pair_inv n))) _
+                  (vectFromNat_rec m (snd (cantor_pair_inv n)))
+     end) m n.
+
+Lemma vect_inj:
+  forall (A: Set) n (xs: t A n) (fromNat: nat -> A) (toNat: A -> nat)
+    (IH: Forall (fun x => fromNat (toNat x) = x) xs),
+    vectFromNat fromNat n (vectToNat toNat xs) = xs.
+Proof.
+  intros A n xs fromNat toNat prfs.
+  induction prfs as [ | n x xs prf prfs IH ].
+  - reflexivity.
+  - unfold vectToNat.
+    unfold vectFromNat.
+    rewrite <- cantor_pair_inj.
+    unfold fst.
+    unfold snd.
+    rewrite prf.
+    apply f_equal.
+    apply IH.
+Qed.

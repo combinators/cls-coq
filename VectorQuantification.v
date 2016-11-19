@@ -877,6 +877,22 @@ Proof.
     apply IH.
 Qed.
 
+Lemma map2_map_fg {S T U V W: Type} {n: nat}:
+  forall (xs: t S n) (ys: t T n) (f: S -> U) (g: T -> V) (h: U -> V -> W),
+    map2 h (map f xs) (map g ys) = map2 (fun x y => h (f x) (g y)) xs ys.
+Proof.
+  intro xs.
+  induction xs as [ | x n xs IH ].
+  - intros ys f g h.
+    apply (fun r => case0 (fun ys => map2 h _ (map _ ys) = map2 _ _ ys) r ys).
+    reflexivity.
+  - intro ys; apply (caseS' ys); clear ys; intros y ys.
+    intros f g h.
+    simpl.
+    apply f_equal.
+    apply IH.
+Qed.
+
 Lemma nth_k {T: Type} {n n': nat}:
   forall (n_eq: n = n') (xs: t T n) (k: Fin.t n'), nth (rew n_eq in xs) k = nth xs (rew <- n_eq in k).
 Proof.

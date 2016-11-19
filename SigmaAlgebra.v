@@ -21,7 +21,7 @@ Class CanSubst (F: Set -> Set): Type :=
 Class SignatureSpecification (Sort: Set -> Set) (Var: Set) (Operation: Set) :=
   { subsorts: Sort EmptySet -> Sort EmptySet -> Prop;
     Sigma :> Signature Sort Var Operation;
-    subsorts_pre: `{PreOrder subsorts};
+    subsorts_pre :> PreOrder subsorts;
 
     Var_eq_dec:
       forall (alpha beta: Var), { alpha = beta } + { alpha <> beta };

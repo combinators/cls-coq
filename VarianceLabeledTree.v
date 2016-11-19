@@ -7,6 +7,7 @@ Require Import Coq.Init.Wf.
 Require Import Coq.Arith.Wf_nat.
 
 Require Import VectorQuantification.
+Require Import Cantor.
 
 Import EqNotations.
 
@@ -766,8 +767,95 @@ Proof.
       { apply VLForestOrder_cons_contra; assumption. }
       { destruct t1t3; apply VLForestOrder_cons_in; assumption. }
 Qed.
+
 Instance VLOrderPre (Label: Set) (LOrder: Label -> Label -> Prop)
          `{LabelInfo Label}
          `{PreOrder _ LOrder}: PreOrder (VLTreeOrder Label LOrder) :=
   {| PreOrder_Reflexive := VLOrderRefl Label LOrder;
      PreOrder_Transitive := VLOrderTrans Label LOrder |}.
+
+Fixpoint VLTreeToNat_rec (Label: Set) (LabelToNat: Label -> nat) `{LabelInfo Label}
+         (t: VLTree Label False): nat :=
+  match t with
+  | Node _ _ l xs => cantor_pair (LabelToNat l) (vectToNat (VLTreeToNat_rec Label LabelToNat) xs)
+  | Hole _ _ h => False_rect _ h
+  end.
+
+Definition VLTreeToNat (Label: Set) (LabelToNat: Label -> nat) `{LabelInfo Label}
+           (t: VLTree Label False): nat :=
+  cantor_pair (VLTree_size _ _ t) (VLTreeToNat_rec _ LabelToNat t).
+
+Fixpoint natToVLTree_rec (Label: Set) (natToLabel: nat -> Label) `{LabelInfo Label}
+         (baseLabel: Label) (baseLabelArity: labelArity baseLabel = 0)
+         (fuel n: nat): VLTree Label False :=
+  match fuel with
+  | 0 => Node _ _ baseLabel (rew <- baseLabelArity in nil _)
+  | S fuel =>  
+     Node _ _
+          (natToLabel (fst (cantor_pair_inv n)))
+          (vectFromNat
+             (natToVLTree_rec _ natToLabel baseLabel baseLabelArity fuel)
+             (labelArity (natToLabel (fst (cantor_pair_inv n))))
+             (snd (cantor_pair_inv n)))
+  end.
+
+Definition natToVLTree (Label: Set) (natToLabel: nat -> Label) `{LabelInfo Label}
+         (baseLabel: Label) (baseLabelArity: labelArity baseLabel = 0)
+         (n: nat): VLTree Label False :=
+  natToVLTree_rec
+    Label natToLabel baseLabel baseLabelArity
+    (fst (cantor_pair_inv n))
+    (snd (cantor_pair_inv n)).
+
+Lemma natVLTree_rec_inj {Label: Set} (labelToNat: Label -> nat) (natToLabel: nat -> Label) `{LabelInfo Label}
+      (baseLabel: Label) (baseLabelArity: labelArity baseLabel = 0):
+  forall t fuel,
+    (forall l, natToLabel (labelToNat l) = l) ->
+    (fuel >= VLTree_size _ _ t) ->
+    natToVLTree_rec _ natToLabel baseLabel baseLabelArity fuel
+                    (VLTreeToNat_rec _ labelToNat t) = t.
+Proof.
+  intro t.
+  induction t as [ | l ts IH ] using VLTree_rect'.
+  - contradiction.
+  - intros fuel labelNat_inj fuelPrf.
+    simpl.
+    generalize (VLTree_size_lt _ _ l ts).
+    intro fuelPrfs.
+    simpl in fuelPrf.
+    destruct fuel as [ | fuel ]; [ inversion fuelPrf | ].
+    unfold natToVLTree_rec.
+    rewrite <- cantor_pair_inj.
+    simpl.
+    rewrite labelNat_inj.
+    apply f_equal.
+    fold (natToVLTree_rec).
+    apply (vect_inj _ _ _ _ _).
+    apply nth_Forall.
+    intro k.
+    apply (Forall_nth _ _ (ForAll'Forall _ _ IH) k _ labelNat_inj).
+    generalize (Forall_nth _ _ fuelPrfs k).
+    intro fuelPrf'.
+    unfold "_ < _" in fuelPrf'.
+    simpl in fuelPrf'.
+    unfold "_ >= _".
+    rewrite (proj2 (Nat.succ_le_mono _ _) fuelPrf').
+    unfold "_ >= _" in fuelPrf.
+    apply (proj2 (Nat.succ_le_mono _ _)).
+    assumption.
+Qed.
+
+Lemma natVLTree_inj {Label: Set} (labelToNat: Label -> nat) (natToLabel: nat -> Label) `{LabelInfo Label}
+      (baseLabel: Label) (baseLabelArity: labelArity baseLabel = 0)
+      (labelNat_inj: forall l, natToLabel (labelToNat l) = l):
+  forall t, natToVLTree _ natToLabel baseLabel baseLabelArity
+                   (VLTreeToNat _ labelToNat t) = t.
+Proof.
+  intro t.
+  unfold VLTreeToNat.
+  unfold natToVLTree.
+  rewrite <- cantor_pair_inj.
+  simpl.
+  apply natVLTree_rec_inj;
+    [ assumption | unfold "_ >= _"; reflexivity ].
+Qed.

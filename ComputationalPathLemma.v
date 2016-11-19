@@ -30,12 +30,7 @@ Module Type CountableTypes
        (Import Signature: CountableTypeSignature)
        (Import Types: IntersectionTypes.IntersectionTypes Signature).
 
-  Definition vectToNat {A: Set} (toNat: A -> nat) {n: nat} (xs: t A n): nat :=
-    (fix vectToNat_rec (n: nat) (xs: t A n): nat :=
-       match xs with
-       | nil _ => 0
-       | cons _ x n xs => cantor_pair (toNat x) (vectToNat_rec _ xs)
-       end) _ xs.
+
   
   Fixpoint typeToNat_rec (tau: IntersectionType): nat :=
     match tau with
@@ -67,13 +62,7 @@ Module Type CountableTypes
   Definition typeToNat (tau: IntersectionType): nat :=
     cantor_pair (fuelForType tau) (typeToNat_rec tau).
   
-  Definition vectFromNat {A: Set} (fromNat: nat -> A) (m: nat) (n: nat): t A m :=
-    (fix vectFromNat_rec m n: t A m :=
-       match m with
-       | 0 => nil _
-       | S m => cons _ (fromNat (fst (cantor_pair_inv n))) _
-                    (vectFromNat_rec m (snd (cantor_pair_inv n)))
-       end) m n.
+  
 
   Fixpoint natToType_rec (fuel n: nat): IntersectionType :=
     match fuel with
@@ -176,24 +165,6 @@ Module Type CountableTypes
       rewrite sigma_eq.
       rewrite tau_eq.
       reflexivity.
-  Qed.
-
-  Lemma vect_inj:
-    forall (A: Set) n (xs: t A n) (fromNat: nat -> A) (toNat: A -> nat)
-      (IH: Forall (fun x => fromNat (toNat x) = x) xs),
-      vectFromNat fromNat n (vectToNat toNat xs) = xs.
-  Proof.
-    intros A n xs fromNat toNat prfs.
-    induction prfs as [ | n x xs prf prfs IH ].
-    - reflexivity.
-    - unfold vectToNat.
-      unfold vectFromNat.
-      rewrite <- cantor_pair_inj.
-      unfold fst.
-      unfold snd.
-      rewrite prf.
-      apply f_equal.
-      apply IH.
   Qed.
 
   Lemma ctor_inj:
