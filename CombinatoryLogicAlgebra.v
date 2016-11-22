@@ -100,6 +100,7 @@ Module Type SortEmbedding(Import SigSpec: CompatibleCLSignature)(Import Types: I
       embedApply: forall S s, freeze (embed (applySubst S s)) = Apply (embedSubst S) (embed s);
       unembedApply: forall S tau,
           (exists s, tau = embed s) ->
+          (forall alpha, exists s, S alpha = freeze (embed s)) ->
           Apply S tau = freeze (embed (applySubst (unembedSubst S) (unembed tau))) }.
   
   Lemma unembed_embedSubst `{ProperEmbedding}: forall S alpha,
@@ -131,7 +132,16 @@ Module Type WithProperEmbedding(SigSpec: CompatibleCLSignature)(Types: Intersect
   Declare Instance ProperlyEmbedded: ProperEmbedding.
 End WithProperEmbedding.
 
-
+Module Type ProperWellFormedPredicate
+       (Import SigSpec: CompatibleCLSignature)
+       (Import Types: IntersectionTypes(SigSpec))
+       (Import ProperEmbedding: WithProperEmbedding(SigSpec)(Types))
+<: DecidableWellFormedPredicate(SigSpec)(Types).
+  Include DecidableWellFormedPredicate(SigSpec)(Types).
+  Parameter WF_embed: forall S, SigSpec.WellFormed S -> WellFormed (embedSubst S).
+  Parameter WF_unembed: forall S, WellFormed S -> SigSpec.WellFormed (unembedSubst S).
+  Parameter WF_closed: forall S, WellFormed S -> forall alpha, exists s, S alpha = freeze (embed s).
+End ProperWellFormedPredicate.
 
 Module CombinatoryLogicAlgebra
        (Import SigSpec: CompatibleCLSignature)
@@ -139,7 +149,7 @@ Module CombinatoryLogicAlgebra
        (Import Terms: Terms(SigSpec))
        (Import ProperEmbedding: WithProperEmbedding(SigSpec)(Types))
        (Import TypesCountable: CountableTypes(SigSpec)(Types))
-       (Import WF: DecidableWellFormedPredicate(SigSpec)(Types))
+       (Import WF: ProperWellFormedPredicate(SigSpec)(Types)(ProperEmbedding))
        (Import CL: CombinatoryLogic(SigSpec)(Types)(Terms)(WF))
        (Import CPL: ComputationalPathLemma(SigSpec)(Types)(Terms)(TypesCountable)(WF)(CL))
        (Import Alg: Algebraic(SigSpec)).
@@ -247,16 +257,14 @@ Module CombinatoryLogicAlgebra
       + apply IH.
   Qed.
   
-  Definition CL_Algebra:
-      (forall S, SigSpec.WellFormed S -> WF.WellFormed (embedSubst S)) ->
-      SigmaAlgebra Carrier.
+  Definition CL_Algebra: SigmaAlgebra Carrier.
   Proof.
     unfold SigmaAlgebra.
-    intros WF_transport s Fs.
+    intros s Fs.
     destruct Fs as [ op S WF_S args tgt_le ].
     assert (opty : CL Gamma (Symbol op) (Apply (embedSubst S) (Gamma op))).
     { apply CL_Var.
-      apply WF_transport; assumption. }
+      apply WF_embed; assumption. }
     generalize (source_count_eq S op).
     intro source_count_eq.
     assert (args' :
@@ -319,10 +327,11 @@ Module CombinatoryLogicAlgebra
   Defined.
 
   Lemma unembedApply_c: forall S c,
+      (forall alpha, exists s, S alpha = freeze (embed s)) ->
       Apply (embedSubst (unembedSubst S)) (Gamma c) =
       Apply S (Gamma c).
   Proof.
-    intros S c.
+    intros S c S_valid.
     unfold Gamma.
     induction (domain c) as [ | ? ? ? IH ].
     - unfold blackBoxEmbedOpen.
@@ -337,7 +346,7 @@ Module CombinatoryLogicAlgebra
       { match goal with
         |[|- _ = Apply S ?erc ] =>
          assert (ex_s: exists s, erc = embed s); [ eexists; reflexivity | ];
-           rewrite (unembedApply S _ ex_s)
+           rewrite (unembedApply S _ ex_s S_valid)
         end.
         rewrite <- embedApply.
         rewrite unembedEmbed.
@@ -356,7 +365,7 @@ Module CombinatoryLogicAlgebra
       { match goal with
         |[|- _ = Apply S ?erc ] =>
          assert (ex_s: exists s, erc = embed s); [ eexists; reflexivity | ];
-           rewrite (unembedApply S _ ex_s)
+           rewrite (unembedApply S _ ex_s S_valid)
         end.
         rewrite <- embedApply.
         rewrite unembedEmbed.
@@ -365,12 +374,11 @@ Module CombinatoryLogicAlgebra
       reflexivity.
   Qed.
 
-  Definition CL_CoAlgebra:
-      (forall S, WF.WellFormed S -> SigSpec.WellFormed (unembedSubst S)) ->
+  Definition CL_CoAlgebra:     
       (forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}) ->
       SigmaCoAlgebra Carrier.
   Proof.
-    intros WF_transport CL_dec.
+    intros CL_dec.
     unfold SigmaCoAlgebra.
     intros s prf.
     destruct prf as [ M prf ].
@@ -391,7 +399,7 @@ Module CombinatoryLogicAlgebra
     { destruct ex_subst as [ S [ WF_S ex_path ] ].
       unfold CombinatorSymbol.
       rewrite <- (source_count_eq (unembedSubst S) (rootOf M)).
-      rewrite unembedApply_c.
+      rewrite (unembedApply_c _ _ (WF_closed _ WF_S)).
       generalize (ST_organize_ge (Apply S (Gamma (rootOf M)))).
       rewrite (factorize_organized _ (organize_organized _)).
       induction ex_path as [ ? ? ? here | ? x xs ].
@@ -400,7 +408,7 @@ Module CombinatoryLogicAlgebra
         rewrite (ST_intersect_nth _ Fin.F1) in x_ge.
         simpl in x_ge.
         generalize (Gamma_paths (rootOf M) (unembedSubst S)).
-        rewrite unembedApply_c.
+        rewrite (unembedApply_c _ _ (WF_closed _ WF_S)).
         intro path_c.
         generalize (Path_src_count _ _ x_ge path_c path_x).
         intro src_count_eq'.
@@ -422,7 +430,7 @@ Module CombinatoryLogicAlgebra
         intro; auto. }
     apply (mkF _ _ (rootOf M) (unembedSubst (proj1_sig ex_subst)));
       destruct ex_subst as [ S [ WF_S ex_path ] ].
-    - apply WF_transport; assumption.
+    - apply WF_unembed; assumption.
     - generalize (ST_organize_ge (Apply S (Gamma (rootOf M)))).
       simpl.
       rewrite (factorize_organized _ (organize_organized (Apply S (Gamma (rootOf M))))).
@@ -436,7 +444,7 @@ Module CombinatoryLogicAlgebra
         eapply CL_ST.
         * apply (Forall2_nth _ _ _ args_inhab k').
         * generalize (Gamma_paths (rootOf M) (unembedSubst S)).
-          rewrite unembedApply_c.
+          rewrite (unembedApply_c _ _ (WF_closed _ WF_S)).
           intro path_c.
           rewrite (ST_intersect_nth _ Fin.F1) in root_le.
           assert (argCountPrf' : (argumentCount M <= src_count (Apply S (Gamma (rootOf M))))%nat).
@@ -449,7 +457,7 @@ Module CombinatoryLogicAlgebra
           rewrite arg_le.
           unfold Gamma.
           clear arg_le.
-          revert fully_applied k' argCountPrf'.
+          revert fully_applied k' argCountPrf' WF_S.
           clear ...
           intro fully_applied.
           rewrite fully_applied.
@@ -461,36 +469,37 @@ Module CombinatoryLogicAlgebra
           fold CombinatorSymbol.
           induction (domain (rootOf M)) as [ | ? ? ? IH ].
           { inversion k. }
-          { intro argCountPrf.
+          { intros argCountPrf WF_S.
             apply (Fin.caseS' k).
             - simpl.
               unfold blackBoxEmbed.
               simpl.
               apply (ST_Ax _ _ eq_refl); [ reflexivity | ].
               rewrite BlackBoxArity.
-              simpl.
-              rewrite unembedApply; [ | eexists; reflexivity ].
+              simpl.              
+              rewrite unembedApply; [ | eexists; reflexivity | apply WF_closed; assumption ].
               unfold eq_rect_r.
               simpl.
               rewrite unembedEmbed.
               apply Forall2_cons; [ | apply Forall2_nil ].
               reflexivity.
             - intro k'.
-              apply (IH k' (proj2 (Nat.succ_le_mono _ _) argCountPrf)). }
+              apply (IH k' (proj2 (Nat.succ_le_mono _ _) argCountPrf) WF_S). }
       + rewrite (ST_intersect_append_le (cons _ x _ (nil _)) xs) in root_le.
         rewrite (ST_InterMeetRight) in root_le.
         auto.
     - assert (source_count_le : (arity (rootOf M) <= src_count (Apply S (Gamma (rootOf M))))%nat).
       { generalize (source_count_eq (unembedSubst S) (rootOf M)).
         intro source_count_eq.
-        rewrite unembedApply_c in source_count_eq.
+        rewrite (unembedApply_c _ _ (WF_closed _ WF_S)) in source_count_eq.
         unfold CombinatorSymbol.
         rewrite <- source_count_eq.
         reflexivity. }
       assert (split_path_eq:
                 snd (split_path (Apply S (Gamma (rootOf M))) _ source_count_le) =
                 blackBoxEmbed (applySubst (unembedSubst S) (range (rootOf M)))).
-      { clear ...
+      { revert WF_S.
+        clear ...
         revert source_count_le.
         generalize (rootOf M).
         clear M.
@@ -503,7 +512,7 @@ Module CombinatoryLogicAlgebra
           apply f_equal.
           rewrite BlackBoxArity.
           simpl.
-          rewrite unembedApply; [ | eexists; reflexivity ].
+          rewrite unembedApply; [ | eexists; reflexivity | apply WF_closed; assumption ].
           rewrite unembedEmbed.
           reflexivity.
         - simpl.
@@ -525,7 +534,7 @@ Module CombinatoryLogicAlgebra
           destruct here as [ path_x [ argCountPrf [ inhab_args x_tgt_le ] ] ].
           rewrite <- x_tgt_le.
           generalize (Gamma_paths (rootOf M) (unembedSubst S)).
-          rewrite unembedApply_c.
+          rewrite (unembedApply_c _ _ (WF_closed _ WF_S)).
           intro path_c.
           clear split_path_eq inhab_args x_tgt_le.
           revert fully_applied source_count_le path_c path_x x_ge argCountPrf.
@@ -582,10 +591,9 @@ Module CombinatoryLogicAlgebra
   Qed.
 
   Lemma CL_Algebra_op:
-    forall (WF_transport: forall S, SigSpec.WellFormed S -> WF.WellFormed (embedSubst S)),
-    forall s f, rootOf (proj1_sig (CL_Algebra WF_transport s f)) = op _ _ f.
+    forall s f, rootOf (proj1_sig (CL_Algebra s f)) = op _ _ f.
   Proof.
-    intros WF_transport s f.
+    intros s f.
     unfold CL_Algebra.
     destruct f as [ op subst wf args tgt_le ].
     simpl.
@@ -594,11 +602,10 @@ Module CombinatoryLogicAlgebra
   Qed.
   
   Lemma CL_Algebra_argCount:
-    forall (WF_transport: forall S, SigSpec.WellFormed S -> WF.WellFormed (embedSubst S)),
-    forall s f, argumentCount (proj1_sig (CL_Algebra WF_transport s f)) =
+    forall s f, argumentCount (proj1_sig (CL_Algebra s f)) =
            (arity (op _ _ f)).
   Proof.
-    intros WF_transport s f.
+    intros s f.
     unfold CL_Algebra.
     destruct f as [ op subst wf args tgt_le ].
     simpl.
@@ -609,11 +616,10 @@ Module CombinatoryLogicAlgebra
   Defined.
 
   Lemma CL_Algebra_args:
-    forall (WF_transport: forall S, SigSpec.WellFormed S -> WF.WellFormed (embedSubst S)),
-    forall s f, argumentsOf (proj1_sig (CL_Algebra WF_transport s f)) =
-           rew <- (CL_Algebra_argCount WF_transport s f) in ProjectTerms _ _ _ (args _ _ f).
+    forall s f, argumentsOf (proj1_sig (CL_Algebra s f)) =
+           rew <- (CL_Algebra_argCount s f) in ProjectTerms _ _ _ (args _ _ f).
   Proof.
-    intros WF_transport s f.
+    intros s f.
     destruct f as [ op subst wf args tgt_le ].       
     simpl.
     rewrite (applyAllArguments).
@@ -633,11 +639,10 @@ Module CombinatoryLogicAlgebra
   Qed.
 
   Lemma CL_CoAlgebra_op:
-    forall (WF_transport: forall S, WF.WellFormed S -> SigSpec.WellFormed (unembedSubst S))
-      (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}),
-    forall s c, op _ _ (CL_CoAlgebra WF_transport  CL_dec s c) = rootOf (proj1_sig c).
+    forall (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}),
+    forall s c, op _ _ (CL_CoAlgebra CL_dec s c) = rootOf (proj1_sig c).
   Proof.
-    intros WF_transport CL_dec s c.
+    intros CL_dec s c.
     destruct c as [ M prf ].
     reflexivity.
   Qed.

@@ -1,5 +1,7 @@
 Require Import Coq.Classes.RelationClasses.
 Require Import Coq.Vectors.Vector.
+Require Import Coq.Arith.PeanoNat.
+Require Import Coq.Logic.Eqdep_dec.
 
 Require Import SigmaAlgebra.
 Require Import CombinatoryLogic.
@@ -267,7 +269,7 @@ Module Type ProperConstantEmbedding
        unembed_respectful := Proper.unembed_respectful;
        embed_Path := Proper.embed_Path;
        embedApply := Proper.embedApply;
-       unembedApply := Proper.unembedApply |}.       
+       unembedApply := (fun S tau prf _ => Proper.unembedApply S tau prf) |}.
 End ProperConstantEmbedding.
 
 Module Type ConstantFiniteWellFormedPredicate
@@ -499,8 +501,6 @@ Module Type MakeTreeSortCLSignature(Trees: TreeSpec).
   Declare Module Signature: TreeSortCLSignature(Trees)(SigSpec).
 End MakeTreeSortCLSignature.
 
-(* In progress
-
 Module Type ProperTreeSortEmbedding
        (Import Trees: TreeSpec)
        (Import MakeSignature: MakeTreeSortCLSignature(Trees))
@@ -523,95 +523,106 @@ Module Type ProperTreeSortEmbedding
                (c: ConstructorSymbol)
                (xs: t (@TypeScheme EmptySet) (constructorArity c)): @TypeScheme EmptySet :=
       Skeleton (PT_Const c xs).      
-    
-    Fixpoint closedEmbedS_variance (s: Sort EmptySet) (v: Variance) {struct s}: @TypeScheme EmptySet :=
+
+    Fixpoint closedEmbedS (s: Sort EmptySet) {struct s}: @TypeScheme EmptySet :=
       match s with
       | Node _ _ l xs =>
-        match v with
-        | Co =>
-          ClosedArrowScheme (ClosedArrowScheme
-                               (ClosedConstScheme (Label l)
-                                                  (map2 (fun x v => closedEmbedS_variance x (successorVariance l v))
-                                                        xs
-                                                        (positions (labelArity l))))
-                               (ClosedConstScheme Dot (nil _)))
-                            (ClosedConstScheme Dot (nil _))
-        | Contra =>
-          ClosedArrowScheme (ClosedArrowScheme
-                               (ClosedConstScheme Dot (nil _))
-                               (ClosedConstScheme (Label l)
-                                                  (map2 (fun x v => closedEmbedS_variance x (successorVariance l v))
-                                                        xs
-                                                        (positions (labelArity l)))))
-                            (ClosedConstScheme Dot (nil _))
-        | In =>
-          ClosedArrowScheme (ClosedArrowScheme
-                               (ClosedConstScheme (Label l)
-                                                  (map2 (fun x v => closedEmbedS_variance x (successorVariance l v))
-                                                        xs
-                                                        (positions (labelArity l))))
-                               (ClosedConstScheme (Label l)
-                                                  (map2 (fun x v => closedEmbedS_variance x (successorVariance l v))
-                                                        xs
-                                                        (positions (labelArity l)))))
-                            (ClosedConstScheme Dot (nil _))
-        end
+        ClosedArrowScheme
+          (ClosedArrowScheme
+             (ClosedConstScheme
+                (Label l)
+                (map2 (fun x v =>
+                         match successorVariance l v with
+                         | Co =>
+                           ClosedArrowScheme
+                             (ClosedArrowScheme
+                                (closedEmbedS x)
+                                (ClosedConstScheme Dot (nil _)))
+                             (ClosedConstScheme Dot (nil _))
+                         | Contra =>
+                           ClosedArrowScheme
+                             (ClosedArrowScheme
+                                (ClosedConstScheme Dot (nil _))
+                                (closedEmbedS x))
+                             (ClosedConstScheme Dot (nil _))
+                         | In =>
+                           ClosedArrowScheme
+                             (ClosedArrowScheme
+                                (closedEmbedS x)
+                                (closedEmbedS x))
+                             (ClosedConstScheme Dot (nil _))
+                         end)
+                      xs
+                      (positions (labelArity l))))
+             (ClosedConstScheme Dot (nil _)))
+          (ClosedConstScheme Dot (nil _))
       | Hole _ _ alpha => False_rect _ alpha
       end.
-    
-    Fixpoint openEmbedS_variance (s: Sort Var) (v: Variance) {struct s}: TypeScheme :=
+
+    Fixpoint openEmbedS (s: Sort Var) {struct s}: @TypeScheme VariableSymbol :=
       match s with
       | Node _ _ l xs =>
-        match v with
-        | Co =>
-          ArrowScheme (ArrowScheme
-                         (ConstScheme (Label l)
-                                      (map2 (fun x v => openEmbedS_variance x (successorVariance l v))
-                                            xs
-                                            (positions (labelArity l))))
-                         (ConstScheme Dot (nil _)))
-                      (ConstScheme Dot (nil _))
-        | Contra =>
-          ArrowScheme (ArrowScheme
-                         (ConstScheme Dot (nil _))
-                         (ConstScheme (Label l)
-                                      (map2 (fun x v => openEmbedS_variance x (successorVariance l v))
-                                            xs
-                                            (positions (labelArity l)))))
-                      (ConstScheme Dot (nil _))
-        | In =>
-          ArrowScheme (ArrowScheme
-                         (ConstScheme (Label l)
-                                      (map2 (fun x v => openEmbedS_variance x (successorVariance l v))
-                                            xs
-                                            (positions (labelArity l))))
-                         (ConstScheme (Label l)
-                                      (map2 (fun x v => openEmbedS_variance x (successorVariance l v))
-                                            xs
-                                            (positions (labelArity l)))))
-                      (ConstScheme Dot (nil _))
-        end
+        ArrowScheme
+          (ArrowScheme
+             (ConstScheme
+                (Label l)
+                (map2 (fun x v =>
+                         match successorVariance l v with
+                         | Co =>
+                           ArrowScheme
+                             (ArrowScheme
+                                (openEmbedS x)
+                                (ConstScheme Dot (nil _)))
+                             (ConstScheme Dot (nil _))
+                         | Contra =>
+                           ArrowScheme
+                             (ArrowScheme
+                                (ConstScheme Dot (nil _))
+                                (openEmbedS x))
+                             (ConstScheme Dot (nil _))
+                         | In =>
+                           ArrowScheme
+                             (ArrowScheme
+                                (openEmbedS x)
+                                (openEmbedS x))
+                             (ConstScheme Dot (nil _))
+                         end)
+                      xs
+                      (positions (labelArity l))))
+             (ConstScheme Dot (nil _)))
+          (ConstScheme Dot (nil _))
       | Hole _ _ alpha => Types.Var alpha
       end.
-    
-    Definition closedEmbedS (s: Sort EmptySet) := closedEmbedS_variance s Co.
-    Definition openEmbedS (s: Sort Var) := openEmbedS_variance s Co.
     
     Fixpoint closedUnembedS (ts: TypeScheme (VariableSymbol := EmptySet)): Sort EmptySet :=
       match ts with
       | Skeleton (PT_Arrow (Skeleton (PT_Arrow (Skeleton (PT_Const (Label l) xs)) _)) _) =>
-        Node _ _ l (map closedUnembedS xs)
-      | Skeleton (PT_Arrow (Skeleton (PT_Arrow _ (Skeleton (PT_Const (Label l) xs)))) _) =>
-        Node _ _ l (map closedUnembedS xs)
+        Node _ _ l
+             (map
+                (fun x =>
+                   match x with
+                   | Skeleton (PT_Arrow
+                                 (Skeleton (PT_Arrow x' (Skeleton (PT_Const Dot (nil _)))))
+                                 _) => closedUnembedS x'
+                   | Skeleton (PT_Arrow (Skeleton (PT_Arrow _ x')) _) => closedUnembedS x'
+                   | _ => ClosedSortsInhabited
+                   end) xs)
       | _ => ClosedSortsInhabited
       end.
-    
+
     Fixpoint openUnembedS (ts: TypeScheme (VariableSymbol := Var)): Sort Var :=
       match ts with
       | Skeleton (PT_Arrow (Skeleton (PT_Arrow (Skeleton (PT_Const (Label l) xs)) _)) _) =>
-        Node _ _ l (map openUnembedS xs)
-      | Skeleton (PT_Arrow (Skeleton (PT_Arrow _ (Skeleton (PT_Const (Label l) xs)))) _) =>
-        Node _ _ l (map openUnembedS xs)
+        Node _ _ l
+             (map
+                (fun x =>
+                   match x with
+                   | Skeleton (PT_Arrow
+                                 (Skeleton (PT_Arrow x' (Skeleton (PT_Const Dot (nil _)))))
+                                 _) => openUnembedS x'
+                   | Skeleton (PT_Arrow (Skeleton (PT_Arrow _ x')) _) => openUnembedS x'
+                   | _ => OpenSortsInhabited
+                   end) xs)
       | Types.Var alpha => Hole _ _ alpha
       | _ => OpenSortsInhabited
       end.
@@ -628,34 +639,28 @@ Module Type ProperTreeSortEmbedding
       unfold unembed.
       simpl.
       unfold openEmbedS.
-      generalize (Co).
       induction s as [ alpha | l successors IH ] using VLTree_rect'.
-      - intro v; simpl; destruct v; reflexivity.
-      - intro v.
-        assert (successors_eq:
-                  map openUnembedS
-                      (map2 (fun x v => openEmbedS_variance x (successorVariance l v))
-                            successors (positions (labelArity l))) = successors).
-        { revert successors IH.
-          generalize (successorVariance l).
-          generalize (labelArity l).
-          intros arity succVar successors IH'.
-          generalize (Forall_nth _ _ (ForAll'Forall _ _ IH')).
-          intro IH; clear IH'.
-          rewrite (map_map2_fg).
-          induction successors as [ | successor n successors IH' ].
-          - reflexivity.
-          - simpl.
-            rewrite (IH Fin.F1 _).
-            simpl.
-            apply f_equal.
-            rewrite <- (IH' (fun k => succVar (Fin.FS k)) (fun k => IH (Fin.FS k))) at 2.
-            rewrite <- (map_id successors (fun x => x) (fun x => eq_refl)).
-            rewrite <- (map_id (positions n) (fun x => x) (fun x => eq_refl)) at 2.
-            rewrite map2_map_fg.
-            rewrite map2_map_fg.
-            reflexivity. }
-        destruct v; simpl; rewrite successors_eq; reflexivity.
+      - simpl; reflexivity.
+      - simpl.
+        apply f_equal.
+        revert successors IH.
+        fold openEmbedS.
+        generalize (successorVariance l).
+        generalize (labelArity l).
+        intros n succVar successors IH.
+        generalize (ForAll'Forall _ _ IH).
+        clear IH; intro IH.
+        induction IH as [ | n x xs prf prfs IH ].
+        + reflexivity.
+        + simpl.
+          apply (f_equal2 (fun x xs => cons _ x _ xs)).
+          * destruct (succVar Fin.F1);
+              simpl; rewrite prf; try solve [ reflexivity ];
+              unfold openEmbedS;
+              destruct x; reflexivity. 
+          * rewrite <- (map_id xs (fun x => x) (fun x => eq_refl)) at 1.
+            rewrite (map2_map_fg).
+            apply (IH (fun pos => succVar (Fin.FS pos))).            
     Qed.
 
     Lemma closedInjectivity: forall (s: Sort EmptySet), unembed (embed s) = s.
@@ -664,52 +669,173 @@ Module Type ProperTreeSortEmbedding
       unfold embed.
       unfold unembed.
       simpl.
-      unfold closedEmbedS.
-      generalize (Co).
-      induction s as [ | l successors IH ] using VLTree_rect'.
+      unfold openEmbedS.
+      induction s as [ alpha | l successors IH ] using VLTree_rect'.
       - contradiction.
-      - intro v.
-        assert (successors_eq:
-                  map closedUnembedS
-                      (map2 (fun x v => closedEmbedS_variance x (successorVariance l v))
-                            successors (positions (labelArity l))) = successors).
-        { revert successors IH.
-          generalize (successorVariance l).
-          generalize (labelArity l).
-          intros arity succVar successors IH'.
-          generalize (Forall_nth _ _ (ForAll'Forall _ _ IH')).
-          intro IH; clear IH'.
-          rewrite (map_map2_fg).
-          induction successors as [ | successor n successors IH' ].
-          - reflexivity.
-          - simpl.
-            rewrite (IH Fin.F1 _).
-            simpl.
-            apply f_equal.
-            rewrite <- (IH' (fun k => succVar (Fin.FS k)) (fun k => IH (Fin.FS k))) at 2.
-            rewrite <- (map_id successors (fun x => x) (fun x => eq_refl)).
-            rewrite <- (map_id (positions n) (fun x => x) (fun x => eq_refl)) at 2.
-            rewrite map2_map_fg.
-            rewrite map2_map_fg.
-            reflexivity. }
-        destruct v; simpl; rewrite successors_eq; reflexivity.
+      - simpl.
+        apply f_equal.
+        revert successors IH.
+        fold openEmbedS.
+        generalize (successorVariance l).
+        generalize (labelArity l).
+        intros n succVar successors IH.
+        generalize (ForAll'Forall _ _ IH).
+        clear IH; intro IH.
+        induction IH as [ | n x xs prf prfs IH ].
+        + reflexivity.
+        + simpl.
+          apply (f_equal2 (fun x xs => cons _ x _ xs)).
+          * destruct (succVar Fin.F1);
+              simpl; rewrite prf; try solve [ reflexivity ];
+              unfold openEmbedS;
+              destruct x; try solve [ reflexivity ];
+                solve [ contradiction ].
+          * rewrite <- (map_id xs (fun x => x) (fun x => eq_refl)) at 1.
+            rewrite (map2_map_fg).
+            apply (IH (fun pos => succVar (Fin.FS pos))).            
     Qed.
     
     Instance ClosedInjectiveEmbedding: InjectiveEmbedding EmptySet :=
       {| Embed := ClosedEmbedding; unembedEmbed := closedInjectivity |}.
     Instance OpenInjectiveEmbedding: InjectiveEmbedding Var :=
       {| Embed := OpenEmbedding; unembedEmbed := openInjectivity |}.
-    (*Lemma embed_respectful: forall s s', subsorts s s' -> freeze (embed s) <= freeze (embed s').
+      
+    
+    Lemma embed_respectful: forall s s', subsorts s s' -> freeze (embed s) <= freeze (embed s').
     Proof.
-      intro s.
-      induction s as [ | l successors IH ] using VLTree_rect'; [ contradiction | ].
-      intros s' s_le.
-      destruct s'; [ | contradiction ].
+      intros s s'.
+      apply (fun tgt =>
+               @Fix_F_2 _ _ (fun x y => max (VLTree_size _ _ (fst x)) (VLTree_size _ _ (snd x)) <
+                                     max (VLTree_size _ _ (fst y)) (VLTree_size _ _ (snd y)))
+                        (fun s s' => subsorts s s' -> freeze (embed s) <= freeze (embed s'))
+                        tgt s s' (WF_VLTree_size_max _ (s, s'))).
+      clear s s'.
+      intros s s' IH.
+      destruct s as [ l successors | ]; [ | contradiction ].
+      destruct s' as [ l' successors' | ]; [ | contradiction ].
+      intros s_le.
       simpl.
       apply ST_CoContra; [ | reflexivity ].
-      
-      inversion s_le.
-      apply (ST_Ax (inr s) (inr s') eq_refl); [ assumption | apply Forall2_nil ].
+      apply ST_CoContra; [ | reflexivity ].
+      inversion s_le
+        as [ ? ? arity_eq variance_eq ? ? l_le forest_order [ l_eq successors_eq ] [ l'_eq successors'_eq  ] ].
+      unfold eq_rect_r in forest_order.
+      rewrite (vect_exist_eq _ _
+                             (existT_fg_eq (t (VLTree Trees.Label False))
+                                           (labelArity) _ _ _ successors_eq))
+        in forest_order.
+      rewrite (vect_exist_eq _ _
+                             (existT_fg_eq (t (VLTree Trees.Label False))
+                                           (labelArity) _ _ _ successors'_eq))
+        in forest_order.
+      apply (ST_Ax (Label l) (Label l') arity_eq); [ assumption | ].
+      apply nth_Forall2.
+      intro k.
+      rewrite map_map2_fg.
+      rewrite map_map2_fg.
+      rewrite (nth_map2 _ _ _ _ _ k eq_refl eq_refl).
+      unfold eq_rect_r.
+      rewrite nth_k.
+      rewrite (nth_map2 _ _ _ _ _ _ eq_refl eq_refl).
+      rewrite positions_spec.
+      rewrite positions_spec.
+      assert (k_eq: eq_rect _ _ k (labelArity l') arity_eq =
+                    eq_rect_r Fin.t k (eq_sym arity_eq)).
+      { unfold eq_rect_r.
+        apply f_equal.
+        apply (UIP_dec (Nat.eq_dec)). }
+      revert k_eq.
+      unfold constructorArity.
+      simpl.
+      intro k_eq.
+      rewrite <- k_eq.
+      rewrite <- variance_eq.
+      assert (successor_le:
+          match successorVariance l k with
+          | Co =>
+            freeze (closedEmbedS (nth successors k)) <=
+            freeze (closedEmbedS (nth successors'
+                                      (eq_rect (labelArity l) Fin.t k (labelArity l') arity_eq)))
+          | Contra =>
+            freeze (closedEmbedS (nth successors'
+                                      (eq_rect (labelArity l) Fin.t k (labelArity l') arity_eq))) <=
+            freeze (closedEmbedS (nth successors k))
+          | In => 
+            freeze (closedEmbedS (nth successors k)) <=
+            freeze (closedEmbedS (nth successors'
+                                      (eq_rect (labelArity l) Fin.t k (labelArity l') arity_eq))) /\
+            freeze (closedEmbedS (nth successors'
+                                      (eq_rect (labelArity l) Fin.t k (labelArity l') arity_eq))) <=
+            freeze (closedEmbedS (nth successors k))
+          end).
+      { rewrite k_eq.
+        rewrite <- nth_k.
+        clear k_eq.
+        revert k forest_order IH.
+        unfold constructorArity.
+        simpl.
+        clear ...
+        generalize (successorVariance l).
+        revert successors'.
+        rewrite (eq_sym arity_eq).
+        simpl.
+        intros successors' succVar k forest_order IH.
+        clear arity_eq.
+        assert (forest_order_k:
+                    match succVar k with
+                    | Co => VLTreeOrder _ LOrder (nth successors k) (nth successors' k)
+                    | Contra => VLTreeOrder _ LOrder (nth successors' k) (nth successors k)
+                    | In => VLTreeOrder _ LOrder (nth successors k) (nth successors' k) /\
+                           VLTreeOrder _ LOrder (nth successors' k) (nth successors k)
+                    end).
+        { revert forest_order.
+          clear ...
+          rewrite <- (positions_spec _ k) at 1.
+          rewrite <- (nth_map succVar (positions (labelArity l)) k k eq_refl).
+          intro forest_order.
+          induction forest_order as [ | t1 t2 n variances ts1 ts2 prf prfs IH
+                                      | t1 t2 n variances ts1 ts2 prf prfs IH
+                                      | t1 t2 n variances ts1 ts2 prf prf' prfs IH ];
+            try solve [ inversion k ];
+            apply (Fin.caseS' k);
+            try solve [ assumption | split; assumption ];
+            intro k';
+            apply (IH (fun k => succVar (Fin.FS k)) k'). }
+        generalize (Forall_nth _ _ (VLTree_size_lt _ _ l successors) k).
+        intro successors_k_lt.
+        generalize (Forall_nth _ _ (VLTree_size_lt _ _ l successors') k).
+        intro successors'_k_lt.
+        destruct (succVar k); [ | | split; destruct forest_order_k ];
+          apply IH; try solve [ assumption ];
+            unfold "_ < _";
+            apply (proj1 (Nat.succ_le_mono _ _));
+            solve
+              [ apply (Nat.max_le_compat _ _);
+                [ apply (proj2 (Nat.succ_le_mono _ _) successors_k_lt)
+                | apply (proj2 (Nat.succ_le_mono _ _) successors'_k_lt) ]
+              | rewrite (Nat.max_comm _ _);
+                  apply (Nat.max_le_compat _ _);
+                  [ apply (proj2 (Nat.succ_le_mono _ _) successors_k_lt)
+                  | apply (proj2 (Nat.succ_le_mono _ _) successors'_k_lt) ] ]. }
+      destruct (successorVariance l k);
+         simpl;
+         apply ST_CoContra;
+         try solve [ reflexivity ];
+         apply ST_CoContra;
+         solve
+           [ reflexivity
+           | assumption
+           | destruct successor_le; assumption ].
+    Qed.
+
+    Lemma embed_Path: forall s, Path (freeze (embed s)).
+    Proof.
+      intros.
+      destruct s; [ | contradiction ].
+      simpl.
+      apply Path_Arr.
+      apply Path_Const.
+      apply PathArgs_nil.
     Qed.
 
     Lemma unembed_respectful: forall (sigma tau: IntersectionType),
@@ -724,55 +850,264 @@ Module Type ProperTreeSortEmbedding
       rewrite freezeUnfreeze.
       rewrite freezeUnfreeze.
       intro sigma_le.
-      simpl in sigma_le.
-      generalize (CI_complete _ _ _ sigma_le).
-      intro sigma_le'.
-      inversion sigma_le'.
-      rewrite injectivity.
-      rewrite injectivity.
-      assumption.
-    Qed.*)
-
-    Lemma embed_Path: forall s, Path (freeze (embed s)).
-    Proof.
-      intros.
-      destruct s; [ | contradiction ].
+      generalize (unembedEmbed s').
+      generalize (unembedEmbed s).
       simpl.
-      apply Path_Arr.
-      apply Path_Const.
-      apply PathArgs_nil.
-    Qed.
-
-    (*Lemma applyEq:
-      forall S s v,
-        freeze (closedEmbedS (substitute S s)) = Apply (embedSubst S) (openEmbedS s) ->
-        freeze (closedEmbedS_variance (substitute S s) v) =
-        Apply (embedSubst S) (openEmbedS_variance s v).
-    Proof.
-      intros S s.
-      induction s as [ alpha | l successors IH ] using VLTree_rect'.
-      - unfold embedSubst.
-        intro v.
+      intros s_eq s'_eq.
+      rewrite s_eq.
+      rewrite s'_eq.
+      revert sigma_le.
+      apply (fun tgt =>
+               @Fix_F_2 _ _ (fun x y => max (VLTree_size _ _ (fst x)) (VLTree_size _ _ (snd x)) <
+                                     max (VLTree_size _ _ (fst y)) (VLTree_size _ _ (snd y)))
+                        (fun s s' => freeze (embed s) <= freeze (embed s') -> VLTreeOrder _ LOrder s s')
+                        tgt s s' (WF_VLTree_size_max _ (s, s'))).
+      clear ...
+      intros s s' IH.
+      destruct s as [ l successors | ]; [ | contradiction ].
+      destruct s' as [ l' successors' | ]; [ | contradiction ].
+      intro ss'_le.
+      simpl in ss'_le.
+      generalize (AI_complete _ _ _ ss'_le).
+      clear ss'_le.
+      intro ss'_ideal.
+      inversion ss'_ideal
+        as [ | ? ? src_le tgt_le | | | ];
+        [ contradiction | ].
+      generalize (AI_complete _ _ _ src_le).
+      revert IH.
+      clear ...
+      intros IH src_ideal.
+      inversion src_ideal
+        as [ | ? ? src_le tgt_le | | | ];
+        [ contradiction | ].
+      generalize (CI_complete _ _ _ src_le).
+      revert IH.
+      clear ...
+      intros IH src_ideal.
+      inversion src_ideal as [ ? ? arity_eq lorder successors_le [ l_eq successors_eq ] | | | ].
+      clear l_eq.
+      rewrite (vect_exist_eq _ _ (existT_fg_eq (t IntersectionType)
+                                               (fun C => match C with
+                                                      | BB => 1
+                                                      | Dot => 0
+                                                      | Label l => labelArity l end)
+                                               _ _ _ successors_eq)) in successors_le.
+      clear successors_eq.
+      assert (varianceEq:
+          forall k : Fin.t (labelArity l),
+            successorVariance l k =
+            successorVariance l' (eq_rect (labelArity l) Fin.t k (labelArity l') arity_eq)).
+      { intro k.
+        generalize (Forall2_nth _ _ _ successors_le k).
+        clear ...
+        simpl in arity_eq.
+        generalize (successorVariance l').
+        generalize (successorVariance l).
+        revert successors k.
         simpl.
-        destruct v.
-        + simpl.
-          unfold closedEmbedS.
-          intro; reflexivity.
-        + simpl.
-          unfold closedEmbedS.*)
-
-    Lemma embedApply_Var: forall S alpha, freeze (embed (applySubst S (Hole _ _ alpha))) =
-                                     Apply (embedSubst S) (embed (Hole _ _ alpha)).
-    Proof.
-      intros S alpha; reflexivity.
+        rewrite arity_eq.
+        unfold eq_rect_r.
+        simpl.
+        clear ...
+        intros successors k succVar succVar'.
+        induction k as [ | n k IH ].
+        - apply (caseS' successors); clear successors; intros successor successors.
+          apply (caseS' successors'); clear successors'; intros successor' successors'.
+          simpl.
+          destruct (succVar Fin.F1);
+            destruct (succVar' Fin.F1);
+            try solve [ intro; reflexivity ];
+            simpl;
+            intro subtypes;
+            generalize (AI_complete _ _ _ subtypes);
+            clear subtypes;
+            intro ideal;
+            inversion ideal as [ | ? ? src_le tgt_le | | | ];
+            try solve [ contradiction ];
+            generalize (AI_complete _ _ _ src_le);
+            clear src_le tgt_le; intro src_ideal;
+            inversion src_ideal as [ | ? ? src_le tgt_le | | | ];
+            try solve [ contradiction ];
+            destruct successor;
+            try solve
+                [ contradiction
+                | simpl in src_le;
+                  generalize (ST_Arrow_Const _ _ _ _ src_le);
+                  intro; contradiction ];
+            destruct successor';
+            try solve
+                [ contradiction
+                | simpl in tgt_le;
+                  generalize (ST_Arrow_Const _ _ _ _ tgt_le);
+                  intro; contradiction
+                | simpl in src_le;
+                  generalize (ST_Const_Arrow _ _ _ _ src_le);
+                  intro; contradiction
+                | simpl in tgt_le;
+                  generalize (ST_Const_Arrow _ _ _ _ tgt_le);
+                  intro; contradiction ].
+        - apply (caseS' successors); clear successors; intros successor successors.
+          apply (caseS' successors'); clear successors'; intros successor' successors'.
+          intro subtypes.  
+          apply (IH successors' successors
+                    (fun k => succVar (Fin.FS k)) (fun k => succVar' (Fin.FS k))).
+          repeat rewrite (nth_map _ _ _ k eq_refl).          
+          repeat rewrite (nth_map2 _ _ _ _ _ k eq_refl eq_refl).
+          repeat rewrite (nth_map _ _ _ (Fin.FS k) eq_refl) in subtypes.
+          repeat rewrite (nth_map2 _ _ _ _ _ (Fin.FS k) eq_refl eq_refl) in subtypes.
+          rewrite positions_spec in subtypes.
+          rewrite positions_spec.
+          simpl in subtypes.
+          exact subtypes. }
+      apply (NodesOrdered _ _ l l' arity_eq); try solve [ assumption ].
+      revert successors_le IH varianceEq.
+      clear ...
+      generalize (successorVariance l).
+      generalize (successorVariance l').
+      simpl in arity_eq.
+      revert successors.
+      simpl.
+      rewrite arity_eq.
+      clear ...
+      unfold eq_rect_r.
+      simpl.
+      intros successors succVar' succVar subtypes IH varianceEq.
+      assert (kth_order:
+          forall k,
+            match succVar k with
+            | Co => VLTreeOrder _ LOrder (nth successors k) (nth successors' k)
+            | Contra => VLTreeOrder _ LOrder (nth successors' k) (nth successors k)
+            | In => VLTreeOrder _ LOrder (nth successors k) (nth successors' k) /\
+                   VLTreeOrder _ LOrder (nth successors' k) (nth successors k)
+            end).
+      { intro k.
+        generalize (Forall2_nth _ _ _ subtypes k).
+        clear subtypes.
+        repeat rewrite (nth_map _ _ _ k eq_refl).
+        repeat rewrite (nth_map2 _ _ _ _ _ k eq_refl eq_refl).
+        rewrite <- varianceEq.
+        rewrite positions_spec.
+        destruct (succVar k).
+        - intro subtypes.
+          simpl in subtypes.
+          apply IH.
+          + generalize (Forall_nth _ _ (VLTree_size_lt _ _ l' successors') k).
+            generalize (Forall_nth _ _ (VLTree_size_lt _ _ l' successors) k).
+            simpl.
+            unfold "_ < _".
+            repeat rewrite <- Nat.succ_le_mono.
+            intros successors_k_lt successors'_k_lt.
+            apply (Nat.max_le_compat _ _).
+            * apply successors_k_lt.
+            * apply successors'_k_lt.
+          + generalize (AI_complete _ _ _ subtypes).
+            clear subtypes; intro ideal.
+            inversion ideal as [ | ? ? src_le tgt_le | | | ]; [ contradiction | ].
+            generalize (AI_complete _ _ _ src_le).
+            clear src_le; intro src_ideal.
+            inversion src_ideal; solve [ contradiction | assumption ].
+        - intro subtypes.
+          simpl in subtypes.
+          apply IH.
+          + generalize (Forall_nth _ _ (VLTree_size_lt _ _ l' successors') k).
+            generalize (Forall_nth _ _ (VLTree_size_lt _ _ l' successors) k).
+            simpl.
+            unfold "_ < _".
+            repeat rewrite <- Nat.succ_le_mono.
+            intros successors_k_lt successors'_k_lt.
+            rewrite (Nat.max_comm _ _).
+            apply (Nat.max_le_compat _ _).
+            * apply successors_k_lt.
+            * apply successors'_k_lt.
+          + generalize (AI_complete _ _ _ subtypes).
+            clear subtypes; intro ideal.
+            inversion ideal as [ | ? ? src_le tgt_le | | | ]; [ contradiction | ].
+            generalize (AI_complete _ _ _ src_le).
+            clear src_le; intro src_ideal.
+            clear tgt_le.
+            inversion src_ideal as [ ? tgt_omega | ? ? src_le tgt_le | | | ].
+            * revert tgt_omega.
+              match goal with
+              | [ |- Omega (freeze (closedEmbedS ?x)) -> _ ] =>
+                destruct x; simpl; intro; contradiction
+              end.
+            * assumption.
+        - intro subtypes.
+          simpl in subtypes.
+          split; apply IH.
+          + generalize (Forall_nth _ _ (VLTree_size_lt _ _ l' successors') k).
+            generalize (Forall_nth _ _ (VLTree_size_lt _ _ l' successors) k).
+            simpl.
+            unfold "_ < _".
+            repeat rewrite <- Nat.succ_le_mono.
+            intros successors_k_lt successors'_k_lt.
+            apply (Nat.max_le_compat _ _).
+            * apply successors_k_lt.
+            * apply successors'_k_lt.
+          + generalize (AI_complete _ _ _ subtypes).
+            clear subtypes; intro ideal.
+            inversion ideal as [ | ? ? src_le tgt_le | | | ]; [ contradiction | ].
+            generalize (AI_complete _ _ _ src_le).
+            clear src_le tgt_le; intro src_ideal.
+            inversion src_ideal as [ ? tgt_omega | ? ? src_le tgt_le | | | ].
+            * revert tgt_omega.
+              match goal with
+              | [ |- Omega (freeze (closedEmbedS ?x)) -> _ ] =>
+                destruct x; simpl; intro; contradiction
+              end.
+            * assumption.
+          + generalize (Forall_nth _ _ (VLTree_size_lt _ _ l' successors') k).
+            generalize (Forall_nth _ _ (VLTree_size_lt _ _ l' successors) k).
+            simpl.
+            unfold "_ < _".
+            repeat rewrite <- Nat.succ_le_mono.
+            intros successors_k_lt successors'_k_lt.
+            rewrite (Nat.max_comm _ _).
+            apply (Nat.max_le_compat _ _).
+            * apply successors_k_lt.
+            * apply successors'_k_lt.
+          + generalize (AI_complete _ _ _ subtypes).
+            clear subtypes; intro ideal.
+            inversion ideal as [ | ? ? src_le tgt_le | | | ]; [ contradiction | ].
+            generalize (AI_complete _ _ _ src_le).
+            clear src_le; intro src_ideal.
+            clear tgt_le.
+            inversion src_ideal as [ ? tgt_omega | ? ? src_le tgt_le | | | ].
+            * revert tgt_omega.
+              match goal with
+              | [ |- Omega (freeze (closedEmbedS ?x)) -> _ ] =>
+                destruct x; simpl; intro; contradiction
+              end.
+            * assumption. }
+      revert kth_order.
+      clear ...
+      revert successors succVar.
+      induction successors' as [ | successor' n successors' IH' ];
+        intros successors succVar kth_order.
+      + simpl.
+        apply (fun r => case0 (fun xs => VLForestOrder _ _ _ xs _) r successors).
+        apply VLForestOrder_empty.
+      + revert kth_order.
+        apply (caseS' successors); clear successors; intros successor successors.
+        intro kth_order.
+        generalize (kth_order Fin.F1).
+        intro hd_order.
+        generalize (IH' successors (fun k => succVar (Fin.FS k)) (fun k => kth_order (Fin.FS k))).
+        intro IH.
+        simpl.
+        rewrite (map_fg _ succVar Fin.FS) in IH.
+        destruct (succVar (Fin.F1)).
+        * apply VLForestOrder_cons_co; assumption.
+        * apply VLForestOrder_cons_contra; assumption.
+        * destruct hd_order.
+          apply VLForestOrder_cons_in; assumption.
     Qed.
-
-    Require Import Coq.Arith.Wf_nat.
 
     Lemma embedApply: forall S s, freeze (embed (applySubst S s)) =
                                      Apply (embedSubst S) (embed s).
     Proof.
-      intros S s.
+      intros S s.      
       unfold embed.
       unfold embedSubst.
       unfold ClosedEmbedding.
@@ -780,150 +1115,93 @@ Module Type ProperTreeSortEmbedding
       unfold embed.
       unfold closedEmbedS.
       unfold openEmbedS.
-      generalize Co.      
-      apply (fun IH => Fix (well_founded_ltof _ (VLTree_size _ _))
-                        (fun s => forall v, freeze (closedEmbedS_variance (applySubst S s) v) =
-                                    Apply _ (openEmbedS_variance s v)) IH s).
-      clear s; intro s.
-      destruct s as [ l successors | ].
-      - intros IH v.
-        destruct v.
-        + simpl.
-          apply f_equal2; [ | reflexivity ].
-          apply f_equal2; [ | reflexivity ].
-          apply f_equal.
-          rewrite map_map2_fg.
-          rewrite map_map2_fg.
-          rewrite <- (map_id (positions (labelArity l)) (fun x => x) (fun x => eq_refl)) at 1.
-          rewrite map2_map_fg.
-          revert successors IH.
-          generalize (successorVariance l).
-          unfold ltof.
-          unfold constructorArity.
-          simpl.
-          generalize (labelArity l).
-          intros arity succVar successors successorPrfs.
-          generalize Co.
-          induction successorPrfs as [ | n successor successors prf prfs IH ].
-          * reflexivity.
-          * intro v.
-            simpl.
-            rewrite <- (map_id successors (fun x => x) (fun x => eq_refl)).
-            rewrite map2_map_fg.
-            rewrite map2_map_fg.
-            rewrite (IH (fun k => succVar (Fin.FS k)) v).
-            apply (f_equal (fun x => cons _ x _ _)).
-            destruct successor.
-            
-      
-      assert (notHole: forall alpha, Node _ _ l xs <> Hole _ _ alpha).
-      { intros alpha devil; inversion devil. }     
-      unfold embed.
-      unfold embedSubst.
-      unfold ClosedEmbedding.
-      unfold OpenEmbedding.
-      unfold embed.
-      unfold closedEmbedS.
-      unfold openEmbedS.
-      generalize Co.      
-      induction (Node _ _ l xs) as [ alpha | l' successors IH ] using VLTree_rect'.
-      - destruct (notHole alpha eq_refl).
-      - clear l xs notHole.
+      induction s as [ | l successors IH ] using VLTree_rect'.
+      - reflexivity.
+      - simpl.
+        repeat apply f_equal2; try solve [ reflexivity ].
+        apply f_equal.
+        generalize (ForAll'Forall _ _ IH); clear IH.
+        fold closedEmbedS.
+        fold openEmbedS.
+        generalize (successorVariance l).
+        revert successors.
         simpl.
-        intro v.
-        destruct v.
+        generalize (labelArity l).
+        intros n succsessors succVar IH.
+        induction IH as [ | n successor successors prf prfs IH ].
+        + reflexivity.
         + simpl.
-          apply f_equal2; [ | reflexivity ].
-          apply f_equal2; [ | reflexivity ].
-          apply f_equal.
-          rewrite map_map2_fg.
-          rewrite map_map2_fg.
-          rewrite <- (map_id (positions (labelArity l')) (fun x => x) (fun x => eq_refl)) at 1.
-          rewrite map2_map_fg.
-          generalize (ForAll'Forall _ _ IH).
-          clear IH.
-          revert successors.
-          generalize (successorVariance l').
-          unfold constructorArity.
-          simpl.
-          generalize (labelArity l').
-          intros arity succVar successors successorPrfs.
-          generalize Co.
-          induction successorPrfs as [ | n successor successors prf prfs IH ].
-          * reflexivity.
-          * intro v.
-            simpl.
-            rewrite <- (map_id successors (fun x => x) (fun x => eq_refl)).
+          apply (f_equal2 (fun x xs => cons _ x _ xs)).
+          * destruct (succVar Fin.F1);
+              simpl; repeat apply f_equal2; solve [ reflexivity | exact prf ].
+          * rewrite <- (map_id successors (fun x => x) (fun x => eq_refl)) at 2.
+            rewrite <- (map_id (map (substitute S) successors) (fun x => x) (fun x => eq_refl)).
             rewrite map2_map_fg.
             rewrite map2_map_fg.
-            rewrite (IH (fun k => succVar (Fin.FS k)) v).
-            apply (f_equal (fun x => cons _ x _ _)).
-            destruct successor.
-            { rewrite prf.
-              - reflexivity.
-                reflexivity.
-              reflexivity.
-            reflexivity.
-        
-
-        intro v.
-        destruct v.
-        + simpl.
-          apply f_equal2; [ | reflexivity ].
-          apply f_equal2; [ | reflexivity ].
-          apply f_equal.
-          rewrite map_map2_fg.
-          rewrite map_map2_fg.
-          rewrite <- (map_id (positions (labelArity l)) (fun x => x) (fun x => eq_refl)) at 1.
-          rewrite map2_map_fg.
-          generalize (ForAll'Forall _ _ IH).
-          clear IH.
-          revert successors.
-          generalize (successorVariance l).
-          unfold constructorArity.
-          simpl.
-          generalize (labelArity l).
-          intros arity succVar successors successorPrfs.
-          induction successorPrfs as [ | n successor successors prf prfs IH ].
-          * reflexivity.
-          * simpl.
-            rewrite <- (map_id successors (fun x => x) (fun x => eq_refl)).
-            rewrite map2_map_fg.
-            rewrite map2_map_fg.
-            rewrite (IH (fun k => succVar (Fin.FS k))).
-            apply (f_equal (fun x => cons _ x _ _)).
-            rewrite prf.
-            reflexivity.
-      + 
-        
-      
-      
-            
+            apply (IH (fun k => succVar (Fin.FS k))).
     Qed.
 
     Lemma unembedApply: forall S tau,
         (exists s, tau = embed s) ->
+        (forall alpha, exists s, S alpha = freeze (embed s)) ->
         Apply S tau = freeze (embed (applySubst (unembedSubst S) (unembed tau))).
     Proof.
-      intros S tau ex_prf.
+      intros S tau ex_prf ex_prfS.
       simpl.
-      rewrite applySubst_eq.
       destruct ex_prf as [ s tau_eq ].
-      simpl embed in tau_eq.
-      unfold embedS in tau_eq.
       rewrite tau_eq.
+      clear tau_eq.
+      unfold embed.
       simpl.
-      reflexivity.
+      unfold unembedSubst.
+      simpl.
+      rewrite openInjectivity.
+      induction s as [ alpha | l successors IH ] using VLTree_rect'.
+      - simpl.
+        generalize (embedUnembedClosed).
+        destruct (ex_prfS alpha) as [ s subst_eq ].
+        rewrite subst_eq.
+        rewrite freezeUnfreeze.
+        unfold embed.
+        unfold unembed.
+        simpl.
+        intro embedUnembedClosed.
+        rewrite (embedUnembedClosed _ (ex_intro _ s eq_refl)).
+        reflexivity.
+      - simpl.
+        repeat apply f_equal2; try solve [ reflexivity ].
+        apply f_equal.
+        clear ex_prfS.
+        generalize (ForAll'Forall _ _ IH).
+        clear IH.
+        revert successors.
+        generalize (successorVariance l).
+        simpl.
+        generalize (labelArity l).
+        intros n succVar successors IH.
+        induction IH as [ | n successor successors prf prfs IH ].
+        + reflexivity.
+        + simpl.
+          apply (f_equal2 (fun x xs => cons _ x n xs)).
+          * destruct (succVar Fin.F1);
+              simpl;
+              repeat apply f_equal2; solve [ reflexivity | assumption ].
+          * rewrite <- (map_id successors (fun x => x) (fun x => eq_refl)) at 1.
+            match goal with
+            |[|- _ = map _ (map2 _ ?xs _)] =>
+             rewrite <- (map_id xs (fun x => x) (fun x => eq_refl))
+            end.
+            rewrite map2_map_fg.
+            rewrite map2_map_fg.
+            apply (IH (fun k => succVar (Fin.FS k))).
     Qed.
   End Proper.
   Instance ProperlyEmbedded: ProperEmbedding :=
     {| EmbedClosed := Proper.ClosedInjectiveEmbedding;
-       EmbedOpen := Proper.ClosedInjectiveEmbedding;
+       EmbedOpen := Proper.OpenInjectiveEmbedding;
        embed_respectful := Proper.embed_respectful;
        unembed_respectful := Proper.unembed_respectful;
        embed_Path := Proper.embed_Path;
        embedApply := Proper.embedApply;
        unembedApply := Proper.unembedApply |}.       
-End ProperConstantEmbedding.
-
-*)
+End ProperTreeSortEmbedding.
