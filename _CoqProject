@@ -12,3 +12,4 @@
 ./DisjointContexts.v
 ./VarianceLabeledTree.v
 ./SortEmbeddings.v
+./LambdaBox.v
