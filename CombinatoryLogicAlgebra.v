@@ -374,6 +374,100 @@ Module CombinatoryLogicAlgebra
       reflexivity.
   Qed.
 
+  Lemma blackBoxEmbed_Path:
+    forall s, Path (blackBoxEmbed s).
+  Proof.
+    intro s.
+    unfold blackBoxEmbed.
+    apply Path_Const.
+    simpl.
+    rewrite BlackBoxArity.
+    simpl.
+    apply PathArgs_cons_arg.
+    fold freeze.
+    apply embed_Path.
+  Qed.
+
+  Lemma fully_applied:
+    forall M s,
+      CL Gamma M (blackBoxEmbed s) ->
+      argumentCount M = arity (rootOf M).
+  Proof.
+    intros M s prf.
+    generalize (CL_Path_path _ _ _ prf (blackBoxEmbed_Path s)).
+    intro ex_subst.
+    destruct ex_subst as [ S [ WF_S ex_path ] ].
+    unfold CombinatorSymbol.
+    rewrite <- (source_count_eq (unembedSubst S) (rootOf M)).
+    rewrite (unembedApply_c _ _ (WF_closed _ WF_S)).
+    generalize (ST_organize_ge (Apply S (Gamma (rootOf M)))).
+    rewrite (factorize_organized _ (organize_organized _)).
+    induction ex_path as [ ? ? ? here | ? x xs ].
+    - destruct here as [ path_x [ argCountPrf [ _ tgt_le ] ] ].
+      intro x_ge.
+      rewrite (ST_intersect_nth _ Fin.F1) in x_ge.
+      simpl in x_ge.
+      generalize (Gamma_paths (rootOf M) (unembedSubst S)).
+      rewrite (unembedApply_c _ _ (WF_closed _ WF_S)).
+      intro path_c.
+      generalize (Path_src_count _ _ x_ge path_c path_x).
+      intro src_count_eq'.
+      rewrite src_count_eq'.
+      inversion argCountPrf as [ | n argCountPrf' src_count_eq'' ].
+      + reflexivity.
+      + assert (argCountPrf'' : (Datatypes.S (argumentCount M) <= Datatypes.S n)%nat).
+        { rewrite <- Nat.succ_le_mono.
+          assumption. }
+        rewrite src_count_eq'' in argCountPrf''.
+        generalize (split_path_step _ _ argCountPrf argCountPrf'').
+        intro split_path_eq.
+        rewrite split_path_eq in tgt_le.
+        unfold blackBoxEmbed in tgt_le.
+        assert False; [ | contradiction ].
+        apply (ST_Arrow_Const _ _ _ _ tgt_le).
+    - rewrite (ST_intersect_append_le (cons _ x _ (nil _)) xs).
+      rewrite (ST_InterMeetRight).
+      intro; auto.
+  Qed.
+
+  Definition mkF_args {n : nat}
+             (terms: t Term n)
+             S (argSorts : t (Sort SigSpec.Var) n)
+             (prfs: forall k, CL Gamma (nth terms k) (blackBoxEmbed (applySubst S (nth argSorts k)))):
+    F_args Carrier S argSorts.
+  Proof.
+    apply nth_F_args.
+    intro k.
+    exists (nth terms k).
+    apply prfs.
+  Defined.
+
+  Lemma mkF_args_eq:
+    forall n terms S argSorts prfs, ProjectTerms S n argSorts (mkF_args terms S argSorts prfs) = terms.
+  Proof.
+    intros n terms S argSorts prfs.
+    induction n as [ | n IH ].
+    - unfold mkF_args.
+      unfold ProjectTerms.
+      simpl.
+      apply (fun r => case0 (fun xs => _ = xs) r terms).
+      reflexivity.
+    - revert prfs.
+      apply (caseS' terms); clear terms; intros term terms.
+      apply (caseS' argSorts); clear argSorts; intros argSort argSorts.
+      intro prfs.
+      unfold mkF_args.
+      unfold ProjectTerms.
+      simpl.
+      apply f_equal.
+      rewrite <- (map_fg _ _ Fin.FS).
+      generalize (IH terms argSorts (fun k => prfs (Fin.FS k))).
+      simpl.
+      unfold ProjectTerms.
+      unfold mkF_args.
+      intro; assumption.
+  Qed.          
+    
   Definition CL_CoAlgebra:     
       (forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}) ->
       SigmaCoAlgebra Carrier.
@@ -382,67 +476,27 @@ Module CombinatoryLogicAlgebra
     unfold SigmaCoAlgebra.
     intros s prf.
     destruct prf as [ M prf ].
-    assert (path_s : Path (blackBoxEmbed s)).
-    { unfold blackBoxEmbed.
-      apply Path_Const.
-      simpl.
-      rewrite BlackBoxArity.
-      simpl.
-      apply PathArgs_cons_arg.
-      fold freeze.
-      apply embed_Path. }
+    generalize (blackBoxEmbed_Path s); intro path_s.
     generalize (CL_Path_path _ _ _ prf path_s).
     intro ex_subst.
     generalize (CL_Path_path_compute_S _ CL_dec _ _ path_s ex_subst).
     clear ex_subst; intro ex_subst.
-    assert (fully_applied: argumentCount M = arity (rootOf M)).
-    { destruct ex_subst as [ S [ WF_S ex_path ] ].
-      unfold CombinatorSymbol.
-      rewrite <- (source_count_eq (unembedSubst S) (rootOf M)).
-      rewrite (unembedApply_c _ _ (WF_closed _ WF_S)).
-      generalize (ST_organize_ge (Apply S (Gamma (rootOf M)))).
-      rewrite (factorize_organized _ (organize_organized _)).
-      induction ex_path as [ ? ? ? here | ? x xs ].
-      - destruct here as [ path_x [ argCountPrf [ _ tgt_le ] ] ].
-        intro x_ge.
-        rewrite (ST_intersect_nth _ Fin.F1) in x_ge.
-        simpl in x_ge.
-        generalize (Gamma_paths (rootOf M) (unembedSubst S)).
-        rewrite (unembedApply_c _ _ (WF_closed _ WF_S)).
-        intro path_c.
-        generalize (Path_src_count _ _ x_ge path_c path_x).
-        intro src_count_eq'.
-        rewrite src_count_eq'.
-        inversion argCountPrf as [ | n argCountPrf' src_count_eq'' ].
-        + reflexivity.
-        + assert (argCountPrf'' : (Datatypes.S (argumentCount M) <= Datatypes.S n)%nat).
-          { rewrite <- Nat.succ_le_mono.
-            assumption. }
-          rewrite src_count_eq'' in argCountPrf''.
-          generalize (split_path_step _ _ argCountPrf argCountPrf'').
-          intro split_path_eq.
-          rewrite split_path_eq in tgt_le.
-          unfold blackBoxEmbed in tgt_le.
-          assert False; [ | contradiction ].
-          apply (ST_Arrow_Const _ _ _ _ tgt_le).
-      - rewrite (ST_intersect_append_le (cons _ x _ (nil _)) xs).
-        rewrite (ST_InterMeetRight).
-        intro; auto. }
+    generalize (fully_applied _ _ prf).
+    intro fully_applied.
     apply (mkF _ _ (rootOf M) (unembedSubst (proj1_sig ex_subst)));
       destruct ex_subst as [ S [ WF_S ex_path ] ].
     - apply WF_unembed; assumption.
     - generalize (ST_organize_ge (Apply S (Gamma (rootOf M)))).
       simpl.
-      rewrite (factorize_organized _ (organize_organized (Apply S (Gamma (rootOf M))))).
       intro root_le.
-      apply nth_F_args.
+      rewrite (factorize_organized _ (organize_organized (Apply S (Gamma (rootOf M))))) in root_le.
+      apply (mkF_args (rew fully_applied in argumentsOf M) (unembedSubst S) (domain (rootOf M))).
       intro k.
-      set (k' := rew <- fully_applied in k).
-      exists (nth (argumentsOf M) k').
       induction ex_path as [ ? x ? here | ? x xs ? IH ].
       + destruct here as [ path_x [ argCountPrf [ args_inhab tgt_le ] ] ].
         eapply CL_ST.
-        * apply (Forall2_nth _ _ _ args_inhab k').
+        * rewrite nth_k.
+          apply (Forall2_nth _ _ _ args_inhab (rew <- fully_applied in k)).
         * generalize (Gamma_paths (rootOf M) (unembedSubst S)).
           rewrite (unembedApply_c _ _ (WF_closed _ WF_S)).
           intro path_c.
@@ -451,12 +505,22 @@ Module CombinatoryLogicAlgebra
           { generalize (Path_src_count _ _ root_le path_c path_x).
             intro count_eq.
             rewrite count_eq.
-            assumption. }               
-          generalize (Forall2_nth _ _ _ (ST_path_src_n _ _ path_c path_x root_le _ argCountPrf' argCountPrf) k').
+            assumption. }
+          generalize (Forall2_nth _ _ _ (ST_path_src_n _ _ path_c path_x root_le _ argCountPrf' argCountPrf)
+                     (rew <- fully_applied in k)).
           intro arg_le.
           rewrite arg_le.
           unfold Gamma.
           clear arg_le.
+          rewrite <- (nth_eq (domain (rootOf M)) (eq_sym fully_applied) k).
+          unfold eq_rect_r.
+          assert (k'_eq: (rew [fun y => Fin.t y] eq_sym fully_applied in k) =
+                         (rew [Fin.t] eq_sym fully_applied in k)).
+          { reflexivity. }
+          rewrite k'_eq.
+          clear k'_eq.
+          generalize (rew eq_sym fully_applied in k).
+          intro k'.
           revert fully_applied k' argCountPrf' WF_S.
           clear ...
           intro fully_applied.
@@ -465,7 +529,7 @@ Module CombinatoryLogicAlgebra
           simpl.
           clear fully_applied.
           unfold Gamma.
-          fold CombinatorSymbol in k.
+          intro k.
           fold CombinatorSymbol.
           induction (domain (rootOf M)) as [ | ? ? ? IH ].
           { inversion k. }
@@ -646,61 +710,160 @@ Module CombinatoryLogicAlgebra
     destruct c as [ M prf ].
     reflexivity.
   Qed.
-(*
-     Lemma CL_CoAlgebra_arity:
-       forall (WellFormed : (Signature.Var -> Sort EmptySet) -> Prop)
-         (WF_transport: forall S, TypeSystem.WellFormed S -> WellFormed (unembedSubst S))
-         (WF_dec: forall S, { TypeSystem.WellFormed S } + { TypeSystem.WellFormed S -> False })
-         (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}),
-       forall s c,
-         arity (op _ _ _ _ _ _ (CL_CoAlgebra WellFormed WF_transport WF_dec CL_dec s c)) =
-         argumentCount (proj1_sig c).
-     Proof.
-       rewrite (sour
 
-     Lemma CL_CoAlgebra_args:
-       forall (WellFormed : (Signature.Var -> Sort EmptySet) -> Prop)
-         (WF_transport: forall S, TypeSystem.WellFormed S -> WellFormed (unembedSubst S))
-         (WF_dec: forall S, { TypeSystem.WellFormed S } + { TypeSystem.WellFormed S -> False })
-         (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}),
-       forall s c, ProjectTerms _ _ _
-                           (args _ _ _ _ _ _
-                                 (CL_CoAlgebra WellFormed WF_transport WF_dec CL_dec s c)) =
-              argumentsOf (proj1_sig c).
-     Proof.
-     argumentsOf (proj1_sig (CL_Algebra WellFormed WF_transport s f)) =
-              rew <- (CL_Algebra_argCount WellFormed WF_transport s f) in ProjectTerms _ _ _ (args _ _ _ _ _ _ f).
-     
+  Lemma CL_CoAlgebra_arity:
+    forall (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}),
+    forall s c,
+      arity (op _ _ (CL_CoAlgebra CL_dec s c)) =
+      argumentCount (proj1_sig c).
+  Proof.
+    intros CL_dec s c.
+    rewrite (CL_CoAlgebra_op).
+    destruct c as [ M prf ].
+    simpl.
+    exact (eq_sym (fully_applied M s prf)).
+  Qed.
+               
+  Lemma CL_CoAlgebra_args:
+    forall (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}),
+    forall s c, rew CL_CoAlgebra_arity CL_dec s c in ProjectTerms _ _ _ (args _ _ (CL_CoAlgebra CL_dec s c)) =
+           argumentsOf (proj1_sig c).
+  Proof.
+    intros CL_dec s c.
+    destruct c as [ M prf ].
+    simpl.
+    destruct (CL_Path_path_compute_S Gamma CL_dec M (blackBoxEmbed s) (blackBoxEmbed_Path s)
+                                     (CL_Path_path Gamma M (blackBoxEmbed s) prf (blackBoxEmbed_Path s)))
+      as [ S [ wf ex_prf ] ].
+    rewrite mkF_args_eq.
+    generalize (fully_applied M s prf).
+    generalize (CL_CoAlgebra_arity CL_dec s (exist _ M prf)).
+    simpl.
+    intros eq1 eq2.
+    generalize (argumentsOf M).
+    clear ...
+    revert eq1 eq2.
+    intro eq1.
+    rewrite <- eq1.
+    simpl.
+    intro eq2.
+    intro xs.
+    rewrite (UIP_dec (Nat.eq_dec) eq2 eq_refl).
+    simpl.
+    reflexivity.
+  Qed.
 
-     Lemma CL_AlgebraCoAlgebra_inv:
-       forall (WellFormed : (Signature.Var -> Sort EmptySet) -> Prop)
-         (WF_transport1: forall S, WellFormed S -> TypeSystem.WellFormed (embedSubst S))
-         (WF_transport2: forall S, TypeSystem.WellFormed S -> WellFormed (unembedSubst S))
-         (WF_dec: forall S, { TypeSystem.WellFormed S } + { TypeSystem.WellFormed S -> False })
-         (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}),
-       forall s f, F_eq _ _ _ WellFormed _ carrier_eq s f
-                (CL_CoAlgebra WellFormed WF_transport2 WF_dec CL_dec s
-                              (CL_Algebra WellFormed WF_transport1 s f)).
-     Proof.
-       intros WellFormed WF_transport1 WF_transport2 WF_dec CL_dec s f.
-       destruct f as [ op subst WF_subst args tgt_le ].
-       split.
-       - revert args.
-         simpl Top.op at 1.
-         simpl CL_Algebra at 1.
-         set (coalg := fun x => Top.op Sort Signature.Var subsorts WellFormed Carrier s
-                                    (CL_CoAlgebra WellFormed WF_transport2 WF_dec CL_dec s x)).
-         simpl Top.op in coalg.
-         match goal with
-         | [|- _ = Top.op Sort Signature.Var subsorts WellFormed Carrier s (CL_CoAlgebra _ _ _ _ _ ?x) ] =>
-           set (alg := x)
-         end.
-         simpl in alg.
-         revert alg.
-         induction (arity).
-         + simpl in alg.
- *)
-
+  Lemma CL_AlgebraCoAlgebra_inv:
+    forall (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}),
+      forall s f, F_eq _ carrier_eq s f
+                  (CL_CoAlgebra CL_dec s (CL_Algebra s f)).
+  Proof.
+    intros CL_dec s f.
+    assert (op_eq:
+              op Carrier s f =
+              op Carrier s (CL_CoAlgebra CL_dec s (CL_Algebra s f))).
+    { destruct f as [ op subst WF_subst args tgt_le ].
+      rewrite (CL_CoAlgebra_op CL_dec).
+      rewrite <- CL_Algebra_op.
+      reflexivity. }
+    assert (arity_eq:
+              arity (op Carrier s f) =
+              arity (op Carrier s (CL_CoAlgebra CL_dec s (CL_Algebra s f)))).
+    { rewrite op_eq.
+      reflexivity. }    
+    assert (args_eq:
+      (rew arity_eq in ProjectTerms _ _ _ (args Carrier s f)) =
+      ProjectTerms _ _ _ (args Carrier s
+                               (CL_CoAlgebra CL_dec s (CL_Algebra s f)))).
+    { generalize (CL_CoAlgebra_args CL_dec s (CL_Algebra s f)).
+      intro args_prf.
+      rewrite (CL_Algebra_args) in args_prf.
+      revert args_prf arity_eq.
+      generalize (CL_CoAlgebra_arity CL_dec s (CL_Algebra s f)).
+      generalize (CL_Algebra_argCount s f).
+      generalize (ProjectTerms (subst Carrier s f) (arity (op Carrier s f))
+                               (domain (op Carrier s f)) (args Carrier s f)).
+      match goal with
+      | [|- _ -> _ -> _ -> rew _ in ?xs = _ -> _ ] =>
+        generalize xs
+      end.
+      rewrite op_eq.
+      intros xs ys eq1 eq2 xsys_eq arity_eq.
+      assert (xsys_eq': xs = ys).
+      { revert xsys_eq.
+        clear ...
+        unfold eq_rect_r.
+        rewrite (UIP_dec (Nat.eq_dec) eq2 (eq_sym eq1)).
+        rewrite <- (eq_sym eq1).
+        simpl.
+        intro; assumption. }
+      rewrite xsys_eq'.
+      rewrite (UIP_dec (Nat.eq_dec) arity_eq eq_refl).
+      reflexivity. }
+    split.
+    - assumption.
+    - revert args_eq.
+      generalize (args Carrier s (CL_CoAlgebra CL_dec s (CL_Algebra s f))).
+      revert op_eq arity_eq.
+      generalize (op Carrier s (CL_CoAlgebra CL_dec s (CL_Algebra s f))).
+      intros o op_eq.
+      rewrite <- op_eq.
+      intro arity_eq.
+      rewrite (UIP_dec (Nat.eq_dec) arity_eq eq_refl).
+      simpl.
+      clear arity_eq op_eq.
+      generalize (args Carrier s f).
+      generalize (domain (op Carrier s f)).
+      intro dom.
+      induction dom as [ | param n params IH ].
+      + intros; trivial.
+      + intros args args' terms_eq.
+        split.
+        * unfold carrier_eq.
+          unfold ProjectTerms in terms_eq.
+          simpl in terms_eq.
+          inversion terms_eq as [ term_eq ].
+          exact term_eq.
+        * apply IH.
+          unfold ProjectTerms.
+          unfold ProjectTerms in terms_eq.
+          simpl map in terms_eq.
+          rewrite <- (map_fg _ _ Fin.FS) in terms_eq.
+          rewrite <- (map_fg _ _ Fin.FS) in terms_eq.
+          inversion terms_eq as [ [ hd_eq tl_eq' ] ].
+          exact (vect_exist_eq _ _ tl_eq').
+  Qed.
+          
+  Lemma CL_CoAlgebraAlgebra_inv:
+    forall (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}),
+    forall s c, proj1_sig (CL_Algebra s (CL_CoAlgebra CL_dec s c)) = proj1_sig c.
+  Proof.
+    intros CL_dec s c.
+    match goal with
+    |[|- ?M' = _ ] => rewrite <- (applyAllSpec M')
+    end.
+    rewrite CL_Algebra_op.
+    rewrite CL_CoAlgebra_op.
+    rewrite CL_Algebra_args.
+    rewrite <- (applyAllSpec (proj1_sig c)).
+    rewrite <- (CL_CoAlgebra_args CL_dec s c).
+    rewrite applyAllRoot.
+    simpl.
+    unfold eq_rect_r.
+    match goal with
+    |[|- applyAll _ (rew ?eq1 in ?xs) = applyAll _ (rew ?eq2 in _) ] =>
+     generalize eq1 eq2 xs
+    end.
+    rewrite CL_Algebra_argCount.
+    intro eq1.
+    rewrite eq1.
+    simpl.
+    intro eq2.
+    rewrite <- eq2.
+    simpl.
+    intro; reflexivity.
+  Qed.    
+    
 End CombinatoryLogicAlgebra.
 
 
