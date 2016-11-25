@@ -240,5 +240,14 @@ Module Type Terms(Import TermSig: TermSignature).
              app_case M (fun arg inprf => applyAll_rec _ (argumentsOf_size _ _ inprf))
           )
           M.
+  Definition arguments_rect
+             (P: Term -> Type)
+             (app_case: forall M, (forall (arg: Term), In arg (argumentsOf M) -> P arg) -> P M)
+             (M: Term): P M :=
+    @Fix Term (fun (M N: Term) => sizeOf M < sizeOf N) (well_founded_ltof _ sizeOf) P
+          (fun (M: Term) (applyAll_rec: forall N, sizeOf N < sizeOf M -> P N) =>
+             app_case M (fun arg inprf => applyAll_rec _ (argumentsOf_size _ _ inprf))
+          )
+          M.
 End Terms.
   

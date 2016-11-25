@@ -3,6 +3,7 @@ Require Import VectorQuantification.
 Require Import Coq.Classes.RelationClasses.
 Require Import Coq.Logic.Eqdep_dec.
 Require Import Coq.Arith.PeanoNat.
+Require Import Coq.Arith.Wf_nat.
 
 Require Import CombinatoryLogic.
 Require Import ComputationalPathLemma.
@@ -10,6 +11,7 @@ Require Import IntersectionTypes.
 Require Import CombinatoryTerm.
 Require Import SigmaAlgebra.
 Require Import Cantor.
+Require Import VectorQuantification.
 
 Import EqNotations.
 
@@ -862,8 +864,82 @@ Module CombinatoryLogicAlgebra
     rewrite <- eq2.
     simpl.
     intro; reflexivity.
-  Qed.    
-    
+  Qed.
+
+  
+  Definition Translate (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False})
+             Carrier' (alg: SigmaAlgebra Carrier') s (c: Carrier s): Carrier' s.
+  Proof.
+    apply (fun rec => @Fix _ (fun (sc sc': { s : _ & Carrier s }) =>
+                                sizeOf (proj1_sig (projT2 sc)) < sizeOf (proj1_sig (projT2 sc')))
+                        (well_founded_ltof _ (fun x => sizeOf (proj1_sig (projT2 x)))) (fun x => Carrier' (projT1 x))
+                        rec (existT _ s c)).
+    clear s c.
+    intro sc.
+    destruct sc as [ s c ].
+    simpl.
+    intro IH.
+    apply alg.
+    generalize (CL_CoAlgebra_args CL_dec s c).
+    generalize (CL_CoAlgebra_arity CL_dec s c).
+    generalize (CL_CoAlgebra CL_dec s c).
+    revert IH.
+    destruct c as [ M Mprf ].
+    revert Mprf.
+    rewrite <- (applyAllSpec M).
+    intro Mprf.
+    destruct (argumentsOf M) as [ | arg n args ].
+    - simpl.
+      intro IH.
+      intros f eq _.
+      apply (fun args => mkF Carrier' s (op Carrier s f) (subst Carrier s f)
+                          (wf_subst Carrier s f) args (subsort Carrier s f)).
+      generalize (domain (op Carrier s f)).
+      rewrite eq.
+      intro args.
+      apply (fun r => case0 _ r args).
+      exact tt.
+    - intros IH f eq terms_eq.
+      apply (fun args => mkF Carrier' s (op Carrier s f) (subst Carrier s f)
+                          (wf_subst Carrier s f) args (subsort Carrier s f)).
+      apply nth_F_args.
+      intro k.
+      apply (IH (existT _ (applySubst (subst Carrier s f) (nth (domain (op Carrier s f)) k))
+                        (F_args_nth _ _ _ (Alg.args Carrier s f) k))).
+      revert eq terms_eq.
+      simpl.
+      rewrite (eq_refl : applyAll (App (Symbol (rootOf M)) arg) args =
+                         applyAll (Symbol (rootOf M)) (cons _ arg _ args)).
+      rewrite (applyAllArguments _ _ _).
+      simpl append.
+      generalize (applyAllArgumentCount (Symbol (rootOf M)) (S n) (cons Term arg n args)).
+      simpl argumentCount at 2.
+      unfold "_ + _".
+      intro eq.
+      rewrite eq.
+      unfold eq_rect_r.
+      simpl eq_rect.
+      intros arity_eq terms_eq.
+      rewrite <- terms_eq.
+      apply argumentsOf_size.
+      rewrite applyAllArguments.
+      simpl.
+      rewrite <- arity_eq.
+      simpl.
+      match goal with
+      |[|- In _ (rew <- ?prf in _)] => rewrite prf
+      end.
+      unfold eq_rect_r.
+      simpl.
+      match goal with
+      |[|- In _ ?xs] => generalize (nth_In xs k)
+      end.
+      unfold ProjectTerms at 1.
+      rewrite (nth_map _ _ _ k eq_refl).
+      rewrite positions_spec.
+      intro; assumption.
+  Defined.
+  
 End CombinatoryLogicAlgebra.
 
 
