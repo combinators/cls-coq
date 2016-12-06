@@ -237,11 +237,32 @@ Proof.
       * exact (MVar _ _ Fin.F1).
 Defined.
 
+Inductive TyTgt: Ty -> Ty -> Prop :=
+| TyTgt_refl: forall sigma, TyTgt sigma sigma
+| TyTgt_tgt: forall sigma tau rho, TyTgt tau rho -> TyTgt (Arrow sigma tau) rho.
+
+Inductive TySrc: Ty -> Ty -> Prop :=
+| TySrc_src: forall sigma tau, TySrc (Arrow sigma tau) sigma
+| TySrc_tgt: forall sigma tau rho, TySrc tau rho -> TySrc (Arrow sigma tau) rho.
+
+Fixpoint Ty_eq_dec (sigma tau: Ty): { sigma = tau } + { sigma <> tau }.
+Proof.
+  destruct sigma as [ n1 | sigma1 tau1 | sigma ];
+    destruct tau as [ n2 | sigma2 tau2 | tau ];
+    try solve [ right; intro devil; inversion devil ].
+  - destruct (Nat.eq_dec n1 n2) as [ eq | ]; [ | right; intro devil; inversion devil; contradiction ].
+    left; rewrite eq; reflexivity.
+  - destruct (Ty_eq_dec sigma1 sigma2) as [ eq1 | ]; [ | right; intro devil; inversion devil; contradiction ].
+    destruct (Ty_eq_dec tau1 tau2) as [ eq2 | ]; [ | right; intro devil; inversion devil; contradiction ].
+    left; rewrite eq1; rewrite eq2; reflexivity.
+  - destruct (Ty_eq_dec sigma tau) as [ eq | ]; [ | right; intro devil; inversion devil; contradiction ].
+    left; rewrite eq; reflexivity.
+Defined.
 
 Section ClosedImplementations.
   Context { EmptyContext : Fin.t 0 -> Ty }.
   Definition Implementations := list { ty : _ & LambdaBox EmptyContext EmptyContext (BoxTy ty) }.
-
+  
   Inductive TyConstr: Set :=
   | TyConstr_Const : nat -> TyConstr
   | TyConstr_Arrow : TyConstr
@@ -400,7 +421,148 @@ Section ClosedImplementations.
 
   Definition LambdaBoxCarrier: VLTree TyConstr EmptySet -> Type :=
     fun s => LambdaBox EmptyContext EmptyContext (sortToType s).    
+
+  Definition WF_alpha (impls: Implementations) :=
+    forall sigma, { impl : _ | List.In impl impls /\ TySrc (projT1 impl) sigma }.
+  Definition WF_beta (impls: Implementations) :=
+    forall sigma, { impl : _ | List.In impl impls /\ TyTgt (projT1 impl) sigma }.
+
+  Fixpoint src_count (sigma: Ty): nat :=
+    match sigma with
+    | Arrow _ tau => S (src_count tau)
+    | _ => 0
+    end.
   
+  Fixpoint src_toFin (sigma tau: Ty) (prf: TySrc sigma tau): Fin.t (src_count sigma).
+  Proof.
+    destruct sigma as [ | sigma tau' | ];
+      try solve [ assert False; [ inversion prf | contradiction ] ].
+    destruct (Ty_eq_dec sigma tau) as [ eq | ineq ].
+    - exact F1.
+    - apply FS.
+      apply (src_toFin tau' tau).
+      inversion prf; [ contradiction | assumption ].
+  Defined.
+
+  Fixpoint src_fromFin (sigma: Ty) (k: Fin.t (src_count sigma)): { tau : _ | TySrc sigma tau }.
+  Proof.
+    destruct sigma as [ | sigma tau | ];
+      try solve [ inversion k ].
+    simpl in k.
+    remember (S (src_count tau)) as n eqn:n_eq.
+    destruct k as [ | n' k ].
+    - exists sigma; apply TySrc_src.
+    - destruct (src_fromFin tau (rew (Nat.succ_inj _ _ n_eq) in k)) as [ tau' prf ].
+      exists tau'; apply TySrc_tgt; assumption.
+  Defined.
+
+  Lemma src_toFin_prf_indep: forall sigma tau prf prf', src_toFin sigma tau prf = src_toFin sigma tau prf'.
+  Proof.
+    intro sigma.
+    induction sigma as [ | sigma1 IHsigma1 tau1 IHtau1 | ];
+      intros tau prf prf';
+      try solve [ inversion prf ].
+    simpl.
+    destruct (Ty_eq_dec sigma1 tau).
+    - reflexivity.
+    - apply f_equal.
+      apply IHtau1.
+  Qed.
+
+  Lemma src_fromToFin_inj: forall sigma tau prf, proj1_sig (src_fromFin sigma (src_toFin sigma tau prf)) = tau.
+  Proof.
+    intro sigma.
+    induction sigma as [ | sigma1 IHsigma1 tau1 IHtau1 | ];
+      intros tau prf; try solve [ inversion prf ].
+    simpl.
+    destruct (Ty_eq_dec sigma1 tau) as [ eq | ineq ].
+    - simpl; assumption.
+    - inversion prf as [ | ? ? ? prf' ].
+      + contradiction.
+      + generalize (IHtau1 _ prf').
+        match goal with
+        |[|- _ -> proj1_sig (let (_, _) := src_fromFin _ (rew ?eq in src_toFin _ _ ?x) in _) = _] =>
+         rewrite (src_toFin_prf_indep tau1 tau x prf');
+           rewrite (UIP_dec (Nat.eq_dec) eq eq_refl)
+        end.
+        simpl.
+        destruct (src_fromFin tau1 (src_toFin tau1 tau prf')).
+        simpl.
+        intro; assumption.
+  Qed.
+
+  Fixpoint tgt_count (sigma: Ty): nat :=
+    match sigma with
+    | Arrow _ tau => S (tgt_count tau)
+    | _ => 1
+    end.
+  
+  Fixpoint tgt_toFin (sigma tau: Ty) (prf: TyTgt sigma tau): Fin.t (tgt_count sigma).
+  Proof.
+    destruct sigma as [ | sigma tau' | ];
+      [ exact F1 | | exact F1 ].
+    destruct (Ty_eq_dec (Arrow sigma tau') tau) as [ eq | ineq ].
+    - exact F1.
+    - apply FS.
+      apply (tgt_toFin tau' tau).
+      inversion prf; [ contradiction | assumption ].
+  Defined.
+
+  Fixpoint tgt_fromFin (sigma: Ty) (k: Fin.t (tgt_count sigma)): { tau : _ | TyTgt sigma tau }.
+  Proof.
+    destruct sigma as [ | sigma tau | ];
+      [ eexists; eapply TyTgt_refl | | eexists; eapply TyTgt_refl ].
+    simpl in k.
+    remember (S (tgt_count tau)) as n eqn:n_eq.
+    destruct k as [ | n' k ].
+    - eexists; eapply TyTgt_refl.
+    - destruct (tgt_fromFin tau (rew (Nat.succ_inj _ _ n_eq) in k)) as [ tau' prf ].
+      eexists; eapply TyTgt_tgt; eassumption.
+  Defined.
+
+  Lemma tgt_toFin_prf_indep: forall sigma tau prf prf', tgt_toFin sigma tau prf = tgt_toFin sigma tau prf'.
+  Proof.
+    intro sigma.
+    induction sigma as [ | sigma1 IHsigma1 tau1 IHtau1 | ];
+      intros tau prf prf';
+      [ reflexivity | | reflexivity ].
+    unfold tgt_toFin.
+    destruct (Ty_eq_dec (Arrow sigma1 tau1) tau).
+    - reflexivity.
+    - apply f_equal.
+      apply IHtau1.
+  Qed.
+
+  Lemma tgt_fromToFin_inj: forall sigma tau prf, proj1_sig (tgt_fromFin sigma (tgt_toFin sigma tau prf)) = tau.
+  Proof.
+    intro sigma.
+    induction sigma as [ | sigma1 IHsigma1 tau1 IHtau1 | ];
+      intros tau prf; [ simpl; inversion prf; reflexivity | | simpl; inversion prf; reflexivity ].
+    unfold tgt_toFin.
+    destruct (Ty_eq_dec (Arrow sigma1 tau1) tau) as [ eq | ineq ].
+    - simpl; assumption.
+    - inversion prf as [ | ? ? ? prf' ].
+      + contradiction.
+      + simpl.
+        generalize (IHtau1 _ prf').
+        match goal with
+        |[|- _ -> proj1_sig (let (_, _) := tgt_fromFin _ (rew ?eq in ?f _ _ ?z) in _) = _] =>
+         generalize (tgt_toFin_prf_indep tau1 tau z prf');
+           intro eqprf;
+           unfold tgt_toFin in eqprf;
+           simpl in eqprf;
+           rewrite eqprf;
+           clear eqprf;
+           rewrite (UIP_dec (Nat.eq_dec) eq eq_refl);
+           unfold tgt_toFin;
+           simpl;
+           destruct (tgt_fromFin tau1 (f tau1 tau prf'))
+        end.
+        intro; assumption.
+  Qed.
+
+  
+    
 End ClosedImplementations.
 
 Module Type LambdaBoxOpsSpec.
