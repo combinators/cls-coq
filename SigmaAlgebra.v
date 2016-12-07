@@ -1,9 +1,10 @@
 Require Import Coq.Vectors.Vector.
-Require Import VectorQuantification.
 Require Import Coq.Classes.RelationClasses.
 Require Import Coq.Logic.Eqdep_dec.
 Require Import Coq.Arith.PeanoNat.
 
+Require Import VectorQuantification.
+Require Import DependentFixpoint.
 
 Import EqNotations.
 
@@ -226,7 +227,7 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
        | cons _ x _ xs => fun args => (f (applySubst S x) (fst args), fmap_args_rec _ xs (snd args))
        end) _ argSorts.
 
-  Proposition F_hom C C' (f : forall s, C s -> C' s): forall s, F C s -> F C' s.
+  Definition F_hom C C' (f : forall s, C s -> C' s): forall s, F C s -> F C' s.
   Proof.
     intros s x.
     destruct x.
@@ -234,6 +235,142 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
     - eassumption.
     - eapply fmap_args; eassumption.
     - eassumption.
-  Qed.
+  Defined.
+
+  Section AlgebraFixpoint.
+    Variable C: Sort EmptySet -> Type.
+    Variable C': Sort EmptySet -> Type.
+    Variable coAlg: SigmaCoAlgebra C.
+    Variable alg: SigmaAlgebra C'.
+    
+    Variable A: Type.
+    Variable R: A -> A -> Prop.
+    Hypothesis R_wf: well_founded R.
+
+    Variable measure: forall s, C s -> A.
+
+    Fixpoint argsDec s (c: C s) S {n: nat}
+             (params: t (Sort SigSpec.Var) n) (args: F_args C S params) {struct params}: Prop :=
+      match params as params' return (F_args C S params' -> Prop) with
+      | nil _ => fun _ => True
+      | cons _ p _ ps =>
+        fun args =>
+          R (measure _ (fst args)) (measure s c) /\ argsDec s c S ps (snd args)
+      end args.
+
+    Hypothesis coAlg_decreasing:
+      forall s (c: C s),
+        argsDec s c (subst _ _ (coAlg s c)) (domain (op _ _ (coAlg s c))) (args _ _ (coAlg s c)).
+
+    Fixpoint fmap_args_dec
+               (S: SigSpec.Var -> Sort EmptySet) {n} (params: t (Sort SigSpec.Var) n)
+               s (c: C s)
+               (f: forall s' (c': C s'), R (measure s' c') (measure s c) -> C' s')
+               (args: F_args C S params)
+               (dec: argsDec s c S params args) {struct params}: F_args C' S params :=
+      match params as params'
+            return (forall (args: F_args C S params'), argsDec s c S params' args -> F_args C' S params') with
+      | nil _ => fun _ _ => tt
+      | cons _ p _ ps =>
+        fun args dec => (f _ (fst args) (proj1 dec), fmap_args_dec S ps s c f (snd args) (proj2 dec))
+      end args dec.
+        
+    Definition canonical_morphism: forall s, C s -> C' s.
+    Proof.
+      intros s c.
+      apply (fun r => DepFix A R R_wf (Sort EmptySet) C (fun s _ => C' s) measure r s c).
+      clear s c.
+      intros s c morphism_rec.
+      apply alg.
+      apply (mkF _ _ (op _ _ (coAlg s c)) (subst _ _ (coAlg s c))
+                 (wf_subst _ _ (coAlg s c))
+                 (fmap_args_dec (subst _ _ (coAlg s c)) (domain (op _ _ (coAlg s c)))
+                                s c morphism_rec (args _ _ (coAlg s c)) (coAlg_decreasing s c))
+                 (subsort _ _ (coAlg s c))).
+    Defined.
+
+    Lemma canonical_morphism_commutes:
+      forall s (c: C s), canonical_morphism s c = alg s (F_hom C C' canonical_morphism s (coAlg s c)).
+    Proof.
+      intros s c.
+      unfold canonical_morphism.
+      unfold DepFix.
+      unfold Fix_F.
+      unfold F_hom.
+      destruct (R_wf (measure s c)) as [ prf' ].
+      apply f_equal.
+      generalize (coAlg_decreasing s c).
+      destruct (coAlg s c) as [ op S WF_s args subsorts ].
+      intro decprf.
+      simpl.
+      match goal with
+      |[|- {| op := _; subst := _; wf_subst := _; args := ?args1; subsort := _ |} =
+          {| op := _; subst := _; wf_subst := _; args := ?args2; subsort := _ |} ] =>
+       assert (args_eq: args1 = args2); [ | rewrite args_eq; reflexivity ]
+      end.
+      revert decprf.
+      simpl.
+      revert args.
+      generalize (domain op).
+      intro dom.
+      induction dom as [ | param n params IH ];
+        intros args decprf.
+      - simpl.
+        destruct args.
+        reflexivity.
+      - simpl.
+        rewrite (IH (snd args) (proj2 decprf)).
+        match goal with
+        |[|- (?x, _) = (?y, _)] =>
+         assert (fst_eq: x = y); [ | rewrite fst_eq; reflexivity ]
+        end.
+        set (inner_fix:=
+               Fix_F A R _ C (fun s _ => C' s) measure
+                     (fun t x rec =>
+                        alg t
+                            {| op := Algebraic.op C t (coAlg t x);
+                               subst := subst C t (coAlg t x);
+                               wf_subst := wf_subst C t (coAlg t x);
+                               args := fmap_args_dec (subst C t (coAlg t x))
+                                                     (domain (Algebraic.op C t (coAlg t x))) t x
+                                                     (fun (t' : Sort EmptySet) (y : C t')
+                                                        (h : R (measure t' y) (measure t x)) =>
+                                                        rec t' y h)
+                                                     (Algebraic.args C t (coAlg t x))
+                                                     (coAlg_decreasing t x);
+                               subsort := subsort C t (coAlg t x) |})).
+        match goal with
+        | [|- _ ?p1 ?arg1 ?dec1 = _ ?p2 ?arg2 ?dec2 ] =>
+          assert (fix_eq: inner_fix p1 arg1 dec1 = inner_fix p2 arg2 dec2);
+            [ apply (fun r => Fix_F_inv A R _ C (fun s _ => C' s) measure
+                                     _ r p1 arg1 dec1 dec2)
+            | exact fix_eq ]
+        end.
+        clear ...
+        intros s c g g' gg'_eq.
+        apply f_equal.
+        match goal with
+        |[|- {| op := _; subst := _; wf_subst := _; args := ?args1; subsort := _ |} =
+            {| op := _; subst := _; wf_subst := _; args := ?args2; subsort := _ |} ] =>
+         assert (args_eq: args1 = args2); [ | rewrite args_eq; reflexivity ]
+        end.
+        generalize (coAlg_decreasing s c).
+        destruct (coAlg s c) as [ op S WF_S args subsorts ].
+        simpl.
+        revert args.
+        generalize (domain op).
+        generalize (arity op).
+        intros n dom.
+        induction dom as [ | param n params IH ]; intros args dec.
+        + reflexivity.
+        + simpl.
+          rewrite gg'_eq.
+          rewrite (IH (snd args) (proj2 dec)).
+          reflexivity.
+    Qed.
+        
+  End AlgebraFixpoint.
+
+    
 End Algebraic.
 

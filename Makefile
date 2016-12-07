@@ -104,6 +104,7 @@ VFILES:=VectorQuantification.v\
   ConstructiveExtensionalEpsilon.v\
   ComputationalPathLemma.v\
   FiniteSubstitutionSpace.v\
+  DependentFixpoint.v\
   SigmaAlgebra.v\
   CombinatoryLogicAlgebra.v\
   DisjointContexts.v\
