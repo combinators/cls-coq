@@ -259,9 +259,25 @@ Proof.
     left; rewrite eq; reflexivity.
 Defined.
 
+Fixpoint L1Type (sigma: Ty): Prop :=
+  match sigma with
+  | Const _ => True
+  | Arrow sigma tau => L1Type sigma /\ L1Type tau
+  | _ => False
+  end.
+
+Fixpoint L2Type (sigma: Ty): Prop :=
+  match sigma with
+  | BoxTy sigma => L1Type sigma
+  | Arrow sigma tau => L2Type sigma /\ L2Type tau
+  | _ => False
+  end.
+
 Section ClosedImplementations.
   Context { EmptyContext : Fin.t 0 -> Ty }.
-  Definition Implementations := list { ty : _ & LambdaBox EmptyContext EmptyContext (BoxTy ty) }.
+  Inductive Implementation : Set :=
+  | Impl : forall ty, L2Type ty -> LambdaBox EmptyContext EmptyContext ty -> Implementation.                                     
+  Definition Implementations := list Implementation.
   
   Inductive TyConstr: Set :=
   | TyConstr_Const : nat -> TyConstr
@@ -391,7 +407,7 @@ Section ClosedImplementations.
        range :=
          fun op =>
            match op with
-           | TermOp _ impl _ => typeToSort (BoxTy (projT1 impl)) SigVar
+           | TermOp _ (Impl ty _ _) _ => typeToSort ty SigVar
            | ApplyOp _ => applyRange
            | MApplyOp _ => mapplyRange
            end |}.
@@ -420,12 +436,17 @@ Section ClosedImplementations.
   Qed.
 
   Definition LambdaBoxCarrier: VLTree TyConstr EmptySet -> Type :=
-    fun s => LambdaBox EmptyContext EmptyContext (sortToType s).    
+    fun s => LambdaBox EmptyContext EmptyContext (sortToType s).
 
-  Definition WF_alpha (impls: Implementations) :=
-    forall sigma, { impl : _ | List.In impl impls /\ TySrc (projT1 impl) sigma }.
-  Definition WF_beta (impls: Implementations) :=
-    forall sigma, { impl : _ | List.In impl impls /\ TyTgt (projT1 impl) sigma }.
+  (* Possible TODO: Completeness proof
+  Definition WF_alpha (impls: Implementations): Ty -> Prop :=
+    fun sigma => List.Exists (fun impl => match impl with | Impl sigma' _ _ => TySrc sigma' sigma end) impls.
+  Definition WF_beta (impls: Implementations): Ty -> Prop :=
+    fun sigma => List.Exists (fun impl => match impl with | Impl sigma' _ _ => TyTgt sigma' sigma end) impls.
+
+  Lemma WF_alpha_dec: forall (impls: Implementations) (sigma: Ty),
+      { WF_alpha impls sigma } + { WF_alpha impls sigma -> False }.
+    
 
   Fixpoint src_count (sigma: Ty): nat :=
     match sigma with
@@ -561,7 +582,7 @@ Section ClosedImplementations.
         intro; assumption.
   Qed.
 
-  
+  *)
     
 End ClosedImplementations.
 
