@@ -237,6 +237,39 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
     - eassumption.
   Defined.
 
+  Lemma F_hom_eq:
+    forall C C' (g : forall s, C s -> C' s)
+      (carrier_eq: forall s s', C s -> C s' -> Prop)
+      (carrier'_eq: forall s s', C' s -> C' s' -> Prop)
+      (g_compat: forall s s' (c: C s) (c': C s'), carrier_eq s s' c c' -> carrier'_eq s s' (g s c) (g s' c'))
+      s f f',
+      F_eq _ carrier_eq s f f' -> F_eq _ carrier'_eq s (F_hom C C' g s f) (F_hom C C' g s f').
+  Proof.
+    intros C C' g carrier_eq carrier'_eq g_compat s f.
+    destruct f as [ op S WF_S args subsorts ].
+    destruct f' as [ op' S' WF_S' args' subsorts' ].
+    unfold F_hom.
+    unfold F_eq.
+    simpl.
+    intro eq.
+    destruct eq as [ op_eq args_eq ].
+    split.
+    - exact op_eq.
+    - revert g_compat args args' args_eq.
+      clear subsorts subsorts'.
+      rewrite <- op_eq.
+      clear ...
+      intro g_compat.
+      generalize (domain op).
+      generalize (arity op).
+      intros n params.
+      induction params as [ | param n params IH ];
+        intros args args' args_eq.
+      + trivial.
+      + split;
+          [ apply g_compat; exact (proj1 args_eq) | apply IH; exact (proj2 args_eq) ].
+  Qed.     
+    
   Section AlgebraFixpoint.
     Variable C: Sort EmptySet -> Type.
     Variable C': Sort EmptySet -> Type.
@@ -368,6 +401,121 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
           rewrite (IH (snd args) (proj2 dec)).
           reflexivity.
     Qed.
+
+    
+    Section HomomorphismModulo.
+      Variable alg': SigmaAlgebra C.
+      
+      Variable C_eq: forall s s', C s -> C s' -> Prop.
+      Variable C'_eq: forall s s', C' s -> C' s' -> Prop.
+      Hypothesis C_eq_refl: forall s c, C_eq s s c c.
+      Hypothesis C'_eq_refl: forall s c, C'_eq s s c c.
+      Hypothesis C_eq_sym: forall s s' c c', C_eq s s' c c' -> C_eq s' s c' c.
+      Hypothesis C'_eq_sym: forall s s' c c', C'_eq s s' c c' -> C'_eq s' s c' c.
+      Hypothesis C_eq_trans: forall s s' s'' x y z, C_eq s s' x y -> C_eq s' s'' y z -> C_eq s s'' x z.
+      Hypothesis C'_eq_trans: forall s s' s'' x y z, C'_eq s s' x y -> C'_eq s' s'' y z -> C'_eq s s'' x z.
+
+      Hypothesis alg'_compat: forall s f f', F_eq C C_eq s f f' -> C_eq s s (alg' s f) (alg' s f').
+      Hypothesis alg_compat: forall s f f', F_eq C' C'_eq s f f' -> C'_eq s s (alg s f) (alg s f').
+
+      Hypothesis coalg_alg_inv: forall s f, F_eq C C_eq s (coAlg s (alg' s f)) f.
+      (* Work in progress 
+      Lemma canonical_morphism_alg_homo:
+        forall s f, C'_eq s s (canonical_morphism s (alg' s f)) (alg s (F_hom C C' canonical_morphism s f)).
+      Proof.
+        intros s f.
+        rewrite canonical_morphism_commutes.
+        apply alg_compat.
+        unfold F_hom.
+        apply (F_hom_eq _ _ _ C_eq C'_eq); [ | apply coalg_alg_inv ].
+        clear s f.
+        intros s s' c.
+        revert s'.
+        unfold canonical_morphism at 1.
+        unfold DepFix.
+        generalize 
+        match goal with
+        | [|- forall s' c', C_eq s s' c c' -> C'_eq s s' (?f s c ?acc) ?g ] =>
+          apply (fun r => Fix_F A R (Sort EmptySet) C (fun s c => forall s' c', C_eq s s' c c' -> C'_eq s s' (f s c acc) g)
+                             measure r s c acc)
+        end.
+        
+        
+        
+        unfold canonical_morphism.
+        unfold DepFix.
+        unfold Fix_F.
+        unfold F_hom.
+        generalize (coalg_alg_inv s f).
+        destruct (coAlg s (alg' s f)) as [ op' S' WF_S' args' subsorts' ].
+        destruct f as [ op S WF_S args subsorts ].
+        unfold F_eq.
+        intro eq.
+        simpl in eq.
+        destruct eq as [ op_eq args_eq ].
+        split.
+        - exact op_eq.
+        - revert args args' args_eq subsorts subsorts'.
+          rewrite op_eq.
+          simpl.
+          generalize (domain op).
+          generalize (arity op).
+          intros n params.
+          induction params as [ | param n params IH ].
+          + intros; trivial.
+          + 
+          intros args args' args_eq subsorts subsorts'.
+          simpl.
+          
+          
+           set (inner_fix:=
+               Fix_F A R _ C (fun s _ => C' s) measure
+                     (fun t x rec =>
+                        alg t
+                            {| op := Algebraic.op C t (coAlg t x);
+                               subst := subst C t (coAlg t x);
+                               wf_subst := wf_subst C t (coAlg t x);
+                               args := fmap_args_dec (subst C t (coAlg t x))
+                                                     (domain (Algebraic.op C t (coAlg t x))) t x
+                                                     (fun (t' : Sort EmptySet) (y : C t')
+                                                        (h : R (measure t' y) (measure t x)) =>
+                                                        rec t' y h)
+                                                     (Algebraic.args C t (coAlg t x))
+                                                     (coAlg_decreasing t x);
+                               subsort := subsort C t (coAlg t x) |})).
+        match goal with
+        | [|- _ ?p1 ?arg1 ?dec1 = _ ?p2 ?arg2 ?dec2 ] =>
+          assert (fix_eq: inner_fix p1 arg1 dec1 = inner_fix p2 arg2 dec2);
+            [ apply (fun r => Fix_F_inv A R _ C (fun s _ => C' s) measure
+                                     _ r p1 arg1 dec1 dec2)
+            | exact fix_eq ]
+        end.
+          
+        
+        
+        destruct (R_wf (measure s c)) as [ prf' ].
+      apply f_equal.
+      generalize (coAlg_decreasing s c).
+      destruct (coAlg s c) as [ op S WF_s args subsorts ].
+      intro decprf.
+      simpl.
+      match goal with
+      |[|- {| op := _; subst := _; wf_subst := _; args := ?args1; subsort := _ |} =
+          {| op := _; subst := _; wf_subst := _; args := ?args2; subsort := _ |} ] =>
+       assert (args_eq: args1 = args2); [ | rewrite args_eq; reflexivity ]
+      end.
+        
+        unfold canonical_morphism.
+        
+
+        s (c: F C s),
+        
+
+
+        canonical_morphism s c = alg s (F_hom C C' canonical_morphism s (coAlg s c)).
+
+       *)
+    End HomomorphismModulo.
         
   End AlgebraFixpoint.
 

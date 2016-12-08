@@ -867,980 +867,367 @@ Module CombinatoryLogicAlgebra
   Qed.
 
   
-  Definition Translate (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False})
-             Carrier' (alg: SigmaAlgebra Carrier') s (c: Carrier s): Carrier' s.
+  Lemma CL_CoAlgebra_smaller_nth (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}):
+    forall s c k,
+      sizeOf (nth (ProjectTerms _ _ _ (args _ s (CL_CoAlgebra CL_dec s c))) k) <
+      sizeOf (proj1_sig c).
   Proof.
-    apply (fun rec => @Fix _ (fun (sc sc': { s : _ & Carrier s }) =>
-                                sizeOf (proj1_sig (projT2 sc)) < sizeOf (proj1_sig (projT2 sc')))
-                        (well_founded_ltof _ (fun x => sizeOf (proj1_sig (projT2 x)))) (fun x => Carrier' (projT1 x))
-                        rec (existT _ s c)).
-    clear s c.
-    intro sc.
-    destruct sc as [ s c ].
+    intros s c k.
+    assert (args_eq: (rew <- CL_CoAlgebra_arity CL_dec s c in argumentsOf (proj1_sig c)) =
+            ProjectTerms _ _ _ (args _ s (CL_CoAlgebra CL_dec s c))).
+    { generalize (CL_CoAlgebra_args CL_dec s c).
+      intro prf.
+      rewrite <- prf.
+      rewrite rew_opp_l.
+      reflexivity. }
+    rewrite <- args_eq.
+    apply argumentsOf_size.
+    unfold eq_rect_r.
+    rewrite nth_k.
+    apply nth_In.
+  Qed.
+  
+  Lemma CL_CoAlgebra_smaller (CL_dec : forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}):
+    forall (s : Sort EmptySet) (c : Carrier s),
+      argsDec Carrier Term (ltof Term sizeOf) (fun _ c => proj1_sig c) s c
+              (subst Carrier s (CL_CoAlgebra CL_dec s c))
+              (domain (op Carrier s (CL_CoAlgebra CL_dec s c)))
+              (args Carrier s (CL_CoAlgebra CL_dec s c)).
+  Proof.
+    intros s c.
+    generalize (CL_CoAlgebra_smaller_nth CL_dec s c).
+    destruct (CL_CoAlgebra CL_dec s c) as [ op S WF_S args subsorts ].
     simpl.
-    intro IH.
-    apply alg.
-    generalize (CL_CoAlgebra_args CL_dec s c).
-    generalize (CL_CoAlgebra_arity CL_dec s c).
-    generalize (CL_CoAlgebra CL_dec s c).
-    revert IH.
-    destruct c as [ M Mprf ].
-    revert Mprf.
-    rewrite <- (applyAllSpec M).
-    intro Mprf.
-    destruct (argumentsOf M) as [ | arg n args ].
-    - simpl.
-      intro IH.
-      intros f eq _.
-      apply (fun args => mkF Carrier' s (op Carrier s f) (subst Carrier s f)
-                          (wf_subst Carrier s f) args (subsort Carrier s f)).
-      generalize (domain (op Carrier s f)).
-      rewrite eq.
-      intro args.
-      apply (fun r => case0 _ r args).
-      exact tt.
-    - intros IH f eq terms_eq.
-      apply (fun args => mkF Carrier' s (op Carrier s f) (subst Carrier s f)
-                          (wf_subst Carrier s f) args (subsort Carrier s f)).
-      apply nth_F_args.
-      intro k.
-      apply (IH (existT _ (applySubst (subst Carrier s f) (nth (domain (op Carrier s f)) k))
-                        (F_args_nth _ _ _ (Alg.args Carrier s f) k))).
-      revert eq terms_eq.
-      simpl.
-      rewrite (eq_refl : applyAll (App (Symbol (rootOf M)) arg) args =
-                         applyAll (Symbol (rootOf M)) (cons _ arg _ args)).
-      rewrite (applyAllArguments _ _ _).
-      simpl append.
-      generalize (applyAllArgumentCount (Symbol (rootOf M)) (S n) (cons Term arg n args)).
-      simpl argumentCount at 2.
-      unfold "_ + _".
-      intro eq.
-      rewrite eq.
-      unfold eq_rect_r.
-      simpl eq_rect.
-      intros arity_eq terms_eq.
-      rewrite <- terms_eq.
-      apply argumentsOf_size.
-      rewrite applyAllArguments.
-      simpl.
-      rewrite <- arity_eq.
-      simpl.
-      match goal with
-      |[|- In _ (rew <- ?prf in _)] => rewrite prf
-      end.
-      unfold eq_rect_r.
-      simpl.
-      match goal with
-      |[|- In _ ?xs] => generalize (nth_In xs k)
-      end.
-      unfold ProjectTerms at 1.
-      rewrite (nth_map _ _ _ k eq_refl).
-      rewrite positions_spec.
-      intro; assumption.
-  Defined.
-  
-End CombinatoryLogicAlgebra.
-
-
-
-
-
-(* Grave yard
-
-Module Type ProtectedSymbols(SigSpec: CompatibleCLSignature) <: CompatibleCLSignature.
-  Definition Sort: Set -> Set := SigSpec.Sort.
-  Definition Var: Set := SigSpec.Var.
-  Definition Operation: Set := SigSpec.Operation.
-  Definition WellFormed := SigSpec.WellFormed.
-  Instance SigSpec: SignatureSpecification Sort Var Operation := SigSpec.SigSpec.
-
-  Definition BlackBox := unit.
-  Definition blackBox := @inl unit SigSpec.ConstructorSymbol tt.
-
-  Definition ConstructorSymbol := (BlackBox + SigSpec.ConstructorSymbol)%type.
-  Definition VariableSymbol: Set := Var.
-  Definition VariableSymbol_eq_dec := Var_eq_dec.
-  Definition CombinatorSymbol: Set := Operation.
-
-  Module Impl.
-    Definition constructorArity (symbol: ConstructorSymbol): nat :=
-      match symbol with
-      | inl _ => 1
-      | inr sym => constructorArity sym
-      end.
-    Hint Unfold constructorArity.
-
-    Definition ConstructorTaxonomy (c1 c2 : ConstructorSymbol): Prop :=
-      match c1 with
-      | inl _ =>
-        match c2 with
-        | inl _ => True
-        | _ => False
-        end
-      | inr c1' =>
-        match c2 with
-        | inr c2' => ConstructorTaxonomy c1' c2'
-      | _ => False
-        end
-      end.
-    Lemma CTPreorder : PreOrder ConstructorTaxonomy.
-    Proof.
+    revert args.
+    generalize (domain op).
+    generalize (arity op).
+    intros n dom.
+    induction dom as [ | param n params IH ].
+    - intros; simpl; trivial.
+    - intros args size_prf.
       split.
-      - unfold Reflexive.
-        intro x.
-        destruct x.
-        + exact I.
-        + apply CTPreorder.
-      - unfold Transitive.
-        intros x y z ctxy ctyz.
-        destruct x;
-          destruct y;
-          try solve [ inversion ctxy ];
-          destruct z;
-          try solve [ inversion ctyz ];
-          solve [ exact I | eapply CTPreorder; eassumption ].
-    Qed.
-    Lemma ConstructorSymbol_eq_dec (c1 c2: ConstructorSymbol): {c1 = c2} + {c1 <> c2}.
-    Proof.
-      destruct c1 as [ box1 | c1 ]; destruct c2 as [ box2 | c2 ];
-        try solve [ right; intro devil; inversion devil ].
-      - destruct box1; destruct box2; left; reflexivity.
-      - destruct (ConstructorSymbol_eq_dec c1 c2).
-        + left; apply f_equal; assumption.
-        + right; intro devil; inversion devil; contradiction.
-    Qed.
-    Lemma ConstructorTaxonomy_dec (c1 c2: ConstructorSymbol):
-      { ConstructorTaxonomy c1 c2 } + { ConstructorTaxonomy c1 c2 -> False }.
-    Proof.
-      destruct c1; destruct c2;
-        try solve [ left; exact I | right; intro devil; inversion devil ].
-      apply ConstructorTaxonomy_dec.
-    Qed.
-
-    Definition toNat (x: ConstructorSymbol) :=
-      cantor_sum (match x with
-                  | inl _ => inl 1
-                  | inr x => inr (@toNat _ SigSpec.ConstructorSymbol_countable x)
-                  end).
-    Definition fromNat (x: nat): ConstructorSymbol :=
-      match cantor_sum_inv x with
-      | inl _ => inl tt
-      | inr x => inr (@fromNat _ SigSpec.ConstructorSymbol_countable x)
-      end.
-    Lemma fromTo_id: forall (x: ConstructorSymbol), fromNat (toNat x) = x.
-    Proof.
-      intro x.
-      unfold fromNat.
-      unfold toNat.
-      rewrite cantor_sum_inj.
-      destruct x as [ []  | ].
-      - reflexivity.
-      - rewrite (@fromTo_id _ SigSpec.ConstructorSymbol_countable).
-        reflexivity.
-    Qed.
-  End Impl.
-  
-  Instance Symbols : ConstructorSpecification ConstructorSymbol :=
-    {| constructorArity := Impl.constructorArity;
-       ConstructorTaxonomy := Impl.ConstructorTaxonomy;
-       CTPreorder := Impl.CTPreorder;
-       ConstructorSymbol_eq_dec := Impl.ConstructorSymbol_eq_dec;
-       ConstructorTaxonomy_dec := Impl.ConstructorTaxonomy_dec |}.
-
-  Instance Variables_finite: Finite VariableSymbol := SigSpec.Variables_finite.  
-  Instance ConstructorSymbol_countable: Countable ConstructorSymbol :=
-    {| toNat := Impl.toNat; 
-       fromNat := Impl.fromNat;
-       fromTo_id := Impl.fromTo_id |}.
-  Definition ClosedSortsInhabited := SigSpec.ClosedSortsInhabited.
-  Definition OpenSortsInhabited := SigSpec.OpenSortsInhabited.
-End ProtectedSymbols.
-
-Module LiftProperEmbedding
-       (SigSpec: CompatibleCLSignature)
-       (Types: IntersectionTypes(SigSpec))
-       (UnprotectedEmbedding: WithProperEmbedding(SigSpec)(Types)).
-  Module ProtectedSigSpec: ProtectedSymbols(SigSpec).
-    Include ProtectedSymbols(SigSpec).
-  End ProtectedSigSpec.
-  Module ProtectedTypes: IntersectionTypes(ProtectedSigSpec).
-    Include IntersectionTypes.IntersectionTypes(ProtectedSigSpec).
-  End ProtectedTypes.
-  
-  Module LiftedEmbedding: WithProperEmbedding(ProtectedSigSpec)(ProtectedTypes).
-    Module Embedding: SortEmbedding(ProtectedSigSpec)(ProtectedTypes).
-      Include SortEmbedding(ProtectedSigSpec)(ProtectedTypes).
-    End Embedding.
-    Export Embedding.
-    Module EmbeddingImpl.
-      Import ProtectedSigSpec.
-      Import ProtectedTypes.
-      Fixpoint liftScheme {A: Set}
-                 (scheme: Types.TypeScheme (VariableSymbol := A)): TypeScheme (VariableSymbol := A) :=
-        match scheme with
-        | Types.Var alpha => Var alpha
-        | Types.Skeleton (Types.PT_omega) => Skeleton (PT_omega)
-        | Types.Skeleton (Types.PT_Const C args) =>
-          Skeleton (PT_Const (inr C) (map liftScheme args))
-        | Types.Skeleton (Types.PT_Arrow sigma tau) =>
-          Skeleton (PT_Arrow (liftScheme sigma) (liftScheme tau))
-        | Types.Skeleton (Types.PT_Inter sigma tau) =>
-          Skeleton (PT_Inter (liftScheme sigma) (liftScheme tau))
-        end.
-      
-      Fixpoint unliftScheme {A: Set}
-               (scheme: TypeScheme (VariableSymbol := A)): option (Types.TypeScheme (VariableSymbol := A)) :=
-        match scheme with
-        | Var alpha => Some (Types.Var alpha)
-        | Skeleton (PT_omega) => Some (Types.Skeleton (Types.PT_omega))
-        | Skeleton (PT_Const (inr C) args)  =>
-          match (fix unliftArgs n (args: t TypeScheme n): option (t Types.TypeScheme n) :=
-                   match args with
-                   | cons _ arg _ args =>
-                     match unliftScheme arg with
-                     | Some arg =>
-                       match unliftArgs _ args with
-                       | Some args => Some (cons _ arg _ args)
-                       | None => None
-                       end
-                     | None => None
-                     end
-                   | nil _ => Some (nil _)
-                   end) _ args with
-          | Some args => Some (Types.Skeleton (Types.PT_Const C args))
-          | None => None
-          end
-        | Skeleton (PT_Const (inl _) _) => None
-        | Skeleton (PT_Arrow sigma tau) =>
-          match unliftScheme sigma with
-          | Some sigma =>
-            match unliftScheme tau with
-            | Some tau => Some (Types.Skeleton (Types.PT_Arrow sigma tau))
-            | None => None
-            end
-          | None => None
-          end
-        | Skeleton (PT_Inter sigma tau) =>
-          match unliftScheme sigma with
-          | Some sigma =>
-            match unliftScheme tau with
-            | Some tau => Some (Types.Skeleton (Types.PT_Inter sigma tau))
-            | None => None
-            end
-          | None => None
-          end
-        end.
-      
-      Lemma unliftLift: forall {A: Set} (scheme: Types.TypeScheme (VariableSymbol := A)),
-          unliftScheme (liftScheme scheme) = Some scheme.
-      Proof.
-        intros A scheme.
-        induction scheme
-          as [ | | C args IH | ? ? IHsigma IHtau | ? ? IHsigma IHtau ]
-               using Types.TypeScheme_rect';
-          try solve [ reflexivity | simpl; rewrite IHsigma; rewrite IHtau; reflexivity ].
+      + exact (size_prf Fin.F1).
+      + apply IH.
+        intro k.
+        generalize (size_prf (Fin.FS k)).
         simpl.
+        rewrite <- (map_fg _ _ (Fin.FS)).
+        intro; assumption.        
+  Qed.
+
+  Definition CL_Algebra_morphism (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False})
+             Carrier' (alg: SigmaAlgebra Carrier') s (c: Carrier s): Carrier' s :=
+    canonical_morphism Carrier Carrier'
+                       (CL_CoAlgebra CL_dec) alg
+                       Term _ (well_founded_ltof _ sizeOf) (fun _ c => proj1_sig c)
+                       (CL_CoAlgebra_smaller CL_dec) s c.
+  
+  Lemma F_eq_compat_alg: forall s f f', F_eq _ carrier_eq s f f' -> carrier_eq s s (CL_Algebra s f) (CL_Algebra s f').
+  Proof.
+    intros s f f'.   
+    destruct f as [ x S WF_S args subsort ].
+    destruct f' as [ x' S' WF_S' args' subsort' ].
+    intro f_eq.
+    unfold carrier_eq.
+    match goal with
+    |[|- ?x = ?y] =>
+     rewrite <- (applyAllSpec x);
+       rewrite <- (applyAllSpec y)
+    end.
+    rewrite (CL_Algebra_op).
+    rewrite (CL_Algebra_op).
+    rewrite (CL_Algebra_args).
+    rewrite (CL_Algebra_args).
+    simpl.
+    match goal with
+    |[|- applyAll _ (rew <- ?p in _) = applyAll _ (rew <- ?p' in _) ] =>
+     rewrite p; rewrite p'
+    end.
+    unfold eq_rect_r.
+    simpl.
+    destruct f_eq as [ op_eq args_eq ].
+    simpl in op_eq.
+    revert args S' WF_S WF_S' args' subsort subsort' args_eq.
+    rewrite <- op_eq.
+    clear x' op_eq.
+    intros args S' WF_S WF_S' args' subsort subsort' args_eq.
+    apply f_equal2; [ reflexivity | ].
+    revert S S' args args' WF_S WF_S' subsort subsort' args_eq.
+    simpl.
+    generalize (domain x).
+    generalize (arity x).
+    intros n dom S S' args args' _ _ _ _.
+    revert args'.
+    induction dom as [ | hd n tl IH ].
+    - unfold ProjectTerms; intros; reflexivity.
+    - intros args' args_eq.
+      destruct args as [ arg args ].
+      destruct args' as [ arg' args' ].
+      destruct args_eq as [ arg_eq args_eq ].
+      unfold carrier_eq in arg_eq.
+      unfold ProjectTerms.
+      simpl.
+      simpl in arg_eq.
+      rewrite <- arg_eq.
+      apply f_equal.
+      rewrite <- map_fg.
+      rewrite <- map_fg.
+      simpl.
+      simpl in args_eq.
+      fold (ProjectTerms S n tl args).
+      fold (ProjectTerms S' n tl args').
+      apply IH.
+      assumption.
+  Qed.
+
+  Lemma F_eq_compat_coalg  (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}):
+    forall s c c', carrier_eq s s c c' -> F_eq _ carrier_eq s (CL_CoAlgebra CL_dec s c) (CL_CoAlgebra CL_dec s c').
+  Proof.
+    intros s c c'.
+    unfold F_eq.
+    intro c_eq.
+    split.
+    - rewrite CL_CoAlgebra_op.
+      rewrite CL_CoAlgebra_op.
+      rewrite c_eq.
+      reflexivity.
+    - assert (op_eq: op Carrier s (CL_CoAlgebra CL_dec s c) = op Carrier s (CL_CoAlgebra CL_dec s c')).
+      { rewrite CL_CoAlgebra_op.
+        rewrite CL_CoAlgebra_op.
+        unfold carrier_eq in c_eq.
+        rewrite c_eq.
+        reflexivity. }
+      assert (arity_eq: arity (op Carrier s (CL_CoAlgebra CL_dec s c)) =
+                        arity (op Carrier s (CL_CoAlgebra CL_dec s c'))).
+      { rewrite op_eq; reflexivity. }
+      assert (args_eq: ProjectTerms (subst Carrier s (CL_CoAlgebra CL_dec s c)) _
+                                    (domain (op Carrier s (CL_CoAlgebra CL_dec s c)))
+                                    (args Carrier s (CL_CoAlgebra CL_dec s c)) =
+                       rew <- arity_eq in
+                       ProjectTerms (subst Carrier s (CL_CoAlgebra CL_dec s c')) _
+                                    (domain (op Carrier s (CL_CoAlgebra CL_dec s c')))
+                                    (args Carrier s (CL_CoAlgebra CL_dec s c'))).
+      { match goal with
+        |[|- ?lhs = _ ] =>
+         assert (lhs_eq: lhs = rew <- (CL_CoAlgebra_arity CL_dec s c) in argumentsOf (proj1_sig c))
+        end.
+        { rewrite <- (CL_CoAlgebra_args CL_dec s c).
+          rewrite rew_opp_l.
+          reflexivity. }
         match goal with
-        | [|- match ?rec with | Some _ => _ | _ => _ end = _] =>
-          assert (unliftArgs_eq: rec = Some args)
+        |[|- _ = rew <- _ in ?rhs ] =>
+         assert (rhs_eq: rhs = rew <- (CL_CoAlgebra_arity CL_dec s c') in argumentsOf (proj1_sig c'))
         end.
-        { revert IH.
-          generalize args.
-          generalize (constructorArity C).
-          clear args C.
-          intros n args prfs.
-          induction prfs as [ | ? ? ? prf prfs IH ].
-          - reflexivity.
-          - simpl.
-            rewrite prf.
-            rewrite IH.
-            reflexivity. }
-        rewrite unliftArgs_eq.
-        reflexivity.
-      Qed.
+        { rewrite <- (CL_CoAlgebra_args CL_dec s c').
+          rewrite rew_opp_l.
+          reflexivity. }
+        rewrite lhs_eq.
+        rewrite rhs_eq.
+        generalize (CL_CoAlgebra_arity CL_dec s c).
+        generalize (CL_CoAlgebra_arity CL_dec s c').
+        revert arity_eq.
+        rewrite c_eq.
+        intro arity_eq.
+        rewrite arity_eq.
+        intro eq1.
+        rewrite eq1.
+        intro eq2.
+        rewrite (UIP_dec (Nat.eq_dec) eq2 eq_refl).
+        reflexivity. }
+      revert c_eq op_eq arity_eq args_eq.
+      generalize (CL_CoAlgebra CL_dec s c).
+      generalize (CL_CoAlgebra CL_dec s c').
+      intros f' f.
+      destruct f as [ op S WF_S args ].
+      destruct f' as [ op' S' WF_S' args' ].
+      simpl.
+      intros c_eq op_eq.
+      generalize args'; clear args'.
+      generalize args; clear args.
+      rewrite <- op_eq.
+      intros args args' arity_eq.
+      rewrite (UIP_dec (Nat.eq_dec) arity_eq eq_refl).
+      unfold eq_rect_r.
+      simpl.
+      clear ...
+      revert args args'.
+      generalize (domain op).
+      generalize (arity op).
+      intros n dom.
+      induction dom as [ | hd n tl IH ].
+      + intros; reflexivity.
+      + intros args args' args_eq.
+        unfold carrier_eq.
+        unfold ProjectTerms in args_eq.
+        simpl in args_eq.
+        inversion args_eq as [ [ hd_eq tl_eq ] ].
+        split.       
+        * exact hd_eq.
+        * apply IH.
+          rewrite <- map_fg in tl_eq.
+          rewrite <- map_fg in tl_eq.
+          exact (vect_exist_eq _ _ tl_eq).
+  Qed.  
 
-      Definition liftEmbed {A: Set} `{UnprotectedEmbedding.Embedding.Embedding A} (s: Sort A):
-        TypeScheme (VariableSymbol := A) :=
-        liftScheme (UnprotectedEmbedding.Embedding.embed s).
-      Definition  liftUnembed {A: Set} `{UnprotectedEmbedding.Embedding.Embedding A}
-                  (fallback: Sort A) (ty: TypeScheme (VariableSymbol := A)): Sort A :=
-        match unliftScheme ty with
-        | Some ty => UnprotectedEmbedding.Embedding.unembed ty
-        | None => fallback
-        end.
+  Lemma CL_Algebra_morphism_commutes (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}):
+    forall Carrier' (alg: SigmaAlgebra Carrier') s c
+      (R: forall s s', Carrier' s -> Carrier' s' -> Prop)
+      (R_refl: forall s x, R s s x x),
+      R s s
+        (CL_Algebra_morphism CL_dec _ alg s c)
+        (alg s (F_hom _ _ (CL_Algebra_morphism CL_dec _ alg) s (CL_CoAlgebra CL_dec s c))).
+  Proof.
+    intros Carrier' alg s f R R_refl.
+    unfold CL_Algebra_morphism.
+    rewrite canonical_morphism_commutes.
+    apply R_refl.
+  Qed.
 
-      Instance ClosedEmbedding: Embedding EmptySet  :=
-        {| embed := liftEmbed; unembed := liftUnembed ClosedSortsInhabited |}.
-      Instance OpenEmbedding: Embedding VariableSymbol :=
-        {| embed := liftEmbed; unembed := liftUnembed OpenSortsInhabited |}.
+  (* Work in progress 
+  Lemma F_eq_R_map (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}):
+    forall Carrier' (alg: SigmaAlgebra Carrier') s f f'
+      (R: forall s s', Carrier' s -> Carrier' s' -> Prop)
+      (R_alg_compat: forall s f f', F_eq _ R s f f' -> R s s (alg s f) (alg s f'))
+      (R_refl: forall s x, R s s x x),
+      F_eq _ carrier_eq s f f' ->
+      F_eq _ R s
+           (F_hom _ _ (CL_Algebra_morphism CL_dec _ alg) s f)
+           (F_hom _ _ (CL_Algebra_morphism CL_dec _ alg) s f').
+  Proof.
+    intros Carrier' alg s f f' R R_alg_compat R_refl.
+    destruct f as [ op S WF_S args subsort ].
+    destruct f' as [ op' S' WF_S' args' subsort' ].
+    intro eq; destruct eq as [ op_eq args_eq ].
+    split; [ exact op_eq | ].
+    simpl in op_eq.
+    revert args args' args_eq.
+    simpl.
+    rewrite <- op_eq.
+    revert R_alg_compat R_refl.
+    clear ...
+    intros R_alg_compat R_refl.
+    generalize (domain op).
+    generalize (arity op).
+    intros n params.
+    induction params as [ | param n params IH ].
+    - intros; trivial.
+    - intros args args' args_eq.
+      simpl.
+      split.
+      + unfold CL_Algebra_morphism.
+        unfold CL_Algebra_morphism.
+      + exact (IH _ _ (proj2 args_eq)). 
 
-      Lemma liftEmbedUnembedClosed `{UnprotectedEmbedding.Embedding.InjectiveEmbedding EmptySet}:
-        forall (s: Sort EmptySet), liftUnembed ClosedSortsInhabited (liftEmbed s) = s.
-      Proof.
-        intros s.
-        unfold liftEmbed.
-        unfold liftUnembed.
-        rewrite unliftLift.
-        rewrite UnprotectedEmbedding.Embedding.unembedEmbed.
-        reflexivity.
-      Qed.
+  Lemma CL_Algebra_morphism_commutes' (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}):
+    forall Carrier' (alg: SigmaAlgebra Carrier') s f
+      (R: forall s s', Carrier' s -> Carrier' s' -> Prop)
+      (R_alg_compat: forall s f f', F_eq _ R s f f' -> R s s (alg s f) (alg s f'))
+      (R_refl: forall s x, R s s x x)
+      (R_sym: forall s s' x y, R s s' x y -> R s' s y x),
+      R s s
+        (CL_Algebra_morphism CL_dec _ alg s (CL_Algebra s f))
+        (alg s (F_hom _ _ (CL_Algebra_morphism CL_dec _ alg) s f)).
+  Proof.
+    intros Carrier' alg s f R R_alg_compat R_refl R_sym.
+    unfold CL_Algebra_morphism.
+    rewrite canonical_morphism_commutes.
+    apply R_alg_compat.
+    generalize (CL_AlgebraCoAlgebra_inv CL_dec s f).
+    fold (CL_Algebra_morphism CL_dec Carrier' alg).
+    match goal with
+    |[|- _ -> F_eq _ _ _ (F_hom _ _ ?p _ _) _] =>
+     assert (p_eq: p = CL_Algebra_morphism CL_dec Carrier' alg); [ reflexivity | rewrite p_eq; clear p_eq ]
+    end.
+    intro eq.
+    apply F_eq_sym; [ exact R_sym | ].
+    apply F_eq_R_map; assumption.
+  Qed.
+    
+    { unfold CL_Algebra_morphism.
+      reflexivity. }
+    fold (CL_Algebra_morphism CL_dec Carrier' alg).
+    rewrite <- (canonical_morphism_commutes
+                 Carrier Carrier' (CL_CoAlgebra CL_dec) alg
+                 Term (ltof Term sizeOf) (well_founded_ltof Term sizeOf) (fun _ c => proj1_sig c)
+                 (CL_CoAlgebra_smaller CL_dec) s (CL_Algebra s f)).
 
-      Lemma liftEmbedUnembedOpen `{UnprotectedEmbedding.Embedding.InjectiveEmbedding VariableSymbol}:
-        forall (s: Sort VariableSymbol), liftUnembed OpenSortsInhabited (liftEmbed s) = s.
-      Proof.
-        intros s.
-        unfold liftEmbed.
-        unfold liftUnembed.
-        rewrite unliftLift.
-        rewrite UnprotectedEmbedding.Embedding.unembedEmbed.
-        reflexivity.
-      Qed.
 
-      Instance ClosedInjectiveEmbedding: InjectiveEmbedding EmptySet :=
-        {| Embed := ClosedEmbedding; unembedEmbed := liftEmbedUnembedClosed |}.
-      Instance OpenInjectiveEmbedding: InjectiveEmbedding VariableSymbol :=
-        {| Embed := OpenEmbedding; unembedEmbed := liftEmbedUnembedOpen |}.       
+    (CL_CoAlgebra CL_dec s (CL_Algebra s f))).
+
+    
+    intro eq.
+    apply (F_hom_eq _ _ _ carrier_eq R).
+    - clear eq f s.
+      intros s s' c c' eq.
+      unfold CL_Algebra_morphism.
+      rewrite canonical_morphism_commutes.
+      rewrite canonical_morphism_commutes.
       
-      Fixpoint liftType (sigma: Types.IntersectionType): IntersectionType :=
-        match sigma with
-        | Types.Ty (Types.PT_omega) => Ty (PT_omega)
-        | Types.Ty (Types.PT_Const C args) =>
-          Ty (PT_Const (inr C) (map liftType args))
-        | Types.Ty (Types.PT_Arrow sigma tau) =>
-          Ty (PT_Arrow (liftType sigma) (liftType tau))
-        | Types.Ty (Types.PT_Inter sigma tau) =>
-          Ty (PT_Inter (liftType sigma) (liftType tau))
-        end.      
-      Lemma liftFreeze: forall scheme, freeze (liftScheme scheme) = liftType (Types.freeze scheme).
-      Proof.
-        intro scheme.
-        induction scheme
-          as [ | | C args IH | ? ? IHsigma IHtau | ? ? IHsigma IHtau ] 
-            using Types.TypeScheme_rect'.
-        - contradiction.
-        - reflexivity.
-        - simpl.
-          unfold Const.
-          unfold liftPreType.
-          apply f_equal.
-          apply f_equal.
-          rewrite <- (map_fg).
-          revert args IH.
-          simpl.
-          generalize (constructorArity C).
-          intros n args IH.
-          induction IH as [ | ? ? ? prf prfs IH' ].
-          + reflexivity.
-          + simpl.
-            rewrite prf.
-            apply f_equal.
-            assumption.
-        - simpl; rewrite IHsigma; rewrite IHtau; reflexivity.
-        - simpl; rewrite IHsigma; rewrite IHtau; reflexivity.
-      Qed.
+    - apply (F_eq_sym _ _ carrier_eq_sym _ _ _ eq).
 
-      Definition forall_args {A B: Type} (P: A -> B -> Prop) n (sigmas: t A n) (taus: t B n)
-               (prf: Forall2 P sigmas taus)
-               (P': A -> B -> Prop)
-               (f : forall sigma tau, P sigma tau -> P' sigma tau):
-        Forall2 P' sigmas taus :=
-        (fix forall_args_rec n (sigmas : t A n) (taus: t B n)
-            (prf: Forall2 P sigmas taus): Forall2 P' sigmas taus :=
-           match prf in @Forall2 _ _ _ n' sigmas' taus' return (@Forall2 _ _ P' n' sigmas' taus') with
-           | Forall2_nil _ => Forall2_nil _
-           | Forall2_cons _ sigma tau sigmas taus prf prfs =>
-             Forall2_cons _ _ _ _ _ (f sigma tau prf) (forall_args_rec _ _ _ prfs)
-           end) _ _ _ prf.
-
-      Lemma liftTypeDistrib:
-        forall n (sigmas taus: t Types.IntersectionType n),
-          map liftType (map2 Types.Inter sigmas taus) =
-          map2 Inter (map liftType sigmas) (map liftType taus).
-      Proof.
-        intros n sigmas.
-        induction sigmas.
-        - apply case0.
-          reflexivity.
-        - intro taus.
-          apply (caseS' taus); clear taus; intros tau taus.
-          simpl.
-          apply f_equal.
-          auto.
-      Qed.
-
-      Fixpoint liftTypeRespectful sigma tau (prf: Types.Subtypes sigma tau) {struct prf}:
-        liftType sigma <= liftType tau.
-      Proof.
-        destruct prf as [ ? ? arity_eq ? ? ? args_le | | | | | | | | | | ].
-        - eapply ST_Ax.
-          + assumption.
-          + apply nth_Forall2.
-            intro k.
-            assert (prfs_rec: Forall2 (fun sigma tau => Subtypes (liftType sigma)
-                                                    (liftType tau))
-                            sigmas (rew <- [t Types.IntersectionType] arity_eq in taus)).
-            { exact (forall_args _ _ _ _ args_le _ liftTypeRespectful). }
-            generalize (Forall2_nth _ _ _ prfs_rec k).
-            intro prf.
-            unfold eq_rect_r.
-            rewrite (nth_map _ _ _ _ eq_refl).
-            rewrite (nth_k).
-            rewrite (nth_map _ _ _ _ eq_refl).
-            unfold eq_rect_r in prf.
-            rewrite nth_k in prf.
-            fold liftType.
-            exact prf.
-        - apply ST_InterMeetLeft.
-        - apply ST_InterMeetRight.
-        - apply ST_InterIdem.
-        - apply ST_InterArrowDistrib.
-        - simpl.
-          rewrite liftTypeDistrib.
-          apply ST_InterConstDistrib.
-        - apply ST_SubtypeDistrib; auto.
-        - apply ST_CoContra; auto.
-        - apply ST_OmegaTop.
-        - apply ST_OmegaArrow.
-        - eapply ST_Trans; eauto.
-      Qed.
-
-      Fixpoint unliftType (sigma: IntersectionType): option (Types.IntersectionType) :=
-        match sigma with
-        | Ty (PT_omega) => Some (Types.Ty (Types.PT_omega))
-        | Ty (PT_Const (inr C) args)  =>
-          match (fix unliftArgs n (args: t IntersectionType n): option (t Types.IntersectionType n) :=
-                   match args with
-                   | cons _ arg _ args =>
-                     match unliftType arg with
-                     | Some arg =>
-                       match unliftArgs _ args with
-                       | Some args => Some (cons _ arg _ args)
-                       | None => None
-                       end
-                     | None => None
-                     end
-                   | nil _ => Some (nil _)
-                   end) _ args with
-          | Some args => Some (Types.Ty (Types.PT_Const C args))
-          | None => None
-          end
-        | Ty (PT_Const (inl _) _) => None
-        | Ty (PT_Arrow sigma tau) =>
-          match unliftType sigma with
-          | Some sigma =>
-            match unliftType tau with
-            | Some tau => Some (Types.Ty (Types.PT_Arrow sigma tau))
-            | None => None
-            end
-          | None => None
-          end
-        | Ty (PT_Inter sigma tau) =>
-          match unliftType sigma with
-          | Some sigma =>
-            match unliftType tau with
-            | Some tau => Some (Types.Ty (Types.PT_Inter sigma tau))
-            | None => None
-            end
-          | None => None
-          end
-        end.
-      
-      Lemma unliftLiftType: forall sigma, unliftType (liftType sigma) = Some sigma.
-      Proof.
-        intro sigma.
-        induction sigma
-          as [ | C args IH | ? ? IHsigma IHtau | ? ? IHsigma IHtau ]
-               using Types.IntersectionType_rect';
-          try solve [ reflexivity | simpl; rewrite IHsigma; rewrite IHtau; reflexivity ].
-        simpl.
-        match goal with
-        | [|- match ?rec with | Some _ => _ | _ => _ end = _] =>
-          assert (unliftArgs_eq: rec = Some args)
-        end.
-        { revert IH.
-          generalize args.
-          generalize (constructorArity C).
-          clear args C.
-          intros n args prfs.
-          induction prfs as [ | ? ? ? prf prfs IH ].
-          - reflexivity.
-          - simpl.
-            rewrite prf.
-            rewrite IH.
-            reflexivity. }
-        rewrite unliftArgs_eq.
-        reflexivity.
-      Qed.
-
-      Definition unliftType' sigma: Types.IntersectionType :=
-        match unliftType sigma with
-        | Some sigma => sigma
-        | None => Types.omega
-        end.
-      Lemma unliftLiftType': forall sigma, unliftType' (liftType sigma) = sigma.
-      Proof.
-        intro sigma.
-        unfold unliftType'.
-        rewrite unliftLiftType.
-        reflexivity.
-      Qed.
-
-      Lemma liftType_inj: forall sigma tau, liftType sigma = liftType tau -> sigma = tau.
-      Proof.
-        intro sigma.
-        induction sigma
-          as [ | C1 args1 IH1 | sigma1 tau1 IHsigma1 IHtau1 | sigma1 tau1 IHsigma1 IHtau1 ]
-               using Types.IntersectionType_rect';
-          induction tau
-          as [ | C2 args2 IH2 | sigma2 tau2 IHsigma2 IHtau2 | sigma2 tau2 IHsigma2 IHtau2 ]
-               using Types.IntersectionType_rect';
-          intro eq; simpl in eq; inversion eq as [ eq' ].
-        - reflexivity.
-        - clear IH2.
-          revert args2 eq.
-          rewrite <- eq'.
-          intros args2 eq.
-          apply f_equal.
-          apply f_equal.
-          assert (args_eq: map liftType args1 = map liftType args2).
-          { generalize (f_equal (
-                       fun (x: IntersectionType) =>
-                         match x with
-                         | Ty (PT_Const C xs) => existT (t IntersectionType) (constructorArity C) xs
-                         | _ => existT (t IntersectionType) 0 (nil _)
-                         end) eq).
-            intro ex_eq.
-            apply (vect_exist_eq _ _ ex_eq). }
-          clear eq.
-          induction IH1 as [ | ? ? ? prf prfs IH1' ]. 
-          + apply case0; reflexivity.
-          + revert args_eq.
-            apply (caseS' args2); clear args2; intros arg2 args2.
-            intro args_eq.
-            inversion args_eq as [ [ arg2_eq args2_eq ] ] .
-            rewrite (prf _ arg2_eq).
-            apply f_equal.
-            apply IH1'.
-            apply (vect_exist_eq _ _ args2_eq).
-        - assert (sigma_eq: sigma1 = sigma2); [ auto | rewrite sigma_eq ].
-          assert (tau_eq: tau1 = tau2); [ auto | rewrite tau_eq ].
-          reflexivity.
-        - assert (sigma_eq: sigma1 = sigma2); [ auto | rewrite sigma_eq ].
-          assert (tau_eq: tau1 = tau2); [ auto | rewrite tau_eq ].
-          reflexivity.
-      Qed.
-
-      Lemma liftRespectful: forall (s s': Sort EmptySet), subsorts s s' -> freeze (embed s) <= freeze (embed s').
-      Proof.
-        intros s s' subsorts.
-        unfold embed.
-        unfold ClosedEmbedding.
-        unfold liftEmbed.
-        rewrite liftFreeze.
-        rewrite liftFreeze.
-        apply liftTypeRespectful.
-        apply UnprotectedEmbedding.Embedding.embed_respectful.
-        assumption.
-      Qed.
-        
-
-      Definition unliftSubst (S: Substitution): Types.Substitution :=
-        fun alpha => unliftType' (S alpha).
-
-      Lemma unliftApply_eq: forall S tau,
-          Apply S tau = liftType (Types.Apply (unliftSubst S)
-                                              (match unliftScheme tau with
-                                               | Some ty => ty
-                                               | _ => Types.omegaScheme end)).
-      Proof.
-        intros S tau.
-        induction tau using TypeScheme_rect'.
-        - simpl.
-          unfold unliftSubst.
-          rewrite lift
+    
+    unfold F_eq.
+    
+    unfold F_hom.
+    simpl.
+    split.
+    - destruct (CL_CoAlgebra CL_dec s (CL_Algebra s f)).
+      destruct f.
+      simpl.
+      unfold F_eq in eq.
+      simpl in eq.
+      rewrite (proj1 eq).
+      reflexivity.
+    - simpl.
+      destruct (CL_CoAlgebra CL_dec s (CL_Algebra s f)) as [ op' S' WF_S' args' subsorts' ].
+      destruct f as [ op S WF_S args subsorts ]. 
+      simpl.
+      unfold F_eq in eq.
+      simpl in eq.
+      destruct eq as [ op_eq args_eq ].
+      revert args args' args_eq.
+      rewrite <- op_eq.
+      generalize (domain op).
+      generalize (arity op).
+      intros n params.
+      induction params as [ | param n params IH ];
+        intros args args' args_eq.
+      + trivial.
+      + split.
+        * simpl.
           
-
-      Lemma liftUnembedApply: forall S tau,
-          (exists s, tau = embed s) ->
-          Apply S tau = freeze (embed (applySubst (unembedSubst S) (unembed tau))).
-      Proof.
-        intros S tau exprf.
-        generalize (UnprotectedEmbedding.Embedding.
-        
-        unfold unembed.
-        unfold OpenEmbedding.
-        unfold liftUnembed.
-        destruct exprf as [ s tau_eq ].
-        rewrite tau_eq.
-        unfold embed.
-        unfold OpenEmbedding.
-        unfold liftEmbed.
-        rewrite unliftLift.
-        unfold ClosedEmbedding.
-        unfold liftEmbed.
-        rewrite liftFreeze.
-        unfold unembedSubst.
-        unfold unembed.
-        unfold liftUnembed.
-        
-        generalize (UnprotectedEmbedding.Embedding.unembedApply (fun x => unliftType' (S x)) tau).
-        unfold liftScheme.
-        unfold OpenSortsInhabited.
-        
+          
       
-      Lemma liftEmbedApply: forall S s, freeze (embed (applySubst S s)) = Apply (embedSubst S) (embed s).
-      Proof.
-        intros S s.
-        simpl.
-        unfold embedSubst.
-        unfold liftEmbed.
-        rewrite liftFreeze.
-        rewrite (UnprotectedEmbedding.Embedding.embedApply).
-        destruct (UnprotectedEmbedding.Embedding.embed) as [ | skel ].
-        - simpl.
-          unfold liftEmbed.
-          rewrite liftFreeze.
-          apply f_equal.
-          unfold UnprotectedEmbedding.Embedding.embedSubst.
-          reflexivity.
-        - induction (Types.Skeleton skel)
-            as [ | | C args prfs | | ] using Types.TypeScheme_rect'.
-          + simpl.
-            unfold liftEmbed.
-            rewrite liftFreeze.
-            apply f_equal.
-            unfold UnprotectedEmbedding.Embedding.embedSubst.
-            reflexivity.
-          + reflexivity.
-          + simpl.
-            unfold Const.
-            unfold liftPreType.
-            apply f_equal.
-            apply f_equal.
-            rewrite <- map_fg.
-            rewrite <- map_fg.
-            simpl embed in prfs.
-            generalize (Forall_nth _ _ (ForAll'Forall _ _ prfs)).
-            clear prfs.
-            revert args.
-            simpl.
-            generalize (constructorArity C).
-            intros n args.
-            induction args.
-            * intros; reflexivity.
-            * intro kth_eq.
-              generalize (kth_eq Fin.F1).
-              simpl.
-              intro hd_eq; rewrite hd_eq.
-              apply f_equal.
-              
-            
-   
+      rewrite (proj1 eq).
+    
+    
+  Lemma CL_Algebra_morphism_bisimilar (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}):
+    forall Carrier' (alg: SigmaAlgebra Carrier')
+      (R: forall s s', Carrier' s -> Carrier' s' -> Prop)
+      (R_alg_compat: forall s f f', F_eq _ R s f f' -> R s s (alg s f) (alg s f'))
+      (R_refl: forall s x, R s s x x)
+      (R_trans: forall s s' s'' x y z, R s s' x y -> R s' s'' y z -> R s s'' x z)
+      s (c : Carrier s)
+      (morphism: forall s, Carrier s -> Carrier' s)
+      (morphism_commutes: forall s c, (alg s (F_hom _ _ morphism s f)) = (morphism s (CL_Algebra s f))),
+      R s s (CL_Algebra_morphism CL_dec Carrier' alg s c) (morphism s c).
+  Proof.
+    intros Carrier' alg R R_compat R_refl R_trans s c morphism morphism_proper.
+    unfold CL_Algebra_morphism.
+    rewrite canonical_morphism_commutes.
+    apply (R_trans s s s _ (morphism s (CL_Algebra s (CL_CoAlgebra CL_dec s c))) _).
+    - apply (R_trans s s s _ (alg s (F_hom Carrier Carrier' morphism s (CL_CoAlgebra CL_dec s c))) _).
+      + admit.
+      + apply morphism_proper.
+    - apply (R_compat s (CL_Algebra s (CL_CoAlgebra CL_dec s c)) c).
 
-      Lemma liftEmbed_Path: forall s, Path (freeze (embed s)).
-      Proof.
-        intro s.
-        unfold embed.
-        unfold ClosedEmbedding.
-        unfold liftEmbed.
-        generalize (UnprotectedEmbedding.Embedding.embed_Path s).
-        destruct UnprotectedEmbedding.Embedding.embed as [ | skel ].
-        - contradiction.
-        - induction (Types.Skeleton skel)
-            as [ | | C args IH | | ] using Types.TypeScheme_rect'.
-          + contradiction.
-          + intro pathprf; inversion pathprf.
-          + intro pathprf.
-            simpl in pathprf.
-            apply Path_Const.
-            inversion pathprf as [ ? ? prf [ C_eq args_eq ] | ].
-            dependent rewrite args_eq in prf.
-            clear C_eq args_eq pathprf.
-            revert args IH prf.
-            simpl.
-            generalize (constructorArity C).
-            clear ...
-            intros arity args IH.
-            generalize (Forall_nth _ _ (ForAll'Forall _ _ IH)).
-            clear IH; intro IH'.
-            assert (IH: forall k, Types.Path (nth (map Types.freeze args) k) -> Path (freeze (liftScheme (nth args k)))).
-            { intro k.
-              rewrite (nth_map (Types.freeze) args k _ eq_refl).
-              intro; auto. }
-            clear IH'.
-            intro argsprf; revert IH.
-            inversion argsprf as [ n_eq [ n_eq' args_eq ] | n sigma sigma_path n_eq [n_eq' args_eq] | ].
-            * clear argsprf.
-              revert args args_eq.
-              rewrite <- n_eq.
-              intros args args_eq.
-              intro; simpl.
-              apply (fun r => case0 (fun xs => PathArgs (map _ (map _ xs))) r args).
-              simpl.
-              apply PathArgs_nil.
-            * clear argsprf.
-              revert args args_eq.
-              rewrite <- n_eq.
-              intros args args_eq.
-              assert (tl_omega: map freeze (map liftScheme (tl args)) = const omega n).
-              { revert args_eq.
-                apply (caseS' args); clear args; intros arg args.
-                simpl.
-                clear ...
-                intro args_eq.
-                generalize (vect_exist_eq _ _ args_eq).
-                clear args_eq.
-                intro args_eq'.
-                inversion args_eq' as [ [ sigma_eq args_eq ] ].
-                clear sigma_eq args_eq'.
-                generalize (vect_exist_eq _ _ args_eq).
-                clear args_eq; intro args_eq.
-                induction args as [ | arg' n args IH ].
-                - intros; simpl; reflexivity.
-                - simpl in args_eq.
-                  inversion args_eq as [ [ arg'_eq args_eq' ] ].
-                  generalize (vect_exist_eq _ _ args_eq').
-                  clear args_eq args_eq'.
-                  intro args_eq.
-                  induction arg' using Types.TypeScheme_rect'; inversion arg'_eq; try solve [ contradiction ].
-                  simpl.
-                  apply f_equal.
-                  auto. }
-              assert (hd_path: Path (freeze (liftScheme (hd args)))).
-              { generalize (vect_exist_eq _ _ args_eq).
-                clear args_eq tl_omega.
-                apply (caseS' args); clear args; intros arg args.
-                intro args_eq.
-                simpl.
-                inversion args_eq as [ [ sigma_eq args_eq' ] ].
-                rewrite sigma_eq in sigma_path.
-                revert sigma_path.
-                clear ...
-                induction arg using Types.TypeScheme_rect';
-                  intro path_prf;
-                  inversion path_prf; try solve [contradiction ].
-                - simpl.
-                  
-                
-              apply (caseS' args); clear args; intros arg args.
-              intro IH.
-              simpl.
-              apply PathArgs_cons_arg.
-              
-              
-            
-          + intro pathprf; apply Path_Arr.
-            inversion pathprf.
-            auto.
-          + intro pathprf; inversion pathprf.
-            
-        
-     
-
-      
-      Definition forall_args_map {A B: Type} (P: B -> B -> Prop) n (sigmas taus: t A n) (f: A -> B)
-               (prf: Forall2 P (map f sigmas) (map f taus))
-               (P': A -> A -> Prop)
-               (g : forall sigma tau, P (f sigma) (f tau) -> P' sigma tau):
-        Forall2 P' sigmas taus :=
-        (fix forall_args_map_rec n (sigmas taus : t A n)
-            (prf: Forall2 P (map f sigmas) (map f taus)) {struct prf}: Forall2 P' sigmas taus :=
-           match prf in @Forall2 _ _ _ n' sigmas' taus'
-                 return forall xs, map f xs = sigmas' -> forall ys, map f ys = taus' -> (@Forall2 _ _ P' n' xs ys) with
-           | Forall2_nil _ =>
-             fun xs _ ys _ =>
-               case0 (fun ys => Forall2 P' xs ys) (case0 (fun xs => Forall2 P' xs (nil _)) (Forall2_nil _) xs) ys
-           | Forall2_cons _ sigma tau sigmas taus prf prfs =>
-             fun xs =>
-               caseS'
-                 xs _
-                 (fun x xs =>
-                    fun (xs_eq : map f (cons _ x _ xs) = cons _ sigma _ sigmas) ys =>
-                      caseS'
-                        ys _
-                        (fun y ys =>
-                           fun (ys_eq : map f (cons _ y _ ys) = cons _ tau _ taus) =>
-                             let xs_eq' : cons _ (f x) _ (map f xs) = cons _ sigma _ sigmas := xs_eq in
-                             let ys_eq' : cons _ (f y) _ (map f ys) = cons _ tau _ taus := ys_eq in
-                             let x_eq : f x = sigma := f_equal hd xs_eq' in
-                             let y_eq : f y = tau := f_equal hd ys_eq' in
-                             let xs'_eq : map f xs = sigmas := f_equal tl xs_eq' in
-                             let ys'_eq : map f ys = taus := f_equal tl ys_eq' in
-                             Forall2_cons _ _ _ _ _ (g x y (rew <- [fun x => P x (f y)] x_eq in
-                                                               rew <- [fun y => P sigma y] y_eq in prf))
-                                          (forall_args_map_rec _ xs ys
-                                                               (rew <- [fun ys => Forall2 P (map f xs) ys] ys'_eq in
-                                                                   rew <- [fun xs => Forall2 P xs taus] xs'_eq in
-                                                                   prfs))))
-           end sigmas eq_refl taus eq_refl) _ _ _ prf.
-
-      
-      
-      Fixpoint unliftTypeRespectful' sigma tau (prf: liftType sigma <= liftType tau) {struct prf}:
-        Types.Subtypes sigma tau.
-      Proof.
-        rewrite <- (unliftLiftType' sigma).
-        rewrite <- (unliftLiftType' tau).
-        remember (liftType sigma) as sigma' eqn:sigma_eq.
-        remember (liftType tau) as tau' eqn:tau_eq.
-        destruct prf as [ C1 C2 arity_eq tax sigmas taus args_le | | | | | | | | | | ].
-        - unfold unliftType'.
-          rewrite sigma_eq.
-          rewrite tau_eq.
-          rewrite unliftLiftType.
-          rewrite unliftLiftType.
-          destruct sigma
-            as [ | C1' sigmas' _ | | ]
-                   using Types.IntersectionType_rect'; inversion sigma_eq as [ [ C1_eq args1_eq ] ].
-          destruct tau
-            as [ | C2' taus' _ | | ]
-                 using Types.IntersectionType_rect'; inversion tau_eq as [ [ C2_eq args2_eq ] ].
-          revert args_le.
-          generalize arity_eq; clear arity_eq.
-          clear sigma_eq tau_eq.
-          revert sigmas taus args1_eq args2_eq.
-          rewrite C1_eq.
-          rewrite C2_eq.
-          intros sigmas taus args1_eq args2_eq arity_eq args_le.
-          eapply (Types.ST_Ax C1' C2' arity_eq).
-          + simpl.
-            rewrite C1_eq in tax.
-            rewrite C2_eq in tax.
-            assumption.
-          + apply nth_Forall2.
-            intro k.
-            rewrite (vect_exist_eq _ _ (existT_fg_eq (t IntersectionType)
-                                                     constructorArity _ _ _ args1_eq)) in args_le.
-            rewrite (vect_exist_eq _ _ (existT_fg_eq (t IntersectionType)
-                                                     constructorArity _ _ _ args2_eq)) in args_le.
-            unfold eq_rect_r in args_le.
-            rewrite map_rew in args_le.
-            assert (prfs_rec: Forall2 (fun sigma tau => Types.Subtypes sigma tau)
-                                      sigmas' (rew <- [t Types.IntersectionType] arity_eq in taus')).
-            { exact (forall_args_map _ _ _ _ liftType args_le _ unliftTypeRespectful'). }
-            generalize (Forall2_nth _ _ _ prfs_rec k).
-            trivial.
-        - unfold unliftType'.
-          rewrite sigma_eq.
-          rewrite tau_eq.
-          rewrite unliftLiftType.
-          rewrite unliftLiftType.
-          rewrite tau_eq in sigma_eq.
-          destruct sigma using Types.IntersectionType_rect'; inversion sigma_eq as [ sigma_eq' ].
-          rewrite (liftType_inj _ _ sigma_eq').
-          apply Types.ST_InterMeetLeft.
-        - unfold unliftType'.
-          rewrite sigma_eq.
-          rewrite tau_eq.
-          rewrite unliftLiftType.
-          rewrite unliftLiftType.
-          rewrite tau_eq in sigma_eq.
-          destruct sigma using Types.IntersectionType_rect'; inversion sigma_eq as [ [ sigma_eq' tau_eq' ] ].
-          rewrite (liftType_inj _ _ tau_eq').
-          apply Types.ST_InterMeetRight.
-        - unfold unliftType'.
-          simpl.
-          rewrite sigma_eq.
-          rewrite unliftLiftType.
-          apply Types.ST_InterIdem.
-        - unfold unliftType'.
-          rewrite sigma_eq.
-          rewrite tau_eq.
-          rewrite unliftLiftType.
-          rewrite unliftLiftType.
-          destruct sigma
-            as [ | | | sigma1 sigma2 _ _ ]
-                 using Types.IntersectionType_rect'; inversion sigma_eq as [ [sigma1_eq sigma2_eq] ].
-          destruct sigma1
-            as [ | | sigma1' tau1 _ _ | ]
-                 using Types.IntersectionType_rect'; inversion sigma1_eq as [ [sigma1'_eq tau1_eq] ].
-          destruct sigma2
-            as [ | | sigma2' tau2 _ _ | ]
-                 using Types.IntersectionType_rect'; inversion sigma2_eq as [ [sigma2'_eq tau2_eq] ].
-          destruct tau
-            as [ | | sigma3' tau3 _ _ | ]
-                 using Types.IntersectionType_rect'; inversion tau_eq as [ [sigma3'_eq tau3_eq] ].
-          destruct tau3
-            as [ | | | tau31 tau32 _ _ ]
-                 using Types.IntersectionType_rect'; inversion tau3_eq as [ [tau31_eq tau32_eq] ].
-          rewrite (liftType_inj _ _ (eq_trans (eq_sym sigma2'_eq) sigma1'_eq)).
-          rewrite (liftType_inj _ _ (eq_trans (eq_sym sigma3'_eq) sigma1'_eq)).
-          rewrite (liftType_inj _ _ (eq_trans (eq_sym tau31_eq) tau1_eq)).
-          rewrite (liftType_inj _ _ (eq_trans (eq_sym tau32_eq) tau2_eq)).
-          apply Types.ST_InterArrowDistrib.
-        - unfold unliftType'.
-          rewrite sigma_eq.
-          rewrite tau_eq.
-          rewrite unliftLiftType.
-          rewrite unliftLiftType.
-          destruct sigma
-            as [ | | | sigma1 sigma2 _ _ ]
-                 using Types.IntersectionType_rect'; inversion sigma_eq as [ [sigma1_eq sigma2_eq] ].
-          destruct sigma1
-            as [ | C1 args1 _ | | ]
-                 using Types.IntersectionType_rect'; inversion sigma1_eq as [ [C1_eq args1_eq] ].
-          destruct sigma2
-            as [ | C2 args2 _ | | ]
-                 using Types.IntersectionType_rect'; inversion sigma2_eq as [ [C2_eq args2_eq] ].
-          destruct tau
-            as [ | C3 args3 _ | | ]
-                 using Types.IntersectionType_rect'; inversion tau_eq as [ [C3_eq args3_eq] ].          
-          clear sigma_eq tau_eq sigma1_eq sigma2_eq.
-          revert sigmas taus args1 args2 args3 args1_eq args2_eq args3_eq.
-          destruct C as [ | C ];
-            inversion C1_eq as [ C1_eq' ];
-            inversion C2_eq as [ C2_eq' ];
-            inversion C3_eq as [ C3_eq' ].
-          rewrite (eq_trans (eq_sym C2_eq') C1_eq').
-          rewrite (eq_trans (eq_sym C3_eq') C1_eq').
-          intros sigmas taus args1 args2 args3 args1_eq args2_eq args3_eq.
-          admit.
-        - apply ST_SubtypeDistrib; auto.
-        - apply ST_CoContra; auto.
-        - apply ST_OmegaTop.
-        - apply ST_OmegaArrow.
-        - eapply ST_Trans; eauto.
-      Qed.
-
-      
-       
-      Lemma unliftRespectful:
-        forall (sigma tau: IntersectionType),
-            (exists s, sigma = freeze (embed s)) -> (exists s, tau = freeze (embed s)) ->
-            sigma <= tau -> subsorts (unembed (unfreeze sigma)) (unembed (unfreeze tau)).
-      Proof.
-        intros sigma tau ex_sigma ex_tau sigma_le.
-        destruct ex_sigma as [ s sigma_eq ].
-        destruct ex_tau as [ s' tau_eq ].
-        unfold unembed.
-        unfold ClosedEmbedding.
-        unfold liftUnembed.
-        rewrite sigma_eq.
-        rewrite tau_eq.
-        rewrite freezeUnfreeze.
-        rewrite freezeUnfreeze.
-        unfold embed.
-        unfold ClosedEmbedding.
-        unfold liftEmbed.
-        rewrite unliftLift.
-        rewrite unliftLift.
-        rewrite sigma_eq in sigma_le.
-        rewrite tau_eq in sigma_le.
-        unfold embed in sigma_le.
-        unfold ClosedEmbedding in sigma_le.
-        unfold liftEmbed in sigma_le.
-        rewrite liftFreeze in sigma_le.
-        rewrite liftFreeze in sigma_le.
-        rewrite <- (Types.freezeUnfreeze (UnprotectedEmbedding.Embedding.embed s)).
-        rewrite <- (Types.freezeUnfreeze (UnprotectedEmbedding.Embedding.embed s')). 
-        apply UnprotectedEmbedding.Embedding.unembed_respectful.
-        - exists s; reflexivity.
-        - exists s'; reflexivity.
-        - 
-
-        
-    End EmbeddingImpl.
-    Instance ProperlyEmbedded: ProperEmbedding.
-  End LiftedEmbedding.
-End LiftProperEmbedding. *)
+    destruct c as [ [ c | M N ] Mprf ].
+    - unfold CL_Algebra_morphism.
+      unfold Fix.
+      simpl.
+      simpl.
+    simpl.
+    
+    apply R_compat.
+     *)
+End CombinatoryLogicAlgebra.
