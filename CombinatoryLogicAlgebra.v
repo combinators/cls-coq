@@ -757,7 +757,7 @@ Module CombinatoryLogicAlgebra
 
   Lemma CL_AlgebraCoAlgebra_inv:
     forall (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}),
-      forall s f, F_eq _ carrier_eq s f
+      forall s f, F_eq _ carrier_eq s s f
                   (CL_CoAlgebra CL_dec s (CL_Algebra s f)).
   Proof.
     intros CL_dec s f.
@@ -922,9 +922,11 @@ Module CombinatoryLogicAlgebra
                        Term _ (well_founded_ltof _ sizeOf) (fun _ c => proj1_sig c)
                        (CL_CoAlgebra_smaller CL_dec) s c.
   
-  Lemma F_eq_compat_alg: forall s f f', F_eq _ carrier_eq s f f' -> carrier_eq s s (CL_Algebra s f) (CL_Algebra s f').
+  Lemma F_eq_compat_alg: forall s s' f f',
+      F_eq _ carrier_eq s s' f f' ->
+      carrier_eq s s' (CL_Algebra s f) (CL_Algebra s' f').
   Proof.
-    intros s f f'.   
+    intros s s' f f'.   
     destruct f as [ x S WF_S args subsort ].
     destruct f' as [ x' S' WF_S' args' subsort' ].
     intro f_eq.
@@ -981,9 +983,9 @@ Module CombinatoryLogicAlgebra
   Qed.
 
   Lemma F_eq_compat_coalg  (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}):
-    forall s c c', carrier_eq s s c c' -> F_eq _ carrier_eq s (CL_CoAlgebra CL_dec s c) (CL_CoAlgebra CL_dec s c').
+    forall s s' c c', carrier_eq s s' c c' -> F_eq _ carrier_eq s s' (CL_CoAlgebra CL_dec s c) (CL_CoAlgebra CL_dec s' c').
   Proof.
-    intros s c c'.
+    intros s s' c c'.
     unfold F_eq.
     intro c_eq.
     split.
@@ -991,22 +993,22 @@ Module CombinatoryLogicAlgebra
       rewrite CL_CoAlgebra_op.
       rewrite c_eq.
       reflexivity.
-    - assert (op_eq: op Carrier s (CL_CoAlgebra CL_dec s c) = op Carrier s (CL_CoAlgebra CL_dec s c')).
+    - assert (op_eq: op Carrier s (CL_CoAlgebra CL_dec s c) = op Carrier s' (CL_CoAlgebra CL_dec s' c')).
       { rewrite CL_CoAlgebra_op.
         rewrite CL_CoAlgebra_op.
         unfold carrier_eq in c_eq.
         rewrite c_eq.
         reflexivity. }
       assert (arity_eq: arity (op Carrier s (CL_CoAlgebra CL_dec s c)) =
-                        arity (op Carrier s (CL_CoAlgebra CL_dec s c'))).
+                        arity (op Carrier s' (CL_CoAlgebra CL_dec s' c'))).
       { rewrite op_eq; reflexivity. }
       assert (args_eq: ProjectTerms (subst Carrier s (CL_CoAlgebra CL_dec s c)) _
                                     (domain (op Carrier s (CL_CoAlgebra CL_dec s c)))
                                     (args Carrier s (CL_CoAlgebra CL_dec s c)) =
                        rew <- arity_eq in
-                       ProjectTerms (subst Carrier s (CL_CoAlgebra CL_dec s c')) _
-                                    (domain (op Carrier s (CL_CoAlgebra CL_dec s c')))
-                                    (args Carrier s (CL_CoAlgebra CL_dec s c'))).
+                       ProjectTerms (subst Carrier s' (CL_CoAlgebra CL_dec s' c')) _
+                                    (domain (op Carrier s' (CL_CoAlgebra CL_dec s' c')))
+                                    (args Carrier s' (CL_CoAlgebra CL_dec s' c'))).
       { match goal with
         |[|- ?lhs = _ ] =>
          assert (lhs_eq: lhs = rew <- (CL_CoAlgebra_arity CL_dec s c) in argumentsOf (proj1_sig c))
@@ -1016,15 +1018,15 @@ Module CombinatoryLogicAlgebra
           reflexivity. }
         match goal with
         |[|- _ = rew <- _ in ?rhs ] =>
-         assert (rhs_eq: rhs = rew <- (CL_CoAlgebra_arity CL_dec s c') in argumentsOf (proj1_sig c'))
+         assert (rhs_eq: rhs = rew <- (CL_CoAlgebra_arity CL_dec s' c') in argumentsOf (proj1_sig c'))
         end.
-        { rewrite <- (CL_CoAlgebra_args CL_dec s c').
+        { rewrite <- (CL_CoAlgebra_args CL_dec s' c').
           rewrite rew_opp_l.
           reflexivity. }
         rewrite lhs_eq.
         rewrite rhs_eq.
         generalize (CL_CoAlgebra_arity CL_dec s c).
-        generalize (CL_CoAlgebra_arity CL_dec s c').
+        generalize (CL_CoAlgebra_arity CL_dec s' c').
         revert arity_eq.
         rewrite c_eq.
         intro arity_eq.
@@ -1036,7 +1038,7 @@ Module CombinatoryLogicAlgebra
         reflexivity. }
       revert c_eq op_eq arity_eq args_eq.
       generalize (CL_CoAlgebra CL_dec s c).
-      generalize (CL_CoAlgebra CL_dec s c').
+      generalize (CL_CoAlgebra CL_dec s' c').
       intros f' f.
       destruct f as [ op S WF_S args ].
       destruct f' as [ op' S' WF_S' args' ].
@@ -1067,167 +1069,55 @@ Module CombinatoryLogicAlgebra
           rewrite <- map_fg in tl_eq.
           rewrite <- map_fg in tl_eq.
           exact (vect_exist_eq _ _ tl_eq).
-  Qed.  
-
-  Lemma CL_Algebra_morphism_commutes (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}):
-    forall Carrier' (alg: SigmaAlgebra Carrier') s c
-      (R: forall s s', Carrier' s -> Carrier' s' -> Prop)
-      (R_refl: forall s x, R s s x x),
-      R s s
-        (CL_Algebra_morphism CL_dec _ alg s c)
-        (alg s (F_hom _ _ (CL_Algebra_morphism CL_dec _ alg) s (CL_CoAlgebra CL_dec s c))).
-  Proof.
-    intros Carrier' alg s f R R_refl.
-    unfold CL_Algebra_morphism.
-    rewrite canonical_morphism_commutes.
-    apply R_refl.
   Qed.
 
-  (* Work in progress 
-  Lemma F_eq_R_map (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}):
-    forall Carrier' (alg: SigmaAlgebra Carrier') s f f'
-      (R: forall s s', Carrier' s -> Carrier' s' -> Prop)
-      (R_alg_compat: forall s f f', F_eq _ R s f f' -> R s s (alg s f) (alg s f'))
-      (R_refl: forall s x, R s s x x),
-      F_eq _ carrier_eq s f f' ->
-      F_eq _ R s
-           (F_hom _ _ (CL_Algebra_morphism CL_dec _ alg) s f)
-           (F_hom _ _ (CL_Algebra_morphism CL_dec _ alg) s f').
-  Proof.
-    intros Carrier' alg s f f' R R_alg_compat R_refl.
-    destruct f as [ op S WF_S args subsort ].
-    destruct f' as [ op' S' WF_S' args' subsort' ].
-    intro eq; destruct eq as [ op_eq args_eq ].
-    split; [ exact op_eq | ].
-    simpl in op_eq.
-    revert args args' args_eq.
-    simpl.
-    rewrite <- op_eq.
-    revert R_alg_compat R_refl.
-    clear ...
-    intros R_alg_compat R_refl.
-    generalize (domain op).
-    generalize (arity op).
-    intros n params.
-    induction params as [ | param n params IH ].
-    - intros; trivial.
-    - intros args args' args_eq.
-      simpl.
-      split.
-      + unfold CL_Algebra_morphism.
-        unfold CL_Algebra_morphism.
-      + exact (IH _ _ (proj2 args_eq)). 
+  Section Uniqueness.
+    Variable Carrier': Sort EmptySet -> Type.
+    Variable algebra: SigmaAlgebra Carrier'.
+    Variable carrier'_eq: forall s s', Carrier' s -> Carrier' s' -> Prop.
 
-  Lemma CL_Algebra_morphism_commutes' (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}):
-    forall Carrier' (alg: SigmaAlgebra Carrier') s f
-      (R: forall s s', Carrier' s -> Carrier' s' -> Prop)
-      (R_alg_compat: forall s f f', F_eq _ R s f f' -> R s s (alg s f) (alg s f'))
-      (R_refl: forall s x, R s s x x)
-      (R_sym: forall s s' x y, R s s' x y -> R s' s y x),
-      R s s
-        (CL_Algebra_morphism CL_dec _ alg s (CL_Algebra s f))
-        (alg s (F_hom _ _ (CL_Algebra_morphism CL_dec _ alg) s f)).
-  Proof.
-    intros Carrier' alg s f R R_alg_compat R_refl R_sym.
-    unfold CL_Algebra_morphism.
-    rewrite canonical_morphism_commutes.
-    apply R_alg_compat.
-    generalize (CL_AlgebraCoAlgebra_inv CL_dec s f).
-    fold (CL_Algebra_morphism CL_dec Carrier' alg).
-    match goal with
-    |[|- _ -> F_eq _ _ _ (F_hom _ _ ?p _ _) _] =>
-     assert (p_eq: p = CL_Algebra_morphism CL_dec Carrier' alg); [ reflexivity | rewrite p_eq; clear p_eq ]
-    end.
-    intro eq.
-    apply F_eq_sym; [ exact R_sym | ].
-    apply F_eq_R_map; assumption.
-  Qed.
-    
-    { unfold CL_Algebra_morphism.
-      reflexivity. }
-    fold (CL_Algebra_morphism CL_dec Carrier' alg).
-    rewrite <- (canonical_morphism_commutes
-                 Carrier Carrier' (CL_CoAlgebra CL_dec) alg
-                 Term (ltof Term sizeOf) (well_founded_ltof Term sizeOf) (fun _ c => proj1_sig c)
-                 (CL_CoAlgebra_smaller CL_dec) s (CL_Algebra s f)).
+    Hypothesis carrier'_eq_trans:
+      forall s s' s'' x y z, carrier'_eq s s' x y -> carrier'_eq s' s'' y z -> carrier'_eq s s'' x z.
+    Hypothesis alg_compat: forall s s' f f',
+        F_eq Carrier' carrier'_eq s s' f f' -> carrier'_eq s s' (algebra s f) (algebra s' f').
 
+    Hypothesis (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}).
 
-    (CL_CoAlgebra CL_dec s (CL_Algebra s f))).
+    Definition unique_mor := CL_Algebra_morphism CL_dec Carrier' algebra.      
+    
+    Lemma CL_Algebra_morphism_alg_mor:
+      forall s s' f f',
+        F_eq Carrier carrier_eq s s' f f' ->
+        carrier'_eq s s' (unique_mor s (CL_Algebra s f))
+                    (algebra s' (F_mor Carrier Carrier' unique_mor s' f')).
+    Proof.
+      apply canonical_morphism_alg_mor; try solve [ assumption ].
+      - exact carrier_eq_trans.
+      - exact (F_eq_compat_coalg CL_dec).
+      - intros.
+        apply F_eq_sym; [ exact carrier_eq_sym | ].
+        apply (CL_AlgebraCoAlgebra_inv CL_dec).
+    Qed.
 
-    
-    intro eq.
-    apply (F_hom_eq _ _ _ carrier_eq R).
-    - clear eq f s.
-      intros s s' c c' eq.
-      unfold CL_Algebra_morphism.
-      rewrite canonical_morphism_commutes.
-      rewrite canonical_morphism_commutes.
-      
-    - apply (F_eq_sym _ _ carrier_eq_sym _ _ _ eq).
-
-    
-    unfold F_eq.
-    
-    unfold F_hom.
-    simpl.
-    split.
-    - destruct (CL_CoAlgebra CL_dec s (CL_Algebra s f)).
-      destruct f.
-      simpl.
-      unfold F_eq in eq.
-      simpl in eq.
-      rewrite (proj1 eq).
-      reflexivity.
-    - simpl.
-      destruct (CL_CoAlgebra CL_dec s (CL_Algebra s f)) as [ op' S' WF_S' args' subsorts' ].
-      destruct f as [ op S WF_S args subsorts ]. 
-      simpl.
-      unfold F_eq in eq.
-      simpl in eq.
-      destruct eq as [ op_eq args_eq ].
-      revert args args' args_eq.
-      rewrite <- op_eq.
-      generalize (domain op).
-      generalize (arity op).
-      intros n params.
-      induction params as [ | param n params IH ];
-        intros args args' args_eq.
-      + trivial.
-      + split.
-        * simpl.
-          
-          
-      
-      rewrite (proj1 eq).
-    
-    
-  Lemma CL_Algebra_morphism_bisimilar (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}):
-    forall Carrier' (alg: SigmaAlgebra Carrier')
-      (R: forall s s', Carrier' s -> Carrier' s' -> Prop)
-      (R_alg_compat: forall s f f', F_eq _ R s f f' -> R s s (alg s f) (alg s f'))
-      (R_refl: forall s x, R s s x x)
-      (R_trans: forall s s' s'' x y z, R s s' x y -> R s' s'' y z -> R s s'' x z)
-      s (c : Carrier s)
-      (morphism: forall s, Carrier s -> Carrier' s)
-      (morphism_commutes: forall s c, (alg s (F_hom _ _ morphism s f)) = (morphism s (CL_Algebra s f))),
-      R s s (CL_Algebra_morphism CL_dec Carrier' alg s c) (morphism s c).
-  Proof.
-    intros Carrier' alg R R_compat R_refl R_trans s c morphism morphism_proper.
-    unfold CL_Algebra_morphism.
-    rewrite canonical_morphism_commutes.
-    apply (R_trans s s s _ (morphism s (CL_Algebra s (CL_CoAlgebra CL_dec s c))) _).
-    - apply (R_trans s s s _ (alg s (F_hom Carrier Carrier' morphism s (CL_CoAlgebra CL_dec s c))) _).
-      + admit.
-      + apply morphism_proper.
-    - apply (R_compat s (CL_Algebra s (CL_CoAlgebra CL_dec s c)) c).
-
-    destruct c as [ [ c | M N ] Mprf ].
-    - unfold CL_Algebra_morphism.
-      unfold Fix.
-      simpl.
-      simpl.
-    simpl.
-    
-    apply R_compat.
-     *)
+    Lemma CL_Algebra_morphism_unique:
+      forall (morphism: forall s, Carrier s -> Carrier' s)
+        (morphism_compat:
+           forall s s' c c', carrier_eq s s' c c' -> carrier'_eq s s' (morphism s c) (morphism s' c'))
+        (morphism_alg_homo:
+           forall s s' f f',
+             F_eq Carrier carrier_eq s s' f f' ->
+             carrier'_eq s s' (morphism s (CL_Algebra s f)) (algebra s' (F_mor Carrier Carrier' morphism s' f')))
+        s c,
+        carrier'_eq s s (morphism s c) (unique_mor s c).
+    Proof.
+      apply canonical_morphism_unique.
+      - exact carrier_eq_refl.
+      - exact carrier'_eq_trans.
+      - exact alg_compat.
+      - intros s c.
+        apply carrier_eq_sym.
+        exact (CL_CoAlgebraAlgebra_inv CL_dec s c).
+    Qed.
+  End Uniqueness.   
+ 
 End CombinatoryLogicAlgebra.
