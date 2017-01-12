@@ -1118,6 +1118,32 @@ Module CombinatoryLogicAlgebra
         apply carrier_eq_sym.
         exact (CL_CoAlgebraAlgebra_inv CL_dec s c).
     Qed.
+
+    Lemma CL_Algebra_morphism_sound:
+      forall s c, AlgebraicallyGenerated Carrier' algebra s (unique_mor s c).
+    Proof.
+      apply canonical_morphism_sound.
+    Qed.
+
+    Lemma CL_Algebra_morphism_complete:
+      forall s c,
+        AlgebraicallyGenerated Carrier' algebra s c ->
+        exists c', carrier'_eq s s c (unique_mor s c').
+    Proof.
+      intros.
+      apply (canonical_morphism_complete _ _ (CL_CoAlgebra CL_dec) algebra
+                                         _ _ _ _ (CL_CoAlgebra_smaller CL_dec)
+                                         CL_Algebra carrier_eq carrier'_eq).
+      - exact carrier'_eq_trans.
+      - exact alg_compat.
+      - apply F_eq_compat_coalg.
+      - intros.
+        apply (F_eq_sym _ _ carrier_eq_sym).
+        apply (CL_AlgebraCoAlgebra_inv).
+      - exact carrier_eq_sym.
+      - assumption.
+    Qed.
+      
   End Uniqueness.   
  
 End CombinatoryLogicAlgebra.

@@ -745,7 +745,7 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
                                end args')
                             (fun n s dom S arg args arg_gen args_gen => args_gen).
 
-      Lemma cannonical_morphism_sound: forall s c, AlgebraicallyGenerated s (canonical_morphism s c).
+      Lemma canonical_morphism_sound: forall s c, AlgebraicallyGenerated s (canonical_morphism s c).
       Proof.
         intros s c.
         apply (fun r => Fix_F A R _ C
