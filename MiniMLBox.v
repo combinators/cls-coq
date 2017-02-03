@@ -352,7 +352,10 @@ Section WithImplementations.
     induction apfrag as [ M A inprf | | | ];
       try solve [ contradiction ].
     - destruct Terms; [ contradiction | inversion lenprf ].
-  Qed.    
+  Qed.
+
+ 
+    
 
   Definition IsLiftable n (toA: Ty) (B: Ty): Prop :=
     toA = Ty_Lift n B.
@@ -625,6 +628,45 @@ Section WithImplementations.
             | simpl; rewrite IH; reflexivity ].
   Qed.
 
+  Lemma sortType_sur: forall s, typeToSort (sortToType s) EmptySet = s.
+  Proof.
+    intro s.
+    induction s as [ | l xs IH ]using VLTree_rect'.
+    - contradiction.
+    - destruct l;
+        try solve
+            [ simpl;
+              apply f_equal;
+              apply case0;
+              reflexivity
+            | simpl;
+              generalize (Forall_nth _ _ (ForAll'Forall _ _ IH) Fin.F1);
+              generalize (Forall_nth _ _ (ForAll'Forall _ _ IH) (Fin.FS Fin.F1));
+              simpl in xs;
+              apply (caseS' xs);
+              intros A xs';
+              apply (caseS' xs');
+              intros B xs'';
+              simpl;
+              intros B_eq A_eq;
+              rewrite B_eq;
+              rewrite A_eq;
+              repeat apply f_equal;
+              apply case0;
+              reflexivity
+            | simpl;
+              generalize (Forall_nth _ _ (ForAll'Forall _ _ IH) Fin.F1);
+              simpl in xs;
+              apply (caseS' xs);
+              intros A xs';
+              simpl;
+              intro A_eq;
+              rewrite A_eq;
+              repeat apply f_equal;
+              apply case0;
+              reflexivity ].
+  Qed.        
+
   Lemma typeSort_inj: forall s, (exists A, typeToSort A EmptySet = s) -> typeToSort (sortToType s) _ = s.
   Proof.
     intros s [ A Aeq ].
@@ -660,16 +702,14 @@ Section WithImplementations.
         intros; reflexivity.
       + rewrite <- Nat.le_max_r.
         apply (IH (fun M MIn => proofs M (or_intror MIn))).
-  Qed.
+  Qed.      
   
   Inductive WF: (SigVar -> VLTree TyConstr EmptySet) -> Prop :=
   | WF_Arrow: forall S M MIn,
-      (forall v, exists A, typeToSort A EmptySet = S v) ->
       IsTgt (proj1_sig (Proofs M MIn)) (Ty_Arr (sortToType (S alpha)) (sortToType (S beta))) ->
       sortToType (S gamma) = Ty_Unit ->
       WF S
   | WF_Box: forall S M MIn A n,
-      (forall v, exists A, typeToSort A EmptySet = S v) ->
       S alpha = typeToSort (Ty_Unit) EmptySet ->
       S beta = typeToSort (Ty_Unit) EmptySet ->
       IsTgt (proj1_sig (Proofs M MIn)) A ->
@@ -1071,7 +1111,7 @@ Module Type MiniMLBoxAlgebra
       rewrite <- s_eq.
       apply A_Box.
       + exact (IH F1).
-      + inversion WFS as [ ? ? ? ? ? gamma_eq | | ? ? ? gamma_eq ].
+      + inversion WFS as [ ? ? ? ? gamma_eq | | ? ? ? gamma_eq ].
         * fold (sortToType (S gamma)).
           rewrite gamma_eq.
           simpl.
@@ -1192,7 +1232,6 @@ Module Type MiniMLBoxAlgebra
               reflexivity. }
         destruct WF_Contents as [ N [ NIn [ B [ n [ isTgt isLiftable ] ] ] ] ].
         apply (WF_Box _ _ S  N NIn B n); try solve [ reflexivity | assumption ].
-        - intro v; destruct v; eexists; reflexivity.
         - simpl.
           rewrite sortType_inj.
           assumption. }
@@ -1208,7 +1247,6 @@ Module Type MiniMLBoxAlgebra
       assert (WF_S : WF Ops.Terms Ops.Proofs S).
       { destruct (ApplicativeFragment_BoxTgt _ _ _ _ _ appfrag) as [ M' [ M'In [ A' [ n [ isTgt isLiftable ] ] ] ] ].
         apply (WF_Box _ _ S M' M'In A' n).
-        + intro v; destruct v; eexists; reflexivity.
         + reflexivity.
         + reflexivity.
         + exact isTgt.
@@ -1237,7 +1275,6 @@ Module Type MiniMLBoxAlgebra
       assert (WF_S : WF Ops.Terms Ops.Proofs S).
       { destruct (ApplicativeFragment_noAbstraction _ _ _ _ _ _ appfragM) as [ M' [ M'In isTgt ] ].
         apply (WF_Arrow _ _ S M' M'In).
-        - intro v; destruct v; eexists; reflexivity.
         - simpl.
           rewrite sortType_inj.
           rewrite sortType_inj.
@@ -1254,6 +1291,16 @@ Module Type MiniMLBoxAlgebra
       + exact Mgenprf.
       + exact Ngenprf.
       + apply GeneratedArgs_nil.
+  Qed.
+
+  Lemma ApplicativeFragment_WellTyped: forall M A,
+      ApplicativeFragment Ops.Terms Ops.Proofs (max_BoxLevel Ops.Terms Ops.Proofs) M A ->
+      MiniMLBox [[]] M A.
+  Proof.
+    intros M A appfrag.
+    destruct (MiniMLBox_Algebra_complete M A appfrag) as [ result _ ].
+    rewrite sortType_inj in result.
+    exact result.
   Qed.
 
   Definition TermEq : forall s1 s2, MiniMLBoxCarrier s1 -> MiniMLBoxCarrier s2 -> Prop :=
