@@ -110,6 +110,7 @@ VFILES:=VectorQuantification.v\
   DisjointContexts.v\
   VarianceLabeledTree.v\
   SortEmbeddings.v\
+  MiniMLBox.v\
   LambdaBox.v\
   Hoare.v
 
