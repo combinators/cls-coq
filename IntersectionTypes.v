@@ -5,6 +5,7 @@ Require Import Coq.Vectors.Fin.
 Require Import Coq.Vectors.Vector.
 Require Import Coq.Classes.Morphisms.
 Require Import Coq.Arith.PeanoNat.
+Require Import Coq.Arith.Wf_nat.
 Require Import Coq.Arith.Compare_dec.
 Require Import Coq.Logic.Eqdep_dec.
 Require Import VectorQuantification.
@@ -3855,8 +3856,467 @@ Module Type IntersectionTypes(Import TySig: TypeSignature).
                         (proj2 (Nat.succ_le_mono _ _) tauPrf)). }
   Qed.
 
-  (* TODO: Show me *)
-  Axiom ST_dec: forall sigma tau, { sigma <= tau } + { sigma <= tau -> False }.
+  Fixpoint ty_size (sigma: IntersectionType): nat :=
+    match sigma with
+    | Ty (PT_Const c args) => 1 + (fold_left (fun s arg => s + ty_size arg) 0 args)
+    | Ty (PT_omega) => 1
+    | Ty (PT_Arrow sigma' tau) => ty_size sigma' + ty_size tau
+    | Ty (PT_Inter sigma1 sigma2) => ty_size sigma1 + ty_size sigma2
+    end.
+
+  Lemma ty_size_gt_0: forall sigma, ty_size sigma > 0.
+  Proof.
+    intro sigma.
+    induction sigma using IntersectionType_rect'.
+    - apply Nat.lt_0_succ.
+    - apply Nat.lt_0_succ.
+    - apply Nat.add_pos_l; assumption.
+    - apply Nat.add_pos_l; assumption.
+  Qed.
+
+  Lemma ty_size_args: forall C args k, ty_size (nth args k) < ty_size (Const C args).
+  Proof.
+    intros C args.
+    simpl.
+    revert args.
+    generalize (constructorArity C).
+    clear C.
+    intros n args k.
+    generalize 0.
+    induction k as [ | n k IH ].
+    - apply (caseS' args); clear args; intros arg args.
+      simpl.
+      induction args as [ | arg' n args IH ]; intro s.
+      + simpl.
+        unfold "_ < _".
+        rewrite <- Nat.succ_le_mono.
+        rewrite Nat.add_comm.
+        apply Nat.le_add_r.
+      + generalize (IH (s + ty_size arg')).
+        rewrite <- (Nat.add_assoc s).
+        rewrite (Nat.add_comm (ty_size arg')).
+        rewrite (Nat.add_assoc s).
+        intro; assumption.
+    - intro s.
+      apply (caseS' args); clear args; intros arg args.
+      apply IH.
+  Qed.    
+  
+  Lemma Pick_Ideal:
+    forall sigma rho,
+      (forall rho', ty_size rho' < ty_size rho -> { Ideal rho' sigma } + { Ideal rho' sigma -> False }) ->
+      { tau : IntersectionType | (ArrowIdeal sigma tau rho) /\
+                                 (forall tau', ArrowIdeal sigma tau' rho -> Ideal tau' tau) /\
+                                 (ty_size tau <= ty_size rho)%nat }.
+  Proof.
+    intros sigma rho.
+    revert sigma.             
+    induction rho as [ | C args _ | sigma' tau' IH1 IH2 | rho1 rho2 IH1 IH2 ] using IntersectionType_rect';
+      intros sigma sigma_dec.
+    - exists omega; repeat split. 
+      + apply AI_complete.
+        etransitivity; [ apply ST_OmegaArrow | ].
+        apply ST_CoContra.
+        * apply ST_OmegaTop.
+        * apply ST_Refl.
+      + intros tau' omega_tau'.
+        apply Ideal_complete.
+        inversion omega_tau'.
+        apply Omega_sound.
+        assumption.
+      + reflexivity.
+    - exists omega; repeat split. 
+      + apply AI_complete.
+        etransitivity; [ apply ST_OmegaTop | ].
+        etransitivity; [ apply ST_OmegaArrow | ].
+        apply ST_CoContra.
+        * apply ST_OmegaTop.
+        * apply ST_Refl.
+      + intros tau' omega_tau'.
+        apply Ideal_complete.
+        inversion omega_tau'.
+        apply Omega_sound.
+        assumption.
+      + clear ...
+        revert args.
+        simpl.
+        generalize (constructorArity C).
+        intros n args.
+        generalize 0.
+        induction args as [ | n arg args IH ? ].
+        * reflexivity.
+        * intro s.
+          simpl.
+          rewrite <- IH.
+          rewrite <- Nat.succ_le_mono.
+          apply Nat.le_add_r.
+    - assert (sigma_le: {Ideal sigma' sigma} + {Ideal sigma' sigma -> False}).
+      { apply sigma_dec.
+        apply Nat.lt_add_pos_r.
+        apply ty_size_gt_0. }
+      destruct sigma_le as [ sigma_le | sigma_nle ].
+      + exists tau'; repeat split.
+        * apply AI_CoContra; [ | reflexivity ].
+          apply Ideal_sound; assumption.
+        * intros tau'' ai_sigmatau'.
+          inversion ai_sigmatau'.
+          { apply Ideal_complete.
+            transitivity omega; [ apply ST_OmegaTop | ].
+            apply Omega_sound; assumption. }
+          { apply Ideal_complete; assumption. }
+        * simpl.
+          rewrite Nat.add_comm.
+          apply Nat.le_add_r.
+      + exists omega; repeat split.
+        * apply AI_complete.
+          etransitivity; [ apply ST_OmegaTop | ].
+          etransitivity; [ apply ST_OmegaArrow | ].
+          apply ST_CoContra.
+          { apply ST_OmegaTop. }
+          { apply ST_Refl. }
+        * intros tau'' ai_tau''.
+          inversion ai_tau''.
+          { apply Ideal_complete.
+            apply Omega_sound.
+            assumption. }
+          { assert False; [ | contradiction ].
+            apply sigma_nle.
+            apply Ideal_complete.
+            assumption. }            
+        * apply Nat.add_pos_l.
+          apply ty_size_gt_0.
+    - assert (rho1_dec: forall rho', ty_size rho' < ty_size rho1 -> { Ideal rho' sigma } + { Ideal rho' sigma -> False }).
+      { intros rho' rho'_size.
+        apply sigma_dec.
+        simpl.
+        etransitivity; [ apply rho'_size | ].
+        apply Nat.lt_add_pos_r.
+        apply ty_size_gt_0. }
+      assert (rho2_dec: forall rho', ty_size rho' < ty_size rho2 -> { Ideal rho' sigma } + { Ideal rho' sigma -> False }).
+      { intros rho' rho'_size.
+        apply sigma_dec.
+        simpl.
+        etransitivity; [ apply rho'_size | ].
+        apply Nat.lt_add_pos_l.
+        apply ty_size_gt_0. }
+      destruct (IH1 _ rho1_dec) as [ tau1 [ ai_tau1 [ minimal_tau1 size_tau1 ] ] ].
+      destruct (IH2 _ rho2_dec) as [ tau2 [ ai_tau2 [ minimal_tau2 size_tau2 ] ] ].
+      exists (Inter tau1 tau2); repeat split.
+      + eapply AI_Inter; [ eassumption | eassumption | reflexivity ].
+      + intros tau' ai_tau'.
+        inversion ai_tau'.
+        * apply Ideal_complete.
+          transitivity omega; [ apply ST_OmegaTop | ].
+          apply Omega_sound; assumption.
+        * apply Ideal_complete.
+          etransitivity; [ apply ST_InterMeetLeft | ].
+          apply Ideal_sound.
+          apply minimal_tau1.
+          assumption.
+        * apply Ideal_complete.
+          etransitivity; [ apply ST_InterMeetRight | ].
+          apply Ideal_sound.
+          apply minimal_tau2.
+          assumption.
+        * apply Ideal_complete.
+          etransitivity; [ | eassumption ].
+          apply ST_SubtypeDistrib;
+            apply Ideal_sound;
+            [ apply minimal_tau1; assumption | apply minimal_tau2; assumption ].
+      + apply Nat.add_le_mono; assumption.
+  Defined.
+
+  Lemma Pick_IdealArgs:
+    forall C rho,
+      { args : t IntersectionType (constructorArity C)
+      | (ConstIdeal C args rho) /\
+        (forall args', ConstIdeal C args' rho -> Forall2 Ideal args' args) /\
+        (Forall (fun arg => (ty_size arg < ty_size rho)%nat) args) } + {  forall args, ConstIdeal C args rho -> False }.
+  Proof.
+    intros C rho.
+    induction rho as [ | D args _ | sigma' tau' IH1 IH2 | rho1 rho2 IH1 IH2 ] using IntersectionType_rect'.
+    - right; intros args devil.
+      inversion devil.
+    - destruct (Nat.eq_dec (constructorArity C) (constructorArity D)) as [ arity_eq | arity_ineq ].
+      + destruct (ConstructorTaxonomy_dec D C) as [ D_le | D_nle ].
+        * left.
+          exists (rew (eq_sym arity_eq) in args); repeat split.
+          { apply (CI_Const _ _ _ _ (eq_sym arity_eq)).
+            - exact D_le.
+            - rewrite (rew_opp_l).
+              apply nth_Forall2.
+              intro k.
+              reflexivity. }
+          { intros args' ci_args'.
+            inversion ci_args' as [ ? args'' arity_eq' ? subtypes [ ctor_eq args''_eq ] | | | ].
+            generalize (vect_exist_eq _ _ (existT_fg_eq (t IntersectionType) (constructorArity) _ _ _ args''_eq)).
+            intro args''_eq'.
+            rewrite <- args''_eq'.
+            apply nth_Forall2.
+            intro k.
+            apply Ideal_complete.
+            rewrite nth_k.
+            etransitivity; [ eapply (Forall2_nth _ _ _ subtypes (rew <- eq_sym arity_eq in k)) | ].
+            rewrite (UIP_dec Nat.eq_dec (eq_sym arity_eq) arity_eq').
+            unfold eq_rect_r.
+            rewrite nth_eq.
+            reflexivity. }
+          { clear ...
+            rewrite arity_eq.
+            simpl.
+            apply nth_Forall.
+            apply ty_size_args. }
+        * right; intros args' devil; inversion devil.
+          apply D_nle; assumption.
+      + right; intros args' devil; inversion devil.
+        apply arity_ineq.
+        apply eq_sym; assumption.
+    - right; intros args' devil; inversion devil.
+    - destruct IH1 as [ [ args1 [ args1_ideal [ args1_min args1_size ] ] ] | no_ideal1 ].
+      + destruct IH2 as [ [ args2 [ args2_ideal [ args2_min args2_size ] ] ] | no_ideal2 ].
+        * left.
+          exists (map2 Inter args1 args2); repeat split.
+          { apply CI_both.
+            - eapply CI_Trans; [ apply ST_InterMeetLeft | exact args1_ideal ].
+            - eapply CI_Trans; [ apply ST_InterMeetRight | exact args2_ideal ]. }
+          { intros args' ci_args'.
+            inversion ci_args'.
+            - apply nth_Forall2.
+              intro k.
+              apply Ideal_complete.
+              rewrite (nth_map2 _ _ _ _ _ k eq_refl eq_refl).
+              etransitivity; [ apply ST_InterMeetLeft | ].
+              apply Ideal_sound.
+              apply Forall2_nth.
+              apply args1_min.
+              assumption.
+            - apply nth_Forall2.
+              intro k.
+              apply Ideal_complete.
+              rewrite (nth_map2 _ _ _ _ _ k eq_refl eq_refl).
+              etransitivity; [ apply ST_InterMeetRight | ].
+              apply Ideal_sound.
+              apply Forall2_nth.
+              apply args2_min.
+              assumption.
+            - apply nth_Forall2.
+              intro k.
+              apply Ideal_complete.
+              rewrite (nth_map2 _ _ _ _ _ k eq_refl eq_refl).
+              etransitivity; [ | eapply Forall2_nth; eassumption ].
+              rewrite (nth_map2 _ _ _ _ _ k eq_refl eq_refl).
+              apply ST_Both.
+              + rewrite ST_InterMeetLeft.
+                apply Ideal_sound.
+                apply Forall2_nth.
+                apply args1_min.
+                assumption.
+              + rewrite ST_InterMeetRight.
+                apply Ideal_sound.
+                apply Forall2_nth.
+                apply args2_min.
+                assumption. }
+          { apply nth_Forall.
+            intro k.
+            rewrite (nth_map2 _ _ _ _ _ k eq_refl eq_refl).
+            apply (Nat.add_lt_mono); apply Forall_nth; assumption. }
+        * left.
+          exists args1; repeat split.
+          { eapply CI_Trans; [ apply ST_InterMeetLeft | assumption ]. }
+          { intros args' ci_args'.
+            inversion ci_args'.
+            - apply args1_min; assumption.
+            - assert False; [ | contradiction ].
+              eapply no_ideal2; eassumption.
+            - assert False; [ | contradiction ].
+              eapply no_ideal2; eassumption. }
+          { apply nth_Forall.
+            intro k.
+            apply Nat.lt_lt_add_r.
+            apply Forall_nth.
+            assumption. }
+      + destruct IH2 as [ [ args2 [ args2_ideal [ args2_min args2_size ] ] ] | no_ideal2 ].
+        * left.
+          exists args2; repeat split.
+          { eapply CI_Trans; [ apply ST_InterMeetRight | assumption ]. }
+          { intros args' ci_args'.
+            inversion ci_args'.
+            - assert False; [ | contradiction ].
+              eapply no_ideal1; eassumption.
+            - apply args2_min; assumption.
+            - assert False; [ | contradiction ].
+              eapply no_ideal1; eassumption. }
+          { apply nth_Forall.
+            intro k.
+            apply Nat.lt_lt_add_l.
+            apply Forall_nth.
+            assumption. }
+        * right; intros args devil; inversion devil.
+          { eapply no_ideal1; eassumption. }
+          { eapply no_ideal2; eassumption. }
+          { eapply no_ideal1; eassumption. }
+  Defined.
+  
+  Lemma Ideal_decidable':
+    forall sigma tau,
+      (forall sigma' tau', ty_size sigma' + ty_size tau' < ty_size sigma + ty_size tau ->
+                      { Ideal sigma' tau' } + { Ideal sigma' tau' -> False }) ->
+      { Ideal sigma tau } + { Ideal sigma tau -> False }.
+  Proof.
+    intros sigma.
+    destruct sigma as [ | C args _ | sigma tau _ _ | sigma1 sigma2 _ _ ] using IntersectionType_rect';
+      intros rho Ideal_decidable.
+    - left; apply Ideal_complete; apply ST_OmegaTop.
+    - destruct (Pick_IdealArgs C rho) as [ [ args' [ ci_args' [ args'_min args'_size ] ] ] | no_ci  ].
+      + assert (args_ideal: {forall k, Ideal (nth args k) (nth args' k) } +
+                            {(forall k, Ideal (nth args k) (nth args' k)) -> False}).
+        { assert (kth_ideal: forall k, { Ideal (nth args k) (nth args' k) } + { Ideal (nth args k) (nth args' k) -> False }).
+          { intro k.
+            apply Ideal_decidable.
+            apply Nat.add_lt_mono.
+            - apply ty_size_args.
+            - apply (Forall_nth _ _ args'_size). }
+          revert kth_ideal.
+          clear ...
+          revert args args'.
+          generalize (constructorArity C).
+          intro n.
+          induction n as [ | n IH ].
+          - intros; left; [ intro devil; inversion devil ].
+          - intros args args'.
+            apply (caseS' args); clear args; intros arg args.
+            apply (caseS' args'); clear args'; intros arg' args'.
+            intros kth_ideal.
+            destruct (kth_ideal Fin.F1) as [ arg_ideal | arg_no_ideal ].
+            + destruct (IH args args' (fun k => kth_ideal (Fin.FS k))) as [ args_ideal | args_no_ideal ].
+              * left; intro k.
+                apply (Fin.caseS' k); [ apply arg_ideal | apply args_ideal ].
+              * right; intro devil.
+                apply (args_no_ideal (fun k => devil (Fin.FS k))).
+            + right; intro devil.
+              apply (arg_no_ideal (devil Fin.F1)). }
+        destruct args_ideal as [ args_ideal | args_no_ideal ].
+        * left.
+          eapply CI_Trans.
+          { apply CI_sound; exact ci_args'. }
+          { apply (CI_Const _ _ _ _ eq_refl).
+            - reflexivity.
+            - unfold eq_rect_r.
+              simpl.
+              apply nth_Forall2.
+              intro k.
+              apply Ideal_sound.
+              apply args_ideal. }
+        * right.
+          intro devil.
+          inversion devil as [ D args'' arity_eq CD args_st rho_eq
+                             | ? ? ? rho_eq
+                             | ? ? ? rho_eq
+                             | ? ? ? ? ? ? ? rho_eq ].
+          { assert (args''_ideal: Forall2 Ideal (rew arity_eq in args'') args').
+            { apply args'_min.
+              rewrite <- rho_eq.
+              eapply (CI_Const _ _ _ _ arity_eq).
+              + assumption.
+              + rewrite rew_opp_l.
+                apply nth_Forall2; intro; reflexivity. }
+            apply args_no_ideal.
+            intro k.
+            apply Ideal_complete.
+            rewrite (Ideal_sound _ _ (Forall2_nth _ _ _ args''_ideal k)).
+            generalize args_st.
+            clear ...
+            revert args''.
+            rewrite arity_eq.
+            unfold eq_rect_r.
+            simpl.
+            intros args'' prf.
+            exact (Forall2_nth _ _ _ prf k). }
+          { apply args_no_ideal.
+            apply Forall2_nth.
+            apply args'_min.
+            eapply CI_Trans.
+            - rewrite <- rho_eq.
+              apply ST_InterMeetLeft.
+            - assumption. }
+          { apply args_no_ideal.
+            apply Forall2_nth.
+            apply args'_min.
+            eapply CI_Trans.
+            - rewrite <- rho_eq.
+              apply ST_InterMeetRight.
+            - assumption. }
+          { apply args_no_ideal.
+            apply Forall2_nth.
+            apply args'_min.
+            rewrite <- rho_eq.
+            eapply CI_Distrib; eassumption. }
+      + right; apply no_ci.
+    - assert (Ideal_decidable_sigma:
+                forall rho', ty_size rho' < ty_size rho -> { Ideal rho' sigma } + { Ideal rho' sigma -> False }).
+      { intros rho' rho'_size.
+        apply Ideal_decidable.
+        simpl.
+        rewrite (Nat.add_comm _ (ty_size tau)).
+        rewrite Nat.add_comm.
+        etransitivity.
+        - apply Nat.add_le_lt_mono; [ reflexivity | exact rho'_size ].
+        - rewrite <- Nat.add_assoc.
+          apply Nat.lt_add_pos_l.
+          apply ty_size_gt_0. }
+      destruct (Pick_Ideal _ _ Ideal_decidable_sigma) as [ tau' [ ai_tau' [ tau'_minimal tau'_size ] ] ].
+      assert (sigma_tau'_size: ty_size tau + ty_size tau' < ty_size (Arrow sigma tau) + ty_size rho).
+      { apply Nat.add_lt_le_mono.
+        - apply Nat.lt_add_pos_l.
+          apply ty_size_gt_0.
+        - assumption. }
+      destruct (Ideal_decidable _ _ sigma_tau'_size) as [ tau'_ideal | not_tau'_ideal ].
+      + left.
+        apply (AI_Trans _ _ (Arrow sigma tau')).
+        * apply AI_sound; assumption.
+        * apply AI_CoContra; [ reflexivity | ].
+          apply Ideal_sound.
+          assumption.
+      + right; intro devil.
+        apply not_tau'_ideal.
+        apply tau'_minimal.
+        assumption.
+    - assert (sigma1_ideal: {Ideal sigma1 rho} + {Ideal sigma1 rho -> False}).
+      { apply Ideal_decidable.
+        simpl.
+        rewrite (Nat.add_comm (ty_size sigma1) (ty_size sigma2)).
+        rewrite <- Nat.add_assoc.
+        apply Nat.lt_add_pos_l.
+        apply ty_size_gt_0. }
+      destruct sigma1_ideal as [ sigma1_ideal | not_sigma1_ideal ].
+      + assert (sigma2_ideal: {Ideal sigma2 rho} + {Ideal sigma2 rho -> False}).
+        { apply Ideal_decidable.
+          simpl.
+          rewrite <- Nat.add_assoc.
+          apply Nat.lt_add_pos_l.
+          apply ty_size_gt_0. }
+        destruct sigma2_ideal as [ sigma2_ideal | not_sigma2_ideal ].
+        * left; split; assumption.
+        * right; intro devil; destruct devil; contradiction.
+      + right; intro devil; destruct devil; contradiction.
+  Defined.
+
+  Definition Ideal_decidable: forall (sigma tau: IntersectionType), { Ideal sigma tau } + { Ideal sigma tau -> False } :=
+    fun sigma tau =>
+      (@Fix_F_2 _ _
+                (fun xy x'y' => ty_size (fst xy) + ty_size (snd xy) < ty_size (fst x'y') + ty_size (snd x'y'))
+                (fun sigma tau => { Ideal sigma tau } + { Ideal sigma tau -> False })
+                Ideal_decidable' sigma tau (well_founded_ltof _ (fun xy => ty_size (fst xy) + ty_size (snd xy)) _)).
+
+  Definition ST_dec: forall sigma tau, { sigma <= tau } + { sigma <= tau -> False }.    
+  Proof.
+    intros sigma tau.
+    destruct (Ideal_decidable tau sigma).
+    + left; apply Ideal_sound; assumption.
+    + right; intro devil.
+      generalize (Ideal_complete _ _ devil).
+      assumption.
+  Defined.
   
 End IntersectionTypes.
 
