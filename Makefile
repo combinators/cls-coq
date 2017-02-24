@@ -110,9 +110,7 @@ VFILES:=VectorQuantification.v\
   DisjointContexts.v\
   VarianceLabeledTree.v\
   SortEmbeddings.v\
-  MiniMLBox.v\
-  LambdaBox.v\
-  Hoare.v
+  MiniMLBox.v
 
 ifneq ($(filter-out archclean clean cleanall printenv,$(MAKECMDGOALS)),)
 -include $(addsuffix .d,$(VFILES))
