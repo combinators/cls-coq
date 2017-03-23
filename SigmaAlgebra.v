@@ -466,8 +466,10 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
       - simpl.
         destruct args.
         reflexivity.
-      - simpl.
-        rewrite (IH (snd args) (proj2 decprf)).
+      - generalize (IH (snd args) (proj2 decprf)).
+        simpl.
+        intro eq; rewrite eq.
+        clear eq.
         match goal with
         |[|- (?x, _) = (?y, _)] =>
          assert (fst_eq: x = y); [ | rewrite fst_eq; reflexivity ]
@@ -513,7 +515,10 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
         + reflexivity.
         + simpl.
           rewrite gg'_eq.
-          rewrite (IH (snd args) (proj2 dec)).
+          generalize (IH (snd args) (proj2 dec)).
+          intro eq.
+          simpl in eq.
+          rewrite eq.
           reflexivity.
     Qed.
 

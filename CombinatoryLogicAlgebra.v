@@ -583,6 +583,7 @@ Module CombinatoryLogicAlgebra
           reflexivity.
         - simpl.
           intro source_count_le.
+          fold src_count.
           generalize (proj2 (PeanoNat.Nat.succ_le_mono _ _) source_count_le).
           intro source_count_le'.
           generalize (IH source_count_le').
@@ -825,7 +826,7 @@ Module CombinatoryLogicAlgebra
           unfold ProjectTerms in terms_eq.
           simpl in terms_eq.
           inversion terms_eq as [ term_eq ].
-          exact term_eq.
+          reflexivity.
         * apply IH.
           unfold ProjectTerms.
           unfold ProjectTerms in terms_eq.
@@ -1064,7 +1065,7 @@ Module CombinatoryLogicAlgebra
         simpl in args_eq.
         inversion args_eq as [ [ hd_eq tl_eq ] ].
         split.       
-        * exact hd_eq.
+        * reflexivity.
         * apply IH.
           rewrite <- map_fg in tl_eq.
           rewrite <- map_fg in tl_eq.

@@ -508,15 +508,14 @@ Module Type IntersectionTypes(Import TySig: TypeSignature).
       clear taus; intros tau taus.
       apply (caseS' xs).
       clear xs; intros x xs.
-      destruct taus.
+      destruct taus as [ | tau' n taus ].
       + apply (fun r => case0 (fun xs => intersect (map2 _ _ (cons _ x _ xs)) <= _) r xs).
         apply f_le.
       + apply (caseS' xs).
         clear xs; intros x' xs.
         apply ST_Both.
         * etransitivity; [ apply ST_InterMeetLeft | apply f_le ].
-        * etransitivity; [ apply ST_InterMeetRight | apply IH ].
-          apply f_le.
+        * etransitivity; [ apply ST_InterMeetRight | apply (IH (cons _ tau' _ taus) (cons _ x' _ xs) f f_le) ].
   Qed.
 
   Lemma ST_intersect_map2_fst_ge_hom {T : Type}:
@@ -1637,7 +1636,7 @@ Module Type IntersectionTypes(Import TySig: TypeSignature).
     induction taus as [ | tau n' taus IH ].
     - intros; apply Organized_Omega.
     - intros sigma paths_taus.
-      destruct taus.
+      destruct taus as [ | tau' n' taus ].
       + simpl.
         apply Organized_Path.
         apply Path_Arr.
@@ -1653,7 +1652,7 @@ Module Type IntersectionTypes(Import TySig: TypeSignature).
             unfold not;
             intro devil;
             inversion devil.
-        * apply IH.
+        * apply (IH sigma).
           inversion paths_taus as [ | ? ? ? ? ? n_eq [ h_eq tl_eq ] ].
           dependent rewrite <- tl_eq.
           assumption.
