@@ -274,6 +274,7 @@ Module Type CombinatoryLogic
                   apply Forall2_shiftin.
                   { set (factor'_last_eq := split_path_shiftin _ _ argCountPrf' argCountPrf).
                     simpl plus in factor'_last_eq.
+                    unfold argumentCount.
                     rewrite factor'_last_eq.
                     rewrite (shiftin_last).
                     apply (CL_ST _ _ _ _ Nsigma).

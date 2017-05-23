@@ -913,6 +913,7 @@ Module Type DisjointCombinatoryLogic
             simpl argumentsOf in srcPrfs.
             set (params_eq := (split_path_shiftin _ _ argCountPrf argCountPrf')).
             simpl plus in params_eq.
+            fold argumentCount in params_eq.
             rewrite params_eq in srcPrfs.
             clear params_eq.
             rewrite (shiftout_shiftin (argumentsOf M) N).

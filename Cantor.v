@@ -136,22 +136,23 @@ Proof.
         reflexivity. }
     rewrite rew_hd_eq.
     rewrite (rew_tl_eq).
-    assert (rew_eq_trans:
-              rew [t A] Nat.add_succ_r n n in
-               rew [t A] Nat.succ_inj (S (n + n)) (n + S n) (add_succ_succ n) in
-               (cons A y (n + n) (merge xs ys)) =
-               (cons A y (n + n) (merge xs ys))).
+    match goal with
+    | [ |- (cons _ _ _ (fst (unmerge (tl ?vect))), _) = _ ] =>
+      assert (rew_eq_trans: vect = (cons A y (n + n) (merge xs ys)))
+    end.
     { clear ...
       generalize (Nat.add_succ_r n n).
       intro eq1.
       generalize (Nat.succ_inj (S (n + n)) (n + S n) (add_succ_succ n)).
       intro eq2.
-      revert eq1.
-      rewrite <- eq2.
-      simpl.
-      intro eq1.
-      rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ eq1).
-      reflexivity. }   
+      rewrite (UIP_dec (Nat.eq_dec) eq2 (eq_sym eq1)).
+      clear eq2.
+      match goal with
+      |[|- rew _ in rew _ in ?M = _ ] =>
+       generalize M
+      end.
+      rewrite <- eq1.
+      intro; reflexivity. }
     rewrite rew_eq_trans.
     simpl.
     reflexivity.
@@ -195,22 +196,24 @@ Proof.
     intros x' y'.
     generalize (IH xs ys x' y').
     simpl.
+    match goal with
+    |[|- last ?merged = _ -> _ ] =>
+     generalize merged
+    end.
+    clear ...
     generalize (add_succ_succ (S n)).
     intro eq.
-    simpl in eq.
+    cbv in eq.
+    fold (Nat.add n (S n)) in eq.
+    fold (Nat.add n (S (S n))) in eq.
+    fold (Nat.add n (S n)).
+    fold (Nat.add n (S (S n))).
     revert eq.
     rewrite (Nat.add_succ_r n (S n)).
-    intro eq.
+    intros eq xs last_eq.
     rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ eq).
-    generalize (add_succ_succ n).
-    intro eq'.
-    simpl in eq'.
-    revert eq'.
-    rewrite (Nat.add_succ_r n n).
-    intro eq'.
-    rewrite <- (eq_rect_eq_dec (Nat.eq_dec) _ _ eq').
     simpl.
-    intro; assumption.
+    exact last_eq.
 Qed.
 
 Lemma cantor_pair_size: forall m n,

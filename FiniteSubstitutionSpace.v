@@ -1958,11 +1958,9 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
       - apply Forall_cons.
         + apply allPossibleInhabitants_maxcount_sound; assumption.
         + generalize (IH (fun k => fromFin (FS k))).
-          fold (map (fun c => (fromFin c,
-                            allPossibleInhabitants_maxcount Gamma tau
-                                                            (fromFin c)))
-                    (map FS (positions card'))).
-          rewrite <- (map_fg _ _ FS).
+          rewrite (map_fg _ (fun c => (fromFin c,
+                                    allPossibleInhabitants_maxcount Gamma tau
+                                                                    (fromFin c))) FS).
           intro; assumption.
     Qed.
 
