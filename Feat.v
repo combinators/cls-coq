@@ -7,8 +7,6 @@ Require Import Coq.Arith.Compare_dec.
 Require Import Coq.Logic.Eqdep_dec.
 
 Import EqNotations.
-
-
 Module Finite.
 
   Section SingleType.
@@ -27,7 +25,7 @@ Module Finite.
                                                                (le_0_n (proj1_sig idx)))) |}.
 
     Definition singleton x: Finite :=
-      {| cardinality := 0;
+      {| cardinality := 1;
          index := fun idx => x |}.
     
     Lemma idx_right: forall i m n, i < m + n -> i >= m -> (i - m) < n.
@@ -81,8 +79,13 @@ Module Finite.
                                                                (le_0_n (proj1_sig idx))))
          | S n =>
            fun idx index_xs =>
-             let old_pos := (proj1_sig idx) in
-             (index_xs (exist (fun n' => n' < S n)
+             let old_pos := (proj1_sig idx) in             
+             (index_xs (exist (fun n' => n' < S n))
+
+
+
+
+                                                                                        (*index_xs (exist (fun n' => n' < S n)
                               (Nat.div old_pos (S n))
                               (rew (@eq_refl _ (S n)) in
                                   Nat.mod_upper_bound (old_pos) (S n)
@@ -91,8 +94,8 @@ Module Finite.
                                                                  (fun x => match x with
                                                                         | 0 => False
                                                                         | _ => True
-                                                                        end) I 0 eq))),
-              b
+                                                                        end) I 0 eq)))*),
+             b
               (*index _ ys (exist _ (Nat.modulo (proj1_sig idx) (cardinality _ xs)) _)*))
          end (index _ xs) |}.
                  
