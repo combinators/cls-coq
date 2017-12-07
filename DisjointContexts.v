@@ -532,7 +532,7 @@ Module Type DisjointCombinatoryLogic
        (Import DisjointSig: DisjointTypeSig(TypesAndTermsSig))
        (Import TyDisjoint: DisjointTypes(TypesAndTermsSig)(DisjointSig)(Types)).
   
-  Variable WF_respectful:
+  Parameter WF_respectful:
     forall S, WellFormed S ->
          forall sigma n, TypeSchemeOf n sigma -> TypeOf n (Apply S sigma).
 
