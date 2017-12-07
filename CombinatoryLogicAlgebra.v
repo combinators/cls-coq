@@ -916,12 +916,14 @@ Module CombinatoryLogicAlgebra
         intro; assumption.        
   Qed.
 
-  Definition CL_Algebra_morphism (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False})
-             Carrier' (alg: SigmaAlgebra Carrier') s (c: Carrier s): Carrier' s :=
-    canonical_morphism Carrier Carrier'
-                       (CL_CoAlgebra CL_dec) alg
-                       Term _ (well_founded_ltof _ sizeOf) (fun _ c => proj1_sig c)
-                       (CL_CoAlgebra_smaller CL_dec) s c.
+  (* Also called f_Pi *)
+  Definition CL_Algebra_morphism (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}):
+             forall Carrier', SigmaAlgebra Carrier' -> forall s, Carrier s -> Carrier' s :=
+    fun D => fun h => fun s => fun c =>
+      canonical_morphism Carrier D
+                         (CL_CoAlgebra CL_dec) h
+                         Term _ (well_founded_ltof _ sizeOf) (fun _ c => proj1_sig c)
+                         (CL_CoAlgebra_smaller CL_dec) s c.
   
   Lemma F_eq_compat_alg: forall s s' f f',
       F_eq _ carrier_eq s s' f f' ->
