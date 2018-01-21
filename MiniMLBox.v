@@ -902,8 +902,8 @@ Section WithImplementations.
 End WithImplementations.
 
 Module Type MiniMLBoxOpsSpec.
-  Variable Terms : list Term. 
-  Variable Proofs : forall M, List.In M Terms -> { A : Ty | MiniMLBox [[]] M A }.
+  Parameter Terms : list Term. 
+  Parameter Proofs : forall M, List.In M Terms -> { A : Ty | MiniMLBox [[]] M A }.
 End MiniMLBoxOpsSpec.
 
 Module Type MiniMLBoxTreeSpec(Ops: MiniMLBoxOpsSpec) <: TreeSpec.
