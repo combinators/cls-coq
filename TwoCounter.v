@@ -2,15 +2,19 @@ Require Import Lists.List.
 Require Import Arith.PeanoNat.
 Require Import Arith.Wf_nat.
 Require Import Coq.Logic.Eqdep_dec.
+Require Import Coq.Classes.RelationClasses.
+Require Import Coq.Vectors.Fin.
+Require Import Coq.Vectors.Vector.
+
 Require Import VectorQuantification.
 Require Import SigmaAlgebra.
 Require Import SortEmbeddings.
 Require Import VarianceLabeledTree.
 Require Import Cantor.
-Require Import Coq.Classes.RelationClasses.
-Require Import Coq.Vectors.Fin.
-Require Import Coq.Vectors.Vector.
+Require Import FunctionSpace.
+
 Import ListNotations.
+Import EqNotations.
 
 Definition State : Set := nat.
 
@@ -112,13 +116,105 @@ Module Type TwoCounterTreeSpec(Import Automaton: TwoCounterSpec) <: TreeSpec.
       OperationTy.
   Definition Operation := OperationTy.
 
+  Lemma Label_eq_dec: forall (x y: Label), { x = y } + { x <> y }.
+  Proof.
+    intros x y;
+      destruct x;
+      destruct y;
+      solve [ left; reflexivity | right; intro devil; inversion devil ].
+  Defined.
+
   Import VectorNotations.
   Inductive WfNat: VLTree Label EmptySet -> Prop :=
   | WfNat_Zero : WfNat (Node _ _ Zero [])
   | WfNat_Succ : forall n, WfNat n -> WfNat (Node _ _ Succ [n]).
                          
-  Definition WellFormed: (Var -> VLTree Label EmptySet) -> Prop :=
-    fun S => WfNat (S valpha) /\ WfNat (S vbeta).
+  Definition WellFormed: Type :=
+    { mn : _ | WfNat (fst mn) /\ WfNat (snd mn) }.
+
+  Definition WF_take (S: WellFormed) (x: Var): (VLTree Label EmptySet) :=
+    match x with | valpha => fst (proj1_sig S) | vbeta => snd (proj1_sig S) end.
+
+  Lemma WfNat_ext: forall m n (p1: WfNat m) (p2: WfNat n) (mn_eq: n = m), p1 = (rew [WfNat] mn_eq in p2).
+  Proof.
+    intros m n p1.
+    revert n.
+    apply (fun caseZ caseS =>
+             WfNat_ind (fun m => forall p1 n p2 (mn_eq: n = m), p1 = rew [WfNat] mn_eq in p2)
+                       caseZ caseS m p1); clear p1.
+    - match goal with
+      |[|- forall (p1 : WfNat ?m''), _] =>
+       remember m'' as m' eqn:m_eq
+      end.
+      intro p1.
+      destruct p1.
+      + intros n p2.
+        destruct p2.
+        * clear m_eq.
+          intro mn_eq.
+          rewrite (UIP_dec (Tree_eq_dec _ _ Label_eq_dec (fun x => False_rect _ x)) mn_eq eq_refl).
+          reflexivity.
+        * intro mn_eq.
+          inversion mn_eq.
+      + inversion m_eq.
+    - intros child wf_child IH.
+      match goal with
+      |[|- forall (p1 : WfNat ?m''), _] =>
+       remember m'' as m' eqn:m_eq
+      end.
+      intro p1.
+      destruct p1 as [ | child' child'_wf ].
+      + inversion m_eq.
+      + intros n p2.
+        destruct p2.
+        * intro mn_eq; inversion mn_eq.
+        * intro mn_eq.
+          assert (n_eq: n = child').
+          { revert mn_eq.
+            clear ...
+            intro mn_eq.
+            inversion mn_eq.
+            reflexivity. }
+          revert IH child'_wf mn_eq.
+          rewrite <- n_eq.
+          intros IH child'_wf mn_eq.
+          rewrite (UIP_dec (Tree_eq_dec _ _ Label_eq_dec (fun x => False_rect _ x)) mn_eq eq_refl).
+          simpl.
+          apply f_equal.
+          assert (n_eq': n = child).
+          { revert n_eq m_eq.
+            clear ...
+            intros n_eq m_eq.
+            rewrite <- n_eq in m_eq.
+            inversion m_eq.
+            reflexivity. }
+          generalize (IH (rew n_eq' in child'_wf) n p2 n_eq').
+          intro result.
+          rewrite <- n_eq' in result.
+          exact result.
+  Qed.
+  
+  Lemma WF_take_extensional: forall S S', (forall x, WF_take S x = WF_take S' x) -> S = S'.
+  Proof.
+    intros S S' prf.
+    destruct S as [ [ m n ] [ WF_m WF_n ] ];
+      destruct S' as [ [ m' n' ] [ WF_m' WF_n' ] ].
+    generalize (prf valpha); generalize (prf vbeta).
+    clear prf.
+    simpl.
+    intros p1 p2.
+    revert WF_m WF_n.
+    rewrite p1.
+    rewrite p2.
+    intros WF_m WF_n.
+    rewrite (WfNat_ext _ _ WF_m WF_m' eq_refl).
+    rewrite (WfNat_ext _ _ WF_n WF_n' eq_refl).
+    reflexivity.
+  Qed.
+  
+  Instance WellFormedSpace: FunctionSpace WellFormed Var (VLTree Label EmptySet) :=
+    {| take := WF_take;
+       extensional := WF_take_extensional |}.
 
   Definition ZeroTree {V: Set} : VLTree Label V := Node _ _ Zero [].
   Definition SuccTree {V: Set} (n: VLTree Label V): VLTree Label V := Node _ _ Succ [n].
@@ -227,19 +323,17 @@ Module Type TwoCounterTreeSpec(Import Automaton: TwoCounterSpec) <: TreeSpec.
       destruct y;
       solve [ left; reflexivity | right; intro devil; inversion devil ].
   Defined.
-  Lemma Label_eq_dec: forall (x y: Label), { x = y } + { x <> y }.
-  Proof.
-    intros x y;
-      destruct x;
-      destruct y;
-      solve [ left; reflexivity | right; intro devil; inversion devil ].
-  Defined.
+ 
   Definition LOrder_dec := Label_eq_dec.
   Instance Vars_finite : Finite Var :=
     {| cardinality := 2;
        toFin := fun x => match x with | valpha => F1 | vbeta => Fin.FS F1 end;
        fromFin := fun x => match x return Var with | F1 => valpha | _ => vbeta end;
-       fromToFin_id := fun x => match x with | valpha => eq_refl | vbeta  => eq_refl end |}.
+       fromToFin_id x := match x with | valpha => eq_refl | vbeta  => eq_refl end;
+       toFromFin_id x := Fin.caseS' x (fun y => _ (_ y) = y) (eq_refl)
+                                    (fun x' => Fin.caseS' x' (fun y => _ (_ (Fin.FS y)) = Fin.FS y) (eq_refl)
+                                                       (fun x'' => False_rect _ (Fin.case0 (fun x => False) x'')))
+    |}.
   Instance Labels_countable : Countable Label :=
     { toNat := fun l => match l with
                      | Zero => 0
@@ -345,15 +439,15 @@ Module Type TwoCounterAlgebra
       auto.
   Qed.  
 
-  Ltac equate_config C S WFS :=
+  Ltac equate_config C WFS :=
     simpl;
     unfold C;
     unfold mkConfigTree;
     simpl;
     unfold configTree;
-    try rewrite (natAsTree_treeAsNat _ (proj1 WFS));
-    try rewrite (natAsTree_treeAsNat _ (proj2 WFS));
-    rewrite (substitute_nat S _);
+    try rewrite (natAsTree_treeAsNat _ (proj1 (proj2_sig WFS)));
+    try rewrite (natAsTree_treeAsNat _ (proj2 (proj2_sig WFS)));
+    rewrite (substitute_nat (WF_take WFS) _);
     reflexivity.
 
   Lemma configTree_eq:
@@ -381,7 +475,7 @@ Module Type TwoCounterAlgebra
   Definition TwoCounterAlgebra: SigmaAlgebra TwoCounterCarrier.
   Proof.
     intros s f.
-    destruct f as [ op S WFS dom subsort ].
+    destruct f as [ op S dom subsort ].
     revert dom subsort.
     destruct op as [
                   | useSecond q p isTrans
@@ -392,45 +486,45 @@ Module Type TwoCounterAlgebra
       rewrite <- (subsort_eq _ _ subsort);
       try solve
           [ set (C := MkConfig (final automaton)
-                               (treeAsNat (S valpha))
-                               (treeAsNat (S vbeta)));
+                               (treeAsNat (take S valpha))
+                               (treeAsNat (take S vbeta)));
             exists (C, C); repeat split;
-            [ equate_config C S WFS| apply Here ]
+            [ equate_config C S | apply Here ]
           | destruct useSecond;
             match goal with
-            |[|- TwoCounterCarrier (applySubst S (range (CAdd _ _ _ _)))] =>
+            |[|- TwoCounterCarrier (applySubst (take S) (range (CAdd _ _ _ _)))] =>
              set (C := MkConfig q
-                                (treeAsNat (substitute S alpha))
-                                (treeAsNat (substitute S beta)))
-            |[|- TwoCounterCarrier (applySubst S (range (CSub true _ _ _)))] =>
+                                (treeAsNat (substitute (take S) alpha))
+                                (treeAsNat (substitute (take S) beta)))
+            |[|- TwoCounterCarrier (applySubst (take S) (range (CSub true _ _ _)))] =>
              set (C := MkConfig q
-                                (treeAsNat (S valpha))
-                                (treeAsNat (SuccTree (S vbeta))))
-            |[|- TwoCounterCarrier (applySubst S (range (CSub false _ _ _)))] =>
+                                (treeAsNat (take S valpha))
+                                (treeAsNat (SuccTree (take S vbeta))))
+            |[|- TwoCounterCarrier (applySubst (take S) (range (CSub false _ _ _)))] =>
              set (C := MkConfig q
-                                (treeAsNat (SuccTree (S valpha)))
-                                (treeAsNat (S vbeta)))
-            |[|- TwoCounterCarrier (applySubst S (range (CTstZ false _ _ _ _)))] =>
+                                (treeAsNat (SuccTree (take S valpha)))
+                                (treeAsNat (take S vbeta)))
+            |[|- TwoCounterCarrier (applySubst (take S) (range (CTstZ false _ _ _ _)))] =>
              set (C := MkConfig q
                                 (treeAsNat ZeroTree)
-                                (treeAsNat (S vbeta)))
-            |[|- TwoCounterCarrier (applySubst S (range (CTstZ true _ _ _ _)))] =>
+                                (treeAsNat (take S vbeta)))
+            |[|- TwoCounterCarrier (applySubst (take S) (range (CTstZ true _ _ _ _)))] =>
              set (C := MkConfig q
-                                (treeAsNat (S valpha))
+                                (treeAsNat ((take S) valpha))
                                 (treeAsNat ZeroTree))
-            |[|- TwoCounterCarrier (applySubst S (range (CTstNZ false _ _ _ _)))] =>
+            |[|- TwoCounterCarrier (applySubst (take S) (range (CTstNZ false _ _ _ _)))] =>
              set (C := MkConfig q
-                                (treeAsNat (SuccTree (S valpha)))
-                                (treeAsNat (S vbeta)))
-            |[|- TwoCounterCarrier (applySubst S (range (CTstNZ true _ _ _ _)))] =>
+                                (treeAsNat (SuccTree (take S valpha)))
+                                (treeAsNat (take S vbeta)))
+            |[|- TwoCounterCarrier (applySubst (take S) (range (CTstNZ true _ _ _ _)))] =>
              set (C := MkConfig q
-                                (treeAsNat (S valpha))
-                                (treeAsNat (SuccTree (S vbeta))))
+                                (treeAsNat (take S valpha))
+                                (treeAsNat (SuccTree (take S vbeta))))
             end;
             exists (C, snd (proj1_sig (fst dom)));
             repeat split;
             try solve
-                [ equate_config C S WFS
+                [ equate_config C S
                 | simpl;
                   match goal with
                   |[ isTrans: List.In {| startState := _; command := ?cmd; useSecondCounter := ?snd |} _ |- _] =>
@@ -482,21 +576,19 @@ Module Type TwoCounterAlgebra
   Proof.
     intros C C' stepPrf.
     induction stepPrf as [ | C cmd useSecondCounter C'' allowed isTrans canStep IH ]; intro finPrf.
-    - set (S := fun v =>
-                  match v return Sort EmptySet with
-                  | valpha => natAsTree (firstCounter C)
-                  | vbeta => natAsTree (secondCounter C)
-                  end).
-      set (WF_S := conj (natAsTree_WfNat (firstCounter C))
-                        (natAsTree_WfNat (secondCounter C))).
-      assert (subPrf: subsorts (applySubst S (range CFin)) (mkConfigTree C)).
+    - set (WF_S :=
+             exist (fun mn => WfNat (fst mn) /\ WfNat (snd mn))
+                   (natAsTree (firstCounter C), natAsTree (secondCounter C))
+                   (conj (natAsTree_WfNat (firstCounter C))
+                         (natAsTree_WfNat (secondCounter C)))).
+      assert (subPrf: subsorts (applySubst (take WF_S) (range CFin)) (mkConfigTree C)).
       { simpl.
         unfold mkConfigTree.
         unfold configTree.
         rewrite (substitute_nat).
         rewrite finPrf.
         reflexivity. }
-      exists (TwoCounterAlgebra _ {| op := CFin; subst := S; wf_subst := WF_S; args := tt; subsort := subPrf |}).
+      exists (TwoCounterAlgebra _ {| op := CFin; subst := WF_S; args := tt; subsort := subPrf |}).
       apply FromF.
       apply GeneratedArgs_nil.
     - destruct (IH finPrf) as [ arg argPrf ].
@@ -518,29 +610,22 @@ Module Type TwoCounterAlgebra
                  end
                end
              end isTrans).      
-      set (S := fun v =>
-                  match cmd, useSecondCounter with
-                  | Add _, _ =>
-                    match v return Sort EmptySet with
-                    | valpha => natAsTree (firstCounter C)
-                    | vbeta => natAsTree (secondCounter C)
-                    end
-                  | _, true =>
-                    match v return Sort EmptySet with
-                    | valpha => natAsTree (firstCounter C)
-                    | vbeta => natAsTree (pred (secondCounter C))
-                    end
-                  | _, false =>
-                    match v return Sort EmptySet with
-                    | valpha => natAsTree (pred (firstCounter C))
-                    | vbeta => natAsTree (secondCounter C)
-                    end
-                  end).
-      assert (WF_S: WellFormed S).      
-      { split; destruct cmd; destruct useSecondCounter; apply natAsTree_WfNat. }
-      assert (subPrf: subsorts (substitute S (range op)) (mkConfigTree C)).
+      set (S := match cmd, useSecondCounter return (nat * nat) with
+                | Add _, _ =>
+                  (firstCounter C, secondCounter C)
+                | _, true =>
+                  (firstCounter C, pred (secondCounter C))
+                | _, false =>
+                  (pred (firstCounter C), secondCounter C)
+                end).
+      set (WF_S := exist (fun mn => WfNat (fst mn) /\ WfNat (snd mn))
+                         (natAsTree (fst S), natAsTree (snd S))
+                         (match cmd, useSecondCounter with
+                          | _, _ => conj (natAsTree_WfNat (fst S)) (natAsTree_WfNat (snd S))
+                          end)).                        
+      assert (subPrf: subsorts (substitute (take WF_S) (range op)) (mkConfigTree C)).
       { unfold op.
-        unfold S.
+        unfold WF_S.
         destruct cmd; destruct useSecondCounter;
           simpl;
           unfold mkConfigTree;
@@ -552,7 +637,7 @@ Module Type TwoCounterAlgebra
               | destruct (secondCounter C); simpl; rewrite substitute_nat; reflexivity
               | destruct (firstCounter C); simpl; rewrite substitute_nat; reflexivity
               ]. }
-      assert (genArgs: { args: F_args TwoCounterCarrier S (domain op)
+      assert (genArgs: { args: F_args TwoCounterCarrier (take WF_S) (domain op)
                        | GeneratedArgs TwoCounterCarrier TwoCounterAlgebra _ _ _ args }).
       { revert arg argPrf.
         unfold mkConfigTree.
@@ -564,15 +649,15 @@ Module Type TwoCounterAlgebra
           (destruct useSecondCounter; [ destruct (secondCounter C) | destruct (firstCounter C) ]);
           simpl;
           match goal with
-          |[|- context f [ substitute S (natAsTree ?x)  ]] =>
-           rewrite <- (substitute_nat S x)
+          |[|- context f [ substitute (WF_take WF_S) (natAsTree ?x)  ]] =>
+           rewrite <- (substitute_nat (WF_take WF_S) x)
           end;
           try rewrite (Nat.sub_0_r _);
           intros arg argPrf;
           exists (arg, tt);
           (apply GeneratedArgs_cons; [ exact argPrf | apply GeneratedArgs_nil ]). }
       exists (TwoCounterAlgebra _
-                           {| op := op; subst := S; wf_subst := WF_S;
+                           {| op := op; subst := WF_S;
                               args := (proj1_sig genArgs); subsort := subPrf |}).
       apply FromF.
       exact (proj2_sig genArgs).
