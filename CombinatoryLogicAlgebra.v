@@ -139,20 +139,78 @@ Module Type ProperWellFormedPredicate
        (Import SigSpec: CompatibleCLSignature)
        (Import Types: IntersectionTypes(SigSpec))
        (Import ProperEmbedding: WithProperEmbedding(SigSpec)(Types))
-<: CountableWellFormedPredicate(SigSpec)(Types).
-  Include CountableWellFormedPredicate(SigSpec)(Types).
+<: WellFormedPredicate(SigSpec)(Types).
+  Include WellFormedPredicate(SigSpec)(Types).
   Parameter WF_embed: forall (S: SigSpec.WellFormed), { S' : WellFormed | forall x, take S' x = embedSubst (take S) x }.
   Parameter WF_unembed: forall (S: WellFormed), { S' : SigSpec.WellFormed | forall x, take S' x = unembedSubst (take S) x }.
   Parameter WF_closed: forall (S: WellFormed), forall alpha, exists s, take S alpha = freeze (embed s).
 End ProperWellFormedPredicate.
 
-Module CombinatoryLogicAlgebra
+
+Module Type EmbedWellFormedSpace
+       (Import SigSpec: CompatibleCLSignature)
+       (Import Types: IntersectionTypes(SigSpec))
+       (Import ProperEmbedding: WithProperEmbedding(SigSpec)(Types)) <:
+  ProperWellFormedPredicate(SigSpec)(Types)(ProperEmbedding).
+  Definition WellFormed: Type := SigSpec.WellFormed.
+  Lemma WF_extensional: forall S S', (forall x, embedSubst (take S) x = embedSubst (take S') x) -> S = S'.
+  Proof.
+    intros S S' prf.
+    apply extensional.
+    intro x.
+    rewrite <- (unembed_embedSubst (take S)).
+    rewrite <- (unembed_embedSubst (take S')).
+    unfold embedSubst in *.
+    unfold unembedSubst.
+    rewrite (prf x).
+    reflexivity.
+  Qed.
+    
+  Instance WellFormedSpace: FunctionSpace WellFormed VariableSymbol IntersectionType :=
+    {| take S x := embedSubst (take S) x;
+       extensional := WF_extensional |}.
+
+  Definition WF_embed: forall (S: SigSpec.WellFormed), { S' : WellFormed | forall x, take S' x = embedSubst (take S) x } :=
+    fun S => exist _ S (fun x => eq_refl).
+  Lemma WF_unembed: forall (S: WellFormed), { S' : SigSpec.WellFormed | forall x, take S' x = unembedSubst (take S) x }.
+  Proof.
+    intro S.
+    exists S.
+    intro x.
+    unfold take at 2.
+    simpl.
+    unfold unembedSubst.
+    unfold embedSubst.
+    rewrite freezeUnfreeze.
+    rewrite unembedEmbed.
+    reflexivity.
+  Defined.
+
+  Lemma WF_closed: forall (S: WellFormed), forall alpha, exists s, take S alpha = freeze (embed s).
+  Proof.
+    intros S alpha.
+    exists (take S alpha).
+    reflexivity.
+  Qed.    
+End EmbedWellFormedSpace.
+
+Module Type CountableProperWellFormedPredicate
+         (SigSpec: CompatibleCLSignature)
+         (Types: IntersectionTypes(SigSpec))
+         (ProperEmbedding: WithProperEmbedding(SigSpec)(Types))
+<: CountableWellFormedPredicate(SigSpec)(Types)
+<: ProperWellFormedPredicate(SigSpec)(Types)(ProperEmbedding).
+  Include ProperWellFormedPredicate(SigSpec)(Types)(ProperEmbedding).
+  Declare Instance SubstitutionSpace_countable: Countable WellFormed.
+End CountableProperWellFormedPredicate.
+  
+Module Type CombinatoryLogicAlgebra
        (Import SigSpec: CompatibleCLSignature)
        (Import Types: IntersectionTypes(SigSpec))
        (Import Terms: Terms(SigSpec))
        (Import ProperEmbedding: WithProperEmbedding(SigSpec)(Types))
        (Import TypesCountable: CountableTypes(SigSpec)(Types))
-       (Import WF: ProperWellFormedPredicate(SigSpec)(Types)(ProperEmbedding))
+       (Import WF: CountableProperWellFormedPredicate(SigSpec)(Types)(ProperEmbedding))
        (Import CL: CombinatoryLogic(SigSpec)(Types)(Terms)(WF))
        (Import CPL: ComputationalPathLemma(SigSpec)(Types)(Terms)(TypesCountable)(WF)(CL))
        (Import Alg: Algebraic(SigSpec)).

@@ -14,6 +14,11 @@ Require Import ComputationalPathLemma.
 Require Import VectorQuantification.
 Require Import Cantor.
 Require Import FunctionSpace.
+Require Import IntersectionTypes.
+Require Import CombinatoryTerm.
+Require Import CombinatoryLogic.
+Require Import CombinatoryLogicAlgebra.
+Require Import FiniteSubstitutionSpace.
 
 Inductive Ty : Set :=
 | Ty_Nat : Ty
@@ -330,9 +335,9 @@ Section WithImplementations.
     end.
   
   Inductive ApplicativeFragment (maxBox: nat): Term -> Ty -> Prop :=
-  | A_Impl : forall M (MIn: List.In M Terms),
-      BoxLevel (proj1_sig (Proofs M MIn)) <= maxBox ->
-      ApplicativeFragment maxBox M (proj1_sig (Proofs M MIn))
+  | A_Impl : forall M n (MIn: List.nth_error Terms n = Some M),
+      BoxLevel (proj1_sig (Proofs M (List.nth_error_In _ _ MIn))) <= maxBox ->
+      ApplicativeFragment maxBox M (proj1_sig (Proofs M (List.nth_error_In _ _ MIn)))
   | A_Box : forall M A,
       ApplicativeFragment maxBox M A ->
       BoxLevel (Ty_Box A) <= maxBox ->
@@ -352,13 +357,12 @@ Section WithImplementations.
       False.
   Proof.
     intros n M A lenprf apfrag.
-    induction apfrag as [ M A inprf | | | ];
+    induction apfrag as [ M n' inprf | | | ];
       try solve [ contradiction ].
-    - destruct Terms; [ contradiction | inversion lenprf ].
+    - destruct Terms.
+      + destruct n'; inversion inprf.
+      + inversion lenprf.
   Qed.
-
- 
-    
 
   Definition IsLiftable n (toA: Ty) (B: Ty): Prop :=
     toA = Ty_Lift n B.
@@ -417,13 +421,13 @@ Section WithImplementations.
     revert A B.
     induction M as [ | | M1 IHM1 M2 IHM2 | M IH | n' M IH | | | | | | | | ];
       intros A B C isTgt appfrag;
-      inversion appfrag as [ M' MIn level M'eq Ceq
+      inversion appfrag as [ M' Mpos MIn level M'eq Ceq
                            | M' A' appfrag' level Meq Ceq
                            | M' A' appfrag' [ nEq Meq ] Ceq
                            | M1' M2' A' B' appfrag1' appfrag2' ];
       try solve [
             rewrite <- Ceq in isTgt;
-            eexists; exists MIn; exact isTgt ].
+            eexists; exists (List.nth_error_In _ _ MIn); exact isTgt ].
     - apply (IHM1 _ _ (Ty_Arr A' C) (or_intror _ isTgt) appfrag1').
     - rewrite <- Ceq in isTgt.
       inversion isTgt as [ devil | isTgt' ];
@@ -447,13 +451,13 @@ Section WithImplementations.
     revert A.
     induction M as [ | | M1 IHM1 M2 IHM2 | M IH | n' M IH | | | | | | | | ];
       intros A C isTgt appfrag;
-      inversion appfrag as [ M' MIn level M'eq Ceq
+      inversion appfrag as [ M' M'Pos MIn level M'eq Ceq
                            | M' A' appfrag' level Meq Ceq
                            | M' A' appfrag' [ nEq Meq ] Ceq
                            | M1' M2' A' B' appfrag1' appfrag2' ];
       try solve [
             rewrite <- Ceq in isTgt;
-            eexists; exists MIn, A, 0; split; [ exact isTgt | reflexivity ]].
+            eexists; exists (List.nth_error_In _ _ MIn), A, 0; split; [ exact isTgt | reflexivity ]].
     - apply (IHM1 _ (Ty_Arr A' C) (or_intror _ isTgt) appfrag1').
     - rewrite <- Ceq in isTgt.
       inversion isTgt as [ eq | isTgt' ].
@@ -482,14 +486,125 @@ Section WithImplementations.
   Qed.
     
   Inductive Op :=
-  | OP_Use: forall M, List.In M Terms -> Op
+  | OP_Use: forall M n, List.nth_error Terms n = Some M -> Op
   | OP_Box: Op
   | OP_Unbox: Op
   | OP_Apply : Op.
 
+  Definition Op_toNat (o : Op): nat :=
+    match o with
+    | OP_Use _ n _ => 3 + n
+    | OP_Box => 0
+    | OP_Unbox => 1
+    | OP_Apply => 2
+    end.
+
+  Definition Op_fromNat (n: nat): Op :=
+    match n with
+    | 0 => OP_Box
+    | 1 => OP_Unbox
+    | 2 => OP_Apply
+    | S (S (S k)) =>
+      match List.nth_error Terms k with
+      | Some M => fun eq => OP_Use M k eq
+      | _ => fun eq => OP_Box
+      end eq_refl
+    end.
+
+  Definition Term_option_eq_dec: forall (x y: option Term), { x = y } + { x <> y }.
+  Proof.
+    intros x y;
+      destruct x as [ x | ]; destruct y as [ y | ];
+        try solve [ right; intro devil; inversion devil ].
+    - destruct (Term_dec_eq x y).
+      + left; apply f_equal; assumption.
+      + right; intro devil; inversion devil; contradiction.
+    - left; reflexivity.
+  Defined.
+  
+  Lemma Op_fromToNat_id: forall o, Op_fromNat (Op_toNat o) = o.
+  Proof.
+    intro o.
+    destruct o as [ M n prf | | | ]; try solve [ reflexivity ].
+    simpl.
+    generalize (eq_refl (nth_error Terms n)).
+    set (P := fun M eq => OP_Use M n eq).
+    fold (P M prf).
+    generalize P; clear P.
+    revert prf.
+    generalize (nth_error Terms n).
+    intros o prf.
+    rewrite prf.
+    intros P eq.
+    rewrite (UIP_dec Term_option_eq_dec eq eq_refl).
+    reflexivity.
+  Qed.
+
+  Lemma Op_toNatLt: forall o, Op_toNat o < 3 + length Terms.
+  Proof.
+    intro o.
+    destruct o as [ M n eq | | | ];
+      try solve [ apply (Nat.lt_lt_add_r); auto ].
+    - simpl.
+      do 3 (apply (proj1 (Nat.succ_lt_mono _ _))).
+      apply nth_error_Some.
+      intro devil.
+      rewrite devil in eq.
+      inversion eq.
+  Qed.
+
+  Lemma Op_toFromNat_id: forall n, n < 3 + length Terms -> Op_toNat (Op_fromNat n) = n.
+  Proof.
+    intro n.
+    do 3 (destruct n as [ | n ]; [ reflexivity | ]).
+    intro prf.
+    do 3 (generalize (proj2 (Nat.succ_lt_mono _ _) prf); clear prf; intro prf).
+    simpl.
+    generalize (eq_refl (nth_error Terms n)).
+    set (P x := forall e: nth_error Terms n = x,
+            Op_toNat (match x as x' return (nth_error Terms n = x' -> Op) with
+                      | Some M => fun eq => OP_Use M n eq
+                      | None => fun _ => OP_Box
+                      end e) = S (S (S n))).
+    fold (P (nth_error Terms n)).
+    generalize (proj2 (nth_error_Some Terms n) prf).
+    generalize (nth_error Terms n).
+    intros o o_ineq.
+    unfold P.
+    destruct o as [ M | ]; [ | contradiction ].
+    intros; reflexivity.
+  Qed.
+
+  Lemma Op_toFromFin_id: forall x, Fin.of_nat_lt (Op_toNatLt (Op_fromNat (proj1_sig (Fin.to_nat x)))) = x.
+  Proof.
+    intro x.
+    match goal with
+    |[|- of_nat_lt ?prf = x] => generalize prf
+    end.
+    rewrite (Op_toFromNat_id (proj1_sig (to_nat x)) (proj2_sig (to_nat x))).
+    intro lt.
+    rewrite (Fin.of_nat_ext lt (proj2_sig (to_nat x))).
+    apply (Fin.of_nat_to_nat_inv).
+  Qed.
+
+  Lemma Op_fromToFin_id: forall x, Op_fromNat (proj1_sig (Fin.to_nat (Fin.of_nat_lt (Op_toNatLt x)))) = x.
+  Proof.
+    intro x.
+    rewrite Fin.to_nat_of_nat.
+    simpl.
+    apply Op_fromToNat_id.
+  Qed.
+    
+  Instance Op_Finite: Finite Op :=
+    {| cardinality := 3 + length Terms;
+       toFin x := Fin.of_nat_lt (Op_toNatLt x);
+       fromFin x := Op_fromNat (proj1_sig (Fin.to_nat x));
+       fromToFin_id := Op_fromToFin_id;
+       toFromFin_id := Op_toFromFin_id |}.
+    
   Definition arity (op: Op): nat :=
     match op with
-    | OP_Use _ _ => 0
+    | OP_Use _ _ _ => 0
     | OP_Box => 1
     | OP_Unbox => 1
     | OP_Apply => 2
@@ -614,7 +729,7 @@ Section WithImplementations.
        domain :=
          fun op =>
            match op as op' return t (VLTree TyConstr SigVar) (arity op') with
-           | OP_Use _ _ => nil _
+           | OP_Use _ _ _ => nil _
            | OP_Box => cons _ (Hole _ _ gamma) _ (nil _)
            | OP_Unbox => cons _ (Node _ _ TC_Box (cons _ (Hole _ _ gamma) _ (nil _))) _ (nil _)
            | OP_MApply => applyDom
@@ -622,7 +737,7 @@ Section WithImplementations.
        range :=
          fun op =>
            match op with
-           | OP_Use M MIn => typeToSort (proj1_sig (Proofs M MIn)) SigVar
+           | OP_Use M _ MIn => typeToSort (proj1_sig (Proofs M (List.nth_error_In _ _ MIn))) SigVar
            | OP_Box => Node _ _ TC_Box (cons _ (Hole _ _ gamma)_  (nil _))
            | OP_Unbox => Hole _ _ gamma
            | OP_MApply => applyRange
@@ -1034,6 +1149,24 @@ Section WithImplementations.
     {| take := WF_take;
        extensional := WF_take_ext |}.
 
+  Lemma WF_nonempty: length wf_set = 0 -> False.
+  Proof.
+    unfold wf_set.
+    intro devil.
+    match goal with
+    |[ devil: length (nodup ?d (?xs ++ ?ys ++ [?zs])) = _ |- _] =>
+     assert (inprf: List.In zs (nodup d (xs ++ ys ++ [zs])));
+       [ | destruct (nodup d (xs ++ ys ++ [zs])); [ contradiction | inversion devil ] ]
+    end.
+    apply (List.nodup_In).
+    repeat (apply (List.in_or_app); right).
+    left; reflexivity.
+  Qed.
+  
+  Instance WellFormedSpace_finite: NonEmptyFinite WellFormed :=
+    {| IsFinite := FinFinite (length wf_set);
+       cardinality_nonempty := WF_nonempty |}.
+
   Lemma WellFormedSpace_complete: forall (S : SigVar -> VLTree TyConstr EmptySet), WF S -> { e: WellFormed | forall x, @take _ _ _ WellFormedSpace e x = S x }.
   Proof.
     intros S WF_S.
@@ -1156,7 +1289,7 @@ Section WithImplementations.
     exists M.
     induction appfrag;
       rewrite sortType_inj in *.
-    - exact (proj2_sig (Proofs M MIn)).
+    - exact (proj2_sig (Proofs _ _)).
     - apply TPI_Box.
       apply (TPI_Shift _ _ [] [] [[]]).
       assumption.
@@ -1311,7 +1444,7 @@ Module Type MiniMLBoxAlgebra
     intros s Fs.
     destruct Fs as [ op subst args subsort ].
     unfold MiniMLBoxCarrier.
-    destruct op as [ M inprf | | | ].
+    destruct op as [ M n inprf | | | ].
     - exists M.
       generalize (subsort_eq _ _ subsort).
       intro s_eq; clear subsort.
@@ -1321,7 +1454,7 @@ Module Type MiniMLBoxAlgebra
       rewrite <- s_eq.
       simpl.
       rewrite sortType_inj.
-      exact (proj2_sig (Ops.Proofs M inprf)).
+      exact (proj2_sig (Ops.Proofs M (List.nth_error_In _ _ inprf))).
     - destruct (fst args) as [ M Mprf ].
       exists (T_Box M).
       generalize (subsort_eq _ _ subsort).
@@ -1422,17 +1555,17 @@ Module Type MiniMLBoxAlgebra
                                      (exist _ M Mprf).
   Proof.
     intros M A appfrag.
-    induction appfrag as [ M MIn level | M A level IH | M A appfrag IH | M N A B appfragM IHM appfragN IHN ].
+    induction appfrag as [ M MPos MIn level | M A level IH | M A appfrag IH | M N A B appfragM IHM appfragN IHN ].
     - set (S := fun (v: SigVar) => typeToSort Ty_Unit EmptySet).
       assert (WF_S : WF Ops.Terms Ops.Proofs S).
       { apply WF_Default; reflexivity. }
       assert (sub: subsorts (applySubst (take (proj1_sig (WellFormedSpace_complete _ _ S WF_S)))
-                                        (typeToSort (proj1_sig (Ops.Proofs M MIn)) SigVar))
-                            (typeToSort (proj1_sig (Ops.Proofs M MIn)) EmptySet)).
+                                        (typeToSort (proj1_sig (Ops.Proofs M (List.nth_error_In _ _ MIn))) SigVar))
+                            (typeToSort (proj1_sig (Ops.Proofs M (List.nth_error_In _ _ MIn))) EmptySet)).
       { simpl.
         rewrite (subst_irrelevant _).
         reflexivity. }     
-      generalize (FromF _ MiniMLBox_Algebra _ (OP_Use _ M MIn)
+      generalize (FromF _ MiniMLBox_Algebra _ (OP_Use _ M _ MIn)
                         (proj1_sig (WellFormedSpace_complete _ _ S WF_S))
                         tt sub (GeneratedArgs_nil _ _ _)).
       intro; eexists; eassumption.
@@ -1444,9 +1577,9 @@ Module Type MiniMLBoxAlgebra
         { revert level.
           clear ...
           intro level.
-          induction level as [ M MIn level | M A appfrag IH | M A appfrag IH | M N A B levelAB IHAB levelA IHA ].
-          - exists M, MIn, (proj1_sig (Ops.Proofs M MIn)), 0; split.
-            + destruct (proj1_sig (Ops.Proofs M MIn)); left; reflexivity.
+          induction level as [ M MPos MIn level | M A appfrag IH | M A appfrag IH | M N A B levelAB IHAB levelA IHA ].
+          - exists M, (List.nth_error_In _ _ MIn), (proj1_sig (Ops.Proofs M  (List.nth_error_In _ _ MIn))), 0; split.
+            + destruct (proj1_sig (Ops.Proofs M  (List.nth_error_In _ _ MIn))); left; reflexivity.
             + simpl.
               rewrite sortType_inj.
               reflexivity.
@@ -1736,25 +1869,44 @@ Module Type MiniMLBoxAlgebra
         
 End MiniMLBoxAlgebra.
 
-
-
-
-
-
-Require Import IntersectionTypes.
-Require Import CombinatoryTerm.
-Require Import CombinatoryLogicAlgebra.
 Module Type MkMiniBoxCLAlgebra(Import Ops: MiniMLBoxOpsSpec).
   Declare Module MkSpec : MkMiniMLBoxSigSpec(Ops).
   Declare Module Types: IntersectionTypes(MkSpec.MkCLSig.Signature).
   Declare Module Terms: Terms(MkSpec.MkCLSig.Signature).
   Declare Module TypesCountable: CountableTypes(MkSpec.MkCLSig.Signature)(Types).
-  (*Declare Module CL: CombinatoryLogic(MkSpec.MkCLSig.Signature)(Types)(Terms)(
-  Declare Module CPL: ComputationalPathLemma(MkSpec.MkCLSig.Signature)(Types)(Terms)
-                                            (TypesCountable)().
-
   Declare Module Embedding: ProperTreeSortEmbedding(MkSpec.TreeSpec)(MkSpec.MkCLSig)(Types).
-  (Import Alg: Algebraic(SigSpec)).*)
+  Module Type WFMod
+  <: CountableProperWellFormedPredicate(MkSpec.MkCLSig.Signature)(Types)(Embedding)
+  <: FiniteWellFormedPredicate(MkSpec.MkCLSig.Signature)(Types).
+    Include EmbedWellFormedSpace(MkSpec.MkCLSig.Signature)(Types)(Embedding).
+    Instance SubstitutionSpace_finite: Finite WellFormed := @IsFinite _ (WellFormedSpace_finite Terms Proofs).
+    Instance SubstitutionSpace_countable: Countable WellFormed :=
+      @CountableFromFinite _ (WellFormedSpace_finite Terms Proofs).
+  End WFMod.    
+  Declare Module WF: WFMod.  
+  Declare Module CL: CombinatoryLogic(MkSpec.MkCLSig.Signature)(Types)(Terms)(WF).
+  Declare Module CPL: ComputationalPathLemma(MkSpec.MkCLSig.Signature)(Types)(Terms)
+                                            (TypesCountable)(WF)(CL).
+  Declare Module Alg: Algebraic(MkSpec.MkCLSig.SigSpec).
+  Declare Module MiniMLBoxAlg: MiniMLBoxAlgebra(Ops)(MkSpec)(Alg).
+  Declare Module CLAlg : CombinatoryLogicAlgebra
+                           (MkSpec.MkCLSig.Signature)
+                           (Types)
+                           (Terms)
+                           (Embedding)
+                           (TypesCountable)
+                           (WF)
+                           (CL)
+                           (CPL)
+                           (Alg).
+  Declare Module CLFin: CombinatoryLogicWithFiniteSubstitutionSpace
+                          (MkSpec.MkCLSig.Signature)
+                          (Types)
+                          (Terms)
+                          (WF)
+                          (CL).
+  Declare Module CombinatorsFin: FiniteCombinators(MkSpec.MkCLSig.Signature).
+  Declare Module CLInhab: CLFin.Inhabitation(CombinatorsFin).
 End MkMiniBoxCLAlgebra.
 
 Module ToMiniBoxCLAlgebra(Ops: MiniMLBoxOpsSpec) <: MkMiniBoxCLAlgebra(Ops).
