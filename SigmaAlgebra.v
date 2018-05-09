@@ -5,11 +5,13 @@ Require Import Coq.Arith.PeanoNat.
 Require Import Coq.Arith.Wf_nat.
 
 Require Import VectorQuantification.
+Require Import FunctionSpace.
 Require Import DependentFixpoint.
+Require Import Cantor.
 
 Import EqNotations.
 
-Class Signature (Sort: Set -> Set) (Var: Set) (Operation: Set): Type :=
+Class Signature (Sort: Set -> Type) (Var: Set) (Operation: Type): Type :=
   { arity: Operation -> nat;
     domain: forall o: Operation, t (Sort Var) (arity o);
     range: forall o: Operation, Sort Var
@@ -17,10 +19,12 @@ Class Signature (Sort: Set -> Set) (Var: Set) (Operation: Set): Type :=
 
 Definition EmptySet: Set := False.
 
-Class CanSubst (F: Set -> Set): Type :=
-  { applySubst: forall {A: Set}, (A -> F EmptySet) -> F A -> F EmptySet }.
+Class CanSubst (F: Set -> Type): Type :=
+  { applySubst: forall {A: Set}, (A -> F EmptySet) -> F A -> F EmptySet;
+    applySubst_ext: forall {A: Set} S S', (forall (x: A), S x = S' x) -> forall x, applySubst S x = applySubst S' x
+  }.
 
-Class SignatureSpecification (Sort: Set -> Set) (Var: Set) (Operation: Set) :=
+Class SignatureSpecification (Sort: Set -> Type) (Var: Set) (Operation: Type) :=
   { subsorts: Sort EmptySet -> Sort EmptySet -> Prop;
     Sigma :> Signature Sort Var Operation;
     subsorts_pre :> PreOrder subsorts;
@@ -36,13 +40,21 @@ Class SignatureSpecification (Sort: Set -> Set) (Var: Set) (Operation: Set) :=
     SortSubst :> CanSubst Sort }.
 
 Module Type SignatureSpec.
-  Parameter Sort: Set -> Set.
+  Parameter Sort: Set -> Type.
   Parameter Var: Set.
-  Parameter Operation: Set.
-  Parameter WellFormed: (Var -> Sort EmptySet) -> Prop.
-  
+  Parameter Operation: Type.
+  Parameter WellFormed : Type.
+
+  Declare Instance WellFormedSpace: FunctionSpace WellFormed Var (Sort EmptySet).
   Declare Instance SigSpec: SignatureSpecification Sort Var Operation.
 End SignatureSpec.
+
+Module Type FiniteCountableSignatureSpec <: SignatureSpec.
+  Include SignatureSpec.
+  Declare Instance ClosedSortsCountable: Countable (Sort EmptySet).
+  Declare Instance Vars_finite: Finite Var.
+  Parameter OpenSortsInhabited: Sort Var.
+End FiniteCountableSignatureSpec.
 
 Module Type Algebraic(Import SigSpec: SignatureSpec).
   Section WithCarrier.
@@ -57,10 +69,9 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
 
     Structure F (s : Sort EmptySet): Type :=
       mkF { op: Operation;
-            subst: Var -> Sort EmptySet;
-            wf_subst: WellFormed subst;
-            args: F_args subst (domain op);
-            subsort: subsorts (applySubst subst (range op)) s }.
+            subst: WellFormed;
+            args: F_args (take subst) (domain op);
+            subsort: subsorts (applySubst (take subst) (range op)) s }.
     
     Definition SigmaAlgebra: Type := forall (s: Sort EmptySet), F s -> Carrier s.  
     Definition SigmaCoAlgebra: Type := forall (s: Sort EmptySet), Carrier s -> F s.
@@ -101,7 +112,7 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
       fun s s' f1 f2 =>
       (op _ f1 = op _ f2) /\
       (fix compare_args n (dom1: t (Sort Var) n) m (dom2: t (Sort Var) m):
-         F_args (subst _ f1) dom1 -> F_args (subst _ f2) dom2 -> Prop :=
+         F_args (take (subst _ f1)) dom1 -> F_args (take (subst _ f2)) dom2 -> Prop :=
          match dom1 with
          | cons _ s1 _ ss1 =>
            match dom2 with
@@ -143,8 +154,8 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
       unfold F_eq.
       split.
       - apply eq_sym; exact (proj1 eq_xy).
-      - destruct x as [ op xarity dom args tgt_le ].
-        destruct y as [ op' yarity dom' args' tgt_le' ].
+      - destruct x as [ op Sx args tgt_le ].
+        destruct y as [ op' Sy args' tgt_le' ].
         simpl.
         unfold F_eq in eq_xy.
         generalize (proj2 eq_xy).
@@ -177,9 +188,9 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
       unfold F_eq.
       split.
       - eapply eq_trans; [ exact (proj1 eq_xy) | exact (proj1 eq_yz) ].
-      - destruct x as [ op xarity dom args tgt_le ].
-        destruct y as [ op' yarity dom' args' tgt_le' ].
-        destruct z as [ op'' zarity dom'' args'' tgt_le'' ].
+      - destruct x as [ op Sx args tgt_le ].
+        destruct y as [ op' Sy args' tgt_le' ].
+        destruct z as [ op'' Sz args'' tgt_le'' ].
         simpl.
         unfold F_eq in eq_xy.
         unfold F_eq in eq_yz.
@@ -233,7 +244,6 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
     intros s x.
     destruct x.
     eapply mkF.
-    - eassumption.
     - eapply fmap_args; eassumption.
     - eassumption.
   Defined.
@@ -247,8 +257,8 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
       F_eq _ carrier_eq s s' f f' -> F_eq _ carrier'_eq s s' (F_mor C C' g s f) (F_mor C C' g s' f').
   Proof.
     intros C C' g carrier_eq carrier'_eq g_compat s s' f.
-    destruct f as [ op S WF_S args subsorts ].
-    destruct f' as [ op' S' WF_S' args' subsorts' ].
+    destruct f as [ op S args subsorts ].
+    destruct f' as [ op' S' args' subsorts' ].
     unfold F_mor.
     unfold F_eq.
     simpl.
@@ -273,10 +283,9 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
 
   Inductive FixF (s : Sort EmptySet): Type :=
   | mkFixF : forall (op: Operation)
-               (subst: Var -> Sort EmptySet)
-               (wf_subst: WellFormed subst)
-               (args: FixF_args s subst _ (domain op))
-               (subsort: subsorts (applySubst subst (range op)) s), FixF s        
+               (subst: WellFormed)
+               (args: FixF_args s (take subst) _ (domain op))
+               (subsort: subsorts (applySubst (take subst) (range op)) s), FixF s        
   with
   FixF_args (s: Sort EmptySet): forall (S : Var -> Sort EmptySet) (n : nat) (argSorts: t (Sort Var) n), Type :=
   | FixF_args_nil : forall S, FixF_args s S 0 (nil _)
@@ -324,14 +333,14 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
     end args.
   
   Definition FixF_alg: forall s, F FixF s -> FixF s :=
-    fun s f => mkFixF s (op _ _ f) (subst _ _ f) (wf_subst _ _ f)
+    fun s f => mkFixF s (op _ _ f) (subst _ _ f)
                    (F_args_to_FixF_args _ _ _ _ (args _ _ f)) (subsort _ _ f).
 
   Definition FixF_coalg: forall s, FixF s -> F FixF s :=
     fun s f =>
       match f with
-      | mkFixF _ op subst wf_subst args subsort =>
-        mkF _ _ op subst wf_subst (FixF_args_to_F_args _ _ _ _ args) subsort
+      | mkFixF _ op subst args subsort =>
+        mkF _ _ op subst (FixF_args_to_F_args _ _ _ _ args) subsort
       end.
   
   Lemma FixF_alg_coalg: forall s f, FixF_coalg s (FixF_alg s f) = f.
@@ -377,7 +386,7 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
  
   Fixpoint FixF_size s (f: FixF s): nat :=
     match f with
-    | mkFixF _ _ _ _ args _ =>
+    | mkFixF _ _ _ args _ =>
       1 + ((fix FixF_args_size s S n argSorts (args : FixF_args s S n argSorts): nat :=
               match args with
               | FixF_args_nil _ _ => 0
@@ -408,7 +417,7 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
 
     Hypothesis coAlg_decreasing:
       forall s (c: C s),
-        argsDec s c (subst _ _ (coAlg s c)) (domain (op _ _ (coAlg s c))) (args _ _ (coAlg s c)).
+        argsDec s c (take (subst _ _ (coAlg s c))) (domain (op _ _ (coAlg s c))) (args _ _ (coAlg s c)).
 
     Fixpoint fmap_args_dec
                (S: SigSpec.Var -> Sort EmptySet) {n} (params: t (Sort SigSpec.Var) n)
@@ -431,8 +440,7 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
       intros s c morphism_rec.
       apply alg.
       apply (mkF _ _ (op _ _ (coAlg s c)) (subst _ _ (coAlg s c))
-                 (wf_subst _ _ (coAlg s c))
-                 (fmap_args_dec (subst _ _ (coAlg s c)) (domain (op _ _ (coAlg s c)))
+                 (fmap_args_dec (take (subst _ _ (coAlg s c))) (domain (op _ _ (coAlg s c)))
                                 s c morphism_rec (args _ _ (coAlg s c)) (coAlg_decreasing s c))
                  (subsort _ _ (coAlg s c))).
     Defined.
@@ -448,12 +456,12 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
       destruct (R_wf (measure s c)) as [ prf' ].
       apply f_equal.
       generalize (coAlg_decreasing s c).
-      destruct (coAlg s c) as [ op S WF_s args subsorts ].
+      destruct (coAlg s c) as [ op S args subsorts ].
       intro decprf.
       simpl.
       match goal with
-      |[|- {| op := _; subst := _; wf_subst := _; args := ?args1; subsort := _ |} =
-          {| op := _; subst := _; wf_subst := _; args := ?args2; subsort := _ |} ] =>
+      |[|- {| op := _; subst := _; args := ?args1; subsort := _ |} =
+          {| op := _; subst := _; args := ?args2; subsort := _ |} ] =>
        assert (args_eq: args1 = args2); [ | rewrite args_eq; reflexivity ]
       end.
       revert decprf.
@@ -480,8 +488,7 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
                         alg t
                             {| op := Algebraic.op C t (coAlg t x);
                                subst := subst C t (coAlg t x);
-                               wf_subst := wf_subst C t (coAlg t x);
-                               args := fmap_args_dec (subst C t (coAlg t x))
+                               args := fmap_args_dec (take (subst C t (coAlg t x)))
                                                      (domain (Algebraic.op C t (coAlg t x))) t x
                                                      (fun (t' : Sort EmptySet) (y : C t')
                                                         (h : R (measure t' y) (measure t x)) =>
@@ -500,12 +507,12 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
         intros s c g g' gg'_eq.
         apply f_equal.
         match goal with
-        |[|- {| op := _; subst := _; wf_subst := _; args := ?args1; subsort := _ |} =
-            {| op := _; subst := _; wf_subst := _; args := ?args2; subsort := _ |} ] =>
+        |[|- {| op := _; subst := _; args := ?args1; subsort := _ |} =
+            {| op := _; subst := _; args := ?args2; subsort := _ |} ] =>
          assert (args_eq: args1 = args2); [ | rewrite args_eq; reflexivity ]
         end.
         generalize (coAlg_decreasing s c).
-        destruct (coAlg s c) as [ op S WF_S args subsorts ].
+        destruct (coAlg s c) as [ op S args subsorts ].
         simpl.
         revert args.
         generalize (domain op).
@@ -572,12 +579,12 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
         - exact op_eq.
         - generalize (coAlg_decreasing s' c').
           generalize (coAlg_decreasing s c).
-          destruct (coAlg s c) as [ op S WF_S args subsorts ].
-          destruct (coAlg s' c') as [ op' S' WF_S' args' subsorts' ].
+          destruct (coAlg s c) as [ op S args subsorts ].
+          destruct (coAlg s' c') as [ op' S' args' subsorts' ].
           simpl in op_eq.
           revert args args' args_eq.
           simpl.
-          clear WF_S WF_S' subsorts subsorts'.
+          clear subsorts subsorts'.
           rewrite <- op_eq; clear op_eq op' eq.
           generalize (arity op) (domain op).
           intros n params.
@@ -638,11 +645,11 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
             unfold F_mor.
             generalize (coAlg_decreasing s c).
             intro accs.
-            destruct (coAlg s c) as [ op S WF_S args subsorts ].
+            destruct (coAlg s c) as [ op S args subsorts ].
             split; simpl; [ reflexivity | ].
             revert args accs.
             simpl.
-            clear subsorts WF_S.            
+            clear subsorts.
             generalize (arity op) (domain op).
             intros n params.
             induction params as [ | param n params IH ].
@@ -656,19 +663,19 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
       Qed.
       
       Inductive AlgebraicallyGenerated: forall s, C' s -> Prop :=
-      | FromF : forall s op S WF_S args subsort,
+      | FromF : forall s op S args subsort,
           GeneratedArgs (arity op) (domain op) S args ->
-          AlgebraicallyGenerated s (alg s (mkF C' s op S WF_S args subsort))
-      with GeneratedArgs: forall n (dom : t (Sort Var) n) S, F_args C' S dom -> Prop :=
+          AlgebraicallyGenerated s (alg s (mkF C' s op S args subsort))
+      with GeneratedArgs: forall n (dom : t (Sort Var) n) S, F_args C' (take S) dom -> Prop :=
            | GeneratedArgs_nil: forall S, GeneratedArgs 0 (nil _) S tt
            | GeneratedArgs_cons:
                forall n s dom' S arg args,
-                 AlgebraicallyGenerated (applySubst S s) arg ->
+                 AlgebraicallyGenerated (applySubst (take S) s) arg ->
                  GeneratedArgs n dom' S args ->
                  GeneratedArgs _ (cons _ s n dom') S (arg, args).
 
       Fixpoint GeneratedArgs_nth n dom S args k (args_gen: GeneratedArgs n dom S args):
-        AlgebraicallyGenerated (applySubst S (nth dom k)) (F_args_nth _ S dom args k).
+        AlgebraicallyGenerated (applySubst (take S) (nth dom k)) (F_args_nth _ (take S) dom args k).
       Proof.
         revert k.
         case args_gen.
@@ -683,32 +690,32 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
       Fixpoint AlgebraicallyGenerated_ind'
                (P : forall s c, AlgebraicallyGenerated s c -> Prop)
                (case_nth:
-                  forall (s: Sort EmptySet) op (S: Var -> Sort EmptySet) (WF_S: WellFormed S)
-                    args (subsort: subsorts (applySubst S (range op)) s)
+                  forall (s: Sort EmptySet) op (S: WellFormed)
+                    args (subsort: subsorts (applySubst (take S) (range op)) s)
                     (args_gen : GeneratedArgs (arity op) (domain op) S args),
-                    (forall k, P _ (F_args_nth _ S _ args k) (GeneratedArgs_nth _ _ S args k args_gen)) ->
-                    P s _ (FromF s op S WF_S args subsort args_gen)
+                    (forall k, P _ (F_args_nth _ (take S) _ args k) (GeneratedArgs_nth _ _ S args k args_gen)) ->
+                    P s _ (FromF s op S args subsort args_gen)
                )
                s c gen {struct gen}: P s c gen.
       Proof.
-        case gen as [ s op S WF_S args subsort args_gen ].
+        case gen as [ s op S args subsort args_gen ].
         apply case_nth.
         intro k.
         apply
           ((fix rec_args S n dom args args_gen :
-              forall (k: Fin.t n), P (applySubst S (nth dom k))
-                                (F_args_nth C' S dom args k)
+              forall (k: Fin.t n), P (applySubst (take S) (nth dom k))
+                                (F_args_nth C' (take S) dom args k)
                                 (GeneratedArgs_nth n  dom S args k args_gen) :=
               match args_gen as args_gen' in GeneratedArgs n' dom' S' args' return
-                    forall (k: Fin.t n'), P (applySubst S' (nth dom' k))
-                                       (F_args_nth C' S' dom' args' k)
+                    forall (k: Fin.t n'), P (applySubst (take S') (nth dom' k))
+                                       (F_args_nth C' (take S') dom' args' k)
                                        (GeneratedArgs_nth n' dom' S' args' k args_gen')
               with
               | GeneratedArgs_nil _ => Fin.case0 _
               | GeneratedArgs_cons n s dom subst arg args arg_gen args_gen =>
                 fun (k: Fin.t (Datatypes.S n)) =>
-                  Fin.caseS' k (fun k => P (applySubst subst (nth (cons _ s n dom) k))
-                                        (F_args_nth C' subst (cons _ s n dom) (arg, args) k)
+                  Fin.caseS' k (fun k => P (applySubst (take subst) (nth (cons _ s n dom) k))
+                                        (F_args_nth C' (take subst) (cons _ s n dom) (arg, args) k)
                                         (GeneratedArgs_nth (Datatypes.S n) (cons _ s n dom) subst (arg, args) k
                                                            (GeneratedArgs_cons n s dom subst arg args arg_gen args_gen)))
                              (AlgebraicallyGenerated_ind' P case_nth _ _ arg_gen)
@@ -717,13 +724,13 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
       Qed.
 
       Definition GeneratedArgs_hd n s dom S args (args_gen: GeneratedArgs (Datatypes.S n) (cons _ s n dom) S args):
-        AlgebraicallyGenerated (applySubst S s) (fst args) :=
+        AlgebraicallyGenerated (applySubst (take S) s) (fst args) :=
         GeneratedArgs_nth (Datatypes.S n) (cons _ s n dom) S args Fin.F1 args_gen.
 
       Definition GeneratedArgs_caseS n dom S args (args_gen: GeneratedArgs (Datatypes.S n) dom S args):
-        forall (P : forall n (dom: t (Sort Var) n) (S: (Var -> Sort EmptySet)) (args: F_args C' S dom), GeneratedArgs _ dom S args -> Prop),
+        forall (P : forall n (dom: t (Sort Var) n) (S: WellFormed) (args: F_args C' (take S) dom), GeneratedArgs _ dom S args -> Prop),
           (forall n s (dom : t (Sort Var) n) S arg args
-             (arg_gen : AlgebraicallyGenerated (applySubst S s) arg)
+             (arg_gen : AlgebraicallyGenerated (applySubst (take S) s) arg)
              (args_gen : GeneratedArgs n dom S args),
               P (Datatypes.S n) (cons _ s n dom) S (arg, args) (GeneratedArgs_cons n s dom S arg args arg_gen args_gen)) ->
           P (Datatypes.S n) dom S args args_gen := 
@@ -746,7 +753,7 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
                             (fun n' dom' S' args' =>
                                match dom' with
                                | nil _ => fun _ _ => GeneratedArgs n dom S (snd args)
-                               | cons _ s n dom => fun (args': F_args C' S' (cons _ s n dom)) gen_args' => GeneratedArgs n dom S' (snd args')
+                               | cons _ s n dom => fun (args': F_args C' (take S') (cons _ s n dom)) gen_args' => GeneratedArgs n dom S' (snd args')
                                end args')
                             (fun n s dom S arg args arg_gen args_gen => args_gen).
 
@@ -761,10 +768,10 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
         rewrite canonical_morphism_commutes.
         unfold F_mor.
         generalize (coAlg_decreasing s c).
-        destruct (coAlg s c) as [ op S WF_S args subsort ].
+        destruct (coAlg s c) as [ op S args subsort ].
         simpl.
         intro args_dec.
-        apply (FromF s op S WF_S (fmap_args C C' S (domain op) canonical_morphism args) subsort).
+        apply (FromF s op S (fmap_args C C' (take S) (domain op) canonical_morphism args) subsort).
         revert args args_dec.
         generalize (domain op).
         generalize (arity op).
@@ -788,16 +795,16 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
           exists c', C'_eq s s c (canonical_morphism s c').
       Proof.
         intros s c C_eq_sym c_gen.
-        induction c_gen as [ s op S WF_S args subsort args_gen IH ] using AlgebraicallyGenerated_ind'.
-        assert (f_complete: exists f, F_eq C' C'_eq s s (mkF C' s op S WF_S args subsort) (F_mor C C' canonical_morphism s f)).
+        induction c_gen as [ s op S args subsort args_gen IH ] using AlgebraicallyGenerated_ind'.
+        assert (f_complete: exists f, F_eq C' C'_eq s s (mkF C' s op S args subsort) (F_mor C C' canonical_morphism s f)).
         { unfold F_eq.
           unfold F_mor.
           simpl.
-          assert (f_args: exists f_args, forall k, C'_eq (applySubst S (nth (domain op) k))
-                                               (applySubst S (nth (domain op) k))
-                                               (F_args_nth C' S (domain op) args k)
-                                               (canonical_morphism (applySubst S (nth (domain op) k))
-                                                                   (F_args_nth C S (domain op) f_args k))).
+          assert (f_args: exists f_args, forall k, C'_eq (applySubst (take S) (nth (domain op) k))
+                                               (applySubst (take S) (nth (domain op) k))
+                                               (F_args_nth C' (take S) (domain op) args k)
+                                               (canonical_morphism (applySubst (take S) (nth (domain op) k))
+                                                                   (F_args_nth C (take S) (domain op) f_args k))).
           { revert args args_gen IH.
             generalize (domain op).
             generalize (arity op).
@@ -811,7 +818,7 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
               intro k.
               apply (Fin.caseS' k); assumption. }
           destruct f_args as [ f_args f_args_prf ].
-          exists (mkF C s op S WF_S f_args subsort).
+          exists (mkF C s op S f_args subsort).
           split.
           - reflexivity.
           - clear args_gen IH.
@@ -841,11 +848,11 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
 
   Lemma initial_coalg_nth_arg_decreasing:
     forall s c n,
-      FixF_size _ (F_args_nth FixF (subst _ _ (FixF_coalg s c)) _ (args _ _ (FixF_coalg s c)) n) <
+      FixF_size _ (F_args_nth FixF (take (subst _ _ (FixF_coalg s c))) _ (args _ _ (FixF_coalg s c)) n) <
       FixF_size s c.
   Proof.
     intros s c.
-    destruct c as [ op subst subst_wf args subsort ].
+    destruct c as [ op subst args subsort ].
     revert args.
     simpl.
     generalize (domain op).
@@ -867,17 +874,17 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
         destruct arg.
         unfold "_ < _".
         apply Nat.le_add_r.
-  Qed.       
+  Qed.
     
   
   Lemma initial_coalg_decreasing:
       forall s (c: FixF s),
         argsDec FixF nat lt FixF_size s c
-                (subst _ _ (FixF_coalg s c)) (domain (op _ _ (FixF_coalg s c))) (args _ _ (FixF_coalg s c)).
+                (take (subst _ _ (FixF_coalg s c))) (domain (op _ _ (FixF_coalg s c))) (args _ _ (FixF_coalg s c)).
   Proof.
     intros s c.
     generalize (initial_coalg_nth_arg_decreasing s c).
-    destruct (FixF_coalg s c) as [ op subst subst_wf args subsort ].
+    destruct (FixF_coalg s c) as [ op subst args subsort ].
     simpl.
     revert args.
     generalize (domain op).
@@ -890,7 +897,7 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
       + exact (dec_prf Fin.F1).
       + apply IH.
         exact (fun k => dec_prf (Fin.FS k)).
-  Qed.      
+  Qed.
   
   Definition initial_algebra_morphism (C: Sort EmptySet -> Type) (alg: SigmaAlgebra C): forall s, FixF s -> C s :=
     canonical_morphism FixF C FixF_coalg alg
@@ -932,9 +939,9 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
   Fixpoint FixF_eq s s' (c: FixF s) {struct c}: FixF s' -> Prop :=
     fun c' =>
       match c with
-      | mkFixF _ op subst wf_subst args subsort =>
+      | mkFixF _ op subst args subsort =>
         match c' with
-        | mkFixF _ op' subst' wf_subst' args' subsort' =>
+        | mkFixF _ op' subst' args' subsort' =>
           (op = op') /\
           ((fix compare_args S S' n (dom1: t (Sort Var) n) m (dom2: t (Sort Var) m) 
               (args1: FixF_args s S n dom1) (args2: FixF_args s' S' m dom2) {struct args1}: Prop :=
@@ -951,7 +958,7 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
                 | _ => False
                 end
               end
-           ) subst subst' _ (domain op) _ (domain op') args args')
+           ) (take subst) (take subst') _ (domain op) _ (domain op') args args')
         end
       end.
 
@@ -962,7 +969,7 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
                         (FixF_size) r s c).
     clear s c.
     intros s c IH.
-    destruct c as [ op subst wf_subst args subsort ].
+    destruct c as [ op subst args subsort ].
     simpl in IH.
     split; [ reflexivity | ].
     revert args IH.
@@ -1002,9 +1009,9 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
     clear s2 c2.
     intros s2 c2 IH s1 s3 c1 c3.
     unfold FixF_eq.
-    destruct c1 as [ op1 subst1 wf_subst1 args1 subsort1 ].
-    destruct c2 as [ op2 subst2 wf_subst2 args2 subsort2 ].
-    destruct c3 as [ op3 subst3 wf_subst3 args3 subsort3 ].
+    destruct c1 as [ op1 subst1 args1 subsort1 ].
+    destruct c2 as [ op2 subst2 args2 subsort2 ].
+    destruct c3 as [ op3 subst3 args3 subsort3 ].
     intros [ op12 args12 ] [ op23 args23 ].
     split.
     - etransitivity; [ exact op12 | exact op23 ].
@@ -1046,7 +1053,7 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
         rewrite dom1_eq.
         rewrite dom3_eq.
         intros args1 args3.
-        apply (fun P r => FixF_args_case0 s1 subst1 P (nil _) args1 r).
+        apply (fun P r => FixF_args_case0 s1 (take subst1) P (nil _) args1 r).
         intro.
         destruct args3.
         * intros; trivial.
@@ -1061,10 +1068,10 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
         simpl.
         intros arity_eq32 dom1_eq dom3_eq args1 args3.
         revert dom1_eq arity_eq32 dom3_eq IH'.
-        apply (FixF_args_caseS' s1 subst1 _ _ args1).
-        clear args1 wf_subst1 subsort1 subst1.
+        apply (FixF_args_caseS' s1 (take subst1) _ _ args1).
+        clear args1 subsort1 subst1.
         intros subst1 argSort1 argSorts1 arg1 args1 dom1_eq.
-        destruct args3 as [ | subst3 arity3 argSort3 argSorts3 arg3 args3 ].
+        destruct args3 as [ | subst3' arity3 argSort3 argSorts3 arg3 args3 ].
         * intros; contradiction.
         * inversion arity_eq32 as [ arity_eq32' ].
           revert argSorts3 arity_eq32 args3; rewrite arity_eq32'.
@@ -1078,7 +1085,7 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
             unfold "_ < _".
             rewrite <- Nat.succ_le_mono.
             apply Nat.le_add_r. }
-          { apply (IH' wf_subst2 subsort2 _ _ _ _ eq_refl eq_refl); try solve [ assumption ].
+          { apply (IH' subsort2 _ _ _ _ eq_refl eq_refl); try solve [ assumption ].
             - simpl.
               inversion dom1_eq as [ [ argSort12_eq argSorts12_eq ] ].
               exact (vect_exist_eq _ _ argSorts12_eq).
@@ -1108,8 +1115,8 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
                         (FixF_size) r s c).
     clear s c.
     intros s c IH s' c'.
-    destruct c as [ op subst wf_subst args subsort ].
-    destruct c' as [ op' subst' wf_subst' args' subsort' ].
+    destruct c as [ op subst args subsort ].
+    destruct c' as [ op' subst'  args' subsort' ].
     intros [ op_eq args_eq ].
     split; [ rewrite op_eq; reflexivity | ].
     revert args' args_eq.
@@ -1128,14 +1135,14 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
     intros arity1 dom args.
     generalize (domain op').
     generalize (arity op').
-    induction args as [ | s subst arity1 argSort argSorts arg args IH' ].
+    induction args as [ | s tsubst arity1 argSort argSorts arg args IH' ].
     - intros arity2 dom2 IH.
       destruct arity2; intro arity_eq; [ | inversion arity_eq ].
       rewrite (UIP_dec Nat.eq_dec arity_eq eq_refl).
       simpl.
       intro dom2_eq.
       intro args'.
-      apply (fun P r => FixF_args_case0 s' subst' P dom2 args' r).
+      apply (fun P r => FixF_args_case0 s' (take subst') P dom2 args' r).
       intro; trivial.
     - intros arity2 dom2 IH.
       destruct arity2; intro arity_eq; [ inversion arity_eq | ].
@@ -1148,15 +1155,15 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
       intros dom_eq args2.
       clear arity_eq.
       revert dom_eq IH'.
-      apply (FixF_args_caseS' s' subst' _ _ args2).
-      clear args2 subst' dom2 wf_subst' subsort'.
+      apply (FixF_args_caseS' s' (take subst') _ _ args2).
+      clear args2 subst' dom2 subsort'.
       intros subst' argSort' argSorts' arg' args' argSorts_eq IH' [ arg_eq args_eq ].
       split.
       + apply IH; [ | assumption ].
         unfold "_ < _".
         rewrite <- Nat.succ_le_mono.
         apply Nat.le_add_r.
-      + apply (fun rec eq => IH' wf_subst subsort _ _ rec eq_refl eq _ args_eq).
+      + apply (fun rec eq => IH' subsort _ _ rec eq_refl eq _ args_eq).
         * intros s'' arg'' arg''_dec.
           apply IH.
           rewrite arg''_dec.
@@ -1238,11 +1245,11 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
       destruct acc as [ acc' ].
       simpl.
       unfold F_mor.
-      destruct c as [ op subst wf_subst args subsort ].
+      destruct c as [ op subst args subsort ].
       simpl.
       apply (f_equal (fun args' =>
                         algebra s {| op := op; subst := subst;
-                                     wf_subst := wf_subst; args := args';
+                                     args := args';
                                      subsort := subsort |})).
       apply eq_sym.
       apply (fmap_args_dec_fmap_args_eq).

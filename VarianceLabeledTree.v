@@ -177,6 +177,24 @@ Fixpoint substitute {Label Var Var': Set} `{LabelInfo Label}
   | Hole _ _ x => f x
   end.
 
+Lemma substitute_ext {Label Var Var': Set} `{LabelInfo Label}:
+  forall (f g: Var -> VLTree Label Var'), (forall x, f x = g x) -> forall t, substitute f t = substitute g t.
+Proof.
+  intros f g prf t.
+  induction t using VLTree_rect'.
+  - simpl; apply prf.
+  - simpl.
+    apply f_equal.
+    apply eq_nth_iff.
+    intros p1 p2 peq.
+    rewrite (nth_map _ _ _ _ peq).
+    rewrite (nth_map _ _ _ _ (eq_sym peq)).
+    rewrite peq.
+    apply Forall_nth.
+    apply ForAll'Forall.
+    assumption.
+Qed.
+
 Section VLOrderDec.
   Variable (Label: Set).
   Variable (LOrder: Label -> Label -> Prop).

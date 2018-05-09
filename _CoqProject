@@ -1,5 +1,6 @@
 -R . CLAlg
 ./VectorQuantification.v
+./FunctionSpace.v
 ./IntersectionTypes.v
 ./CombinatoryTerm.v
 ./CombinatoryLogic.v

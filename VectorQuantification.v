@@ -1,12 +1,32 @@
 Require Import Coq.Lists.List.
 Require Import Coq.Vectors.Fin.
 Require Import Coq.Vectors.Vector.
+Require Import Coq.Sorting.Permutation.
 
 Require Import Logic.Eqdep_dec.
 Require Import Arith.PeanoNat.
 Require Import Arith.Peano_dec.
 
 Import EqNotations.
+
+Definition table_of {n: nat} {A: Type} (f: Fin.t n -> A): t A n :=
+  (fix table_of_rec n (f: Fin.t n -> A) {struct n}: t A n :=
+     match n as n' return (Fin.t n' -> A) -> t A n' with
+     | 0 => fun _ => nil _
+     | S n => fun f => cons _ (f (@F1 n)) _ (table_of_rec n (fun x => f (FS x)))
+     end f) n f.
+
+Lemma table_of_inv {n : nat} {A: Type}: forall (f: Fin.t n -> A) x, nth (table_of f) x = f x.
+Proof.
+  induction n as [ | n IH ]; intros f x.
+  - inversion x.
+  - apply (Fin.caseS' x).
+    + reflexivity.
+    + intro p.
+      simpl.
+      rewrite IH.
+      reflexivity.
+Qed.
 
 Lemma shiftin_shiftout {T : Type} {n : nat}:
   forall (xs: t T (S n)),
@@ -1163,7 +1183,7 @@ Proof.
         simpl in inr.
         generalize (proj2 (IH lastx)).
         tauto.
-Qed.   
+Qed.
 
 Lemma ListForall_Forall {A: Type} {P : A -> Prop}: forall xs, List.Forall P xs -> Forall P (of_list xs). 
 Proof.      
@@ -1202,6 +1222,18 @@ Proof.
   - apply List.Exists_cons_tl; assumption.
 Qed.
 
+Lemma List_nth_nth {A : Type}:
+  forall (xs: list A) n (prf: n < length xs), nth_error xs n  = Some (nth (of_list xs) (Fin.of_nat_lt prf)).
+Proof.
+  intros xs n.
+  revert xs.
+  induction n as [ | n IH ];
+    intros xs prf;
+    (destruct xs; [ inversion prf | ]).
+  - reflexivity.
+  - apply IH.
+Qed. 
+
 Inductive IsSuffix {A: Type} (s: list A): list A -> Prop :=
 | IsSuffix_tl: forall x l, IsSuffix s l -> IsSuffix s (List.cons x l)
 | IsSuffix_hd: IsSuffix s s.
@@ -1227,3 +1259,552 @@ Proof.
   + right; assumption.
   + left; reflexivity.
 Qed.
+
+Fixpoint powerset {A: Type} (xs: list A): list (list A) :=
+  match xs with
+  | List.nil => List.cons List.nil List.nil
+  | List.cons x xs =>
+    List.app
+      (List.map (List.cons x) (powerset xs))
+      (powerset xs)
+  end.
+
+Lemma powerset_empty_incl: forall {A} (xs: list A), List.In List.nil (powerset xs).
+Proof.
+  intros A xs.
+  induction xs as [ | x xs IH ].
+  - left; reflexivity.
+  - simpl.
+    induction (List.map (List.cons x) (powerset xs)).
+    + assumption.
+    + right; assumption.
+Qed.
+
+Lemma powerset_smaller_set_incl: forall {A} (x: A) xs ys,
+    List.In (List.cons x xs) (powerset ys) ->
+    List.In xs (powerset ys).
+Proof.
+  intros A x xs ys.
+  induction ys as [ | y ys IH ].
+  - intro devil; inversion devil as [ devil' | devil' ]; inversion devil'.
+  - unfold powerset.
+    fold (powerset ys).
+    intro in_app.
+    destruct (in_app_or _ _ _ in_app) as [ inleft | inright ].
+    + apply in_app_iff.
+      right.
+      clear in_app IH.
+      induction (powerset ys).
+      * contradiction.
+      * inversion inleft as [ eq | ].
+        { left; inversion eq; reflexivity. }
+        { right; auto. }
+    + apply in_or_app; right; auto.
+Qed.
+
+Lemma powerset_split: forall {A} xs (y: A) ys,
+    List.In xs (powerset (List.cons y ys)) ->
+    List.In xs (List.map (List.cons y) (powerset ys)) \/
+    List.In xs (powerset ys).
+Proof.
+  intros A xs.
+  induction xs as [ | x xs IH ].
+  - intros; right; apply powerset_empty_incl.
+  - intros y ys xxs_in.
+    unfold powerset in xxs_in.
+    fold (powerset ys) in xxs_in.
+    apply in_app_or.
+    assumption.
+Qed.
+
+Lemma ListIn_map_cons: forall {A} (x: A) xs ys,
+    List.In ys (List.map (List.cons x) xs) -> exists ys', ys = List.cons x ys' /\ List.In ys' xs.
+Proof.
+  intros A x xs.
+  induction xs as [ | x' xs IH ].
+  - intros ? devil; inversion devil.
+  - intros ys in_prf.
+    destruct in_prf as [ eq | in_rest ].
+    + destruct ys as [ | y ys ].
+      * inversion eq.
+      * inversion eq.
+        eexists; split; [ reflexivity | left; reflexivity ].
+    + destruct (IH _ in_rest) as [ ? [ ? ? ]].
+      eexists; split; [ eassumption | right; eassumption ].
+Qed.
+
+Lemma ListIn_map_cons': forall {A} (x: A) xs ys,
+    List.In xs ys -> List.In (List.cons x xs) (List.map (List.cons x) ys).
+Proof.
+  intros A x xs ys.
+  revert xs.
+  induction ys.
+  - intros ? devil; inversion devil.
+  - intros xs in_prf.
+    destruct in_prf as [ eq | ].
+    + inversion eq.
+      left; reflexivity.
+    + right; auto.
+Qed.
+
+
+
+Lemma powerset_spec {A: Type} {A_dec : forall (x y : A), { x = y } + { x <> y }}:
+  forall (x : A) xs ys,
+    List.In x ys ->
+    List.In xs (powerset ys) ->
+    exists xs',
+      List.In xs' (powerset ys) /\
+      Permutation (if In_dec A_dec x xs then xs else List.cons x xs) xs'.
+Proof.
+  intros x xs ys.
+  revert xs.
+  induction ys as [ | y ys IH ].
+  - intros ? devil; inversion devil.
+  - intros xs x_in xs_in.
+    destruct (In_dec _ x xs) as [ x_in_xs | x_not_in_xs ].
+    + simpl in xs_in.
+      destruct (in_app_or _ _ _ xs_in) as [ xs_inl | xs_inr ].
+      * destruct (ListIn_map_cons _ _ _ xs_inl) as [ xs' [ xs_eq xs'_in ] ].
+        exists (List.cons y xs'); split.
+        { apply in_or_app; left; apply ListIn_map_cons'; assumption. }
+        { rewrite xs_eq; reflexivity. }
+      * exists xs; split.
+        { apply in_or_app; right; assumption. }
+        { reflexivity. }
+    + simpl in x_in.
+      destruct x_in as [ x_eq | x_not_eq ].
+      * destruct (in_app_or _ _ _ xs_in) as [ xs_inl | xs_inr ].
+        { destruct (ListIn_map_cons _ _ _ xs_inl) as [ xs' [ xs_eq xs'_in ] ].
+          rewrite x_eq in xs_eq.
+          rewrite xs_eq in x_not_in_xs.
+          assert False; [ apply x_not_in_xs; left; reflexivity | contradiction ]. }
+        { exists (List.cons x xs); split.
+          - apply in_or_app.
+            left.
+            rewrite x_eq.
+            apply ListIn_map_cons'.
+            assumption.
+          - reflexivity. }
+      * destruct (in_app_or _ _ _ xs_in) as [ xs_inl | xs_inr ].
+        { destruct (ListIn_map_cons _ _ _ xs_inl) as [ xs' [ xs_eq xs'_in ] ].
+          destruct (IH _ x_not_eq xs'_in) as [ xs_res [ xs_res_in xs_res_prem ] ].
+          exists (List.cons y xs_res); split.
+          - apply in_or_app.
+            left.
+            apply ListIn_map_cons'.
+            assumption.
+          - rewrite xs_eq.
+            destruct (In_dec _ x xs') as [ x_in_xs' | ].
+            + rewrite xs_eq in x_not_in_xs.
+              assert False; [ apply x_not_in_xs; right; assumption | contradiction ].
+            + rewrite (Permutation_middle (List.cons y List.nil) xs' x).
+              simpl.
+              rewrite xs_res_prem.
+              reflexivity. }
+        { generalize (IH _ x_not_eq xs_inr).
+          destruct (In_dec A_dec x xs).
+          - contradiction.
+          - intro prf.
+            destruct prf as [ ? [ ? ? ] ].
+            eexists; split; [ | eassumption ].
+            apply in_or_app.
+            right; assumption. }
+Qed.
+
+Fixpoint deduplicate {A: Type} {A_dec: forall (x y: A), {x = y} + {x <> y}} (xs: list A): list A :=
+  match xs with
+  | List.cons x xs =>
+    if In_dec A_dec x xs
+    then @deduplicate _ A_dec xs
+    else List.cons x (@deduplicate _ A_dec xs)
+  | List.nil => List.nil
+  end.
+
+Lemma deduplicate_spec {A: Type} {A_dec: forall (x y: A), {x = y} + {x <> y}}: forall (x: A) xs,
+    List.In x xs <-> List.In x (@deduplicate _ A_dec xs).
+Proof.
+  intros x xs.
+  induction xs as [ | x' xs IH ].
+  - split; intro devil; inversion devil.
+  - split.
+    + intro prf.
+      inversion prf as [ eq | in_rest ].
+      * simpl.
+        destruct (In_dec A_dec x' xs) as [ in_xs | not_in_xs ].
+        { rewrite eq in in_xs; apply IH; assumption. }
+        { left; rewrite eq; reflexivity. }
+      * simpl.
+        destruct (In_dec A_dec x' xs) as [ in_xs | not_in_xs ].
+        { apply IH; assumption. }
+        { right; apply IH; assumption. }
+    + intro prf.
+      simpl in prf.
+      destruct (In_dec A_dec x' xs) as [ in_xs | not_in_xs ].
+      * right; apply IH; assumption.
+      * inversion prf as [ eq | in_rest ].
+        { rewrite eq; left; reflexivity. }
+        { right; apply IH; assumption. }
+Qed.
+
+Lemma powerset_permut_incl {A: Type} {A_dec: forall (x y : A), {x = y} + {x <> y}}:
+  forall (xs: list A) ys,
+    List.Forall (fun x' => List.In x' ys) xs ->
+    exists xs',
+      List.In xs' (powerset ys) /\
+      Permutation (@deduplicate _ A_dec xs) xs'.
+Proof.
+  intros xs.
+  induction xs as [ | x xs IH ].
+  - intros.
+    exists List.nil; split.
+    + apply powerset_empty_incl.
+    + reflexivity.
+  - intros ys prf.
+    inversion prf as [ | ? ? x_prf xs_prf ].
+    simpl.
+    generalize (IH _ xs_prf).
+    intro IH'.
+    destruct IH' as [ xs' [ in_xs' perm_xs' ] ].
+    destruct (In_dec A_dec x xs) as [ in_x_xs | not_in_x_xs ].
+    + exists xs'; split.
+      * assumption.
+      * assumption.
+    + destruct (@powerset_spec _ A_dec x xs' ys x_prf in_xs') as [ xs'' [ in_xs'' perm_xs'' ] ].
+      exists xs''; split.
+      * assumption.
+      * assert (x_dedup : List.In x (@deduplicate _ A_dec xs) -> False).
+        { intro devil.
+          apply not_in_x_xs.
+          apply (@deduplicate_spec _ A_dec).
+          assumption. }
+        destruct (In_dec A_dec x xs') as [ in_x_xs' | ].
+        { assert False.
+          { apply x_dedup.
+            eapply Permutation_in.
+            - symmetry; eassumption.
+            - assumption. }
+          contradiction. }
+        { rewrite perm_xs'.
+          assumption. }
+Qed.
+
+Lemma powerset_permute_prop {A: Type} {A_dec: forall (x y : A), {x = y} + { x <> y }}:
+  forall (P : list A -> Prop) xs ys,
+    P (@deduplicate _ A_dec xs) ->
+    (forall xs ys, Permutation (@deduplicate _ A_dec xs) ys -> P (@deduplicate _ A_dec xs) -> P ys) ->
+    List.Forall (fun x => List.In x ys) xs ->
+    List.Exists P (powerset ys).
+Proof.
+  intros P xs ys Pxs P_stable xs_in.
+  destruct (@powerset_permut_incl _ A_dec xs ys xs_in) as [ xs' [ in_xs' permut_xs' ] ].
+  induction (powerset ys).
+  - inversion in_xs'.
+  - inversion in_xs' as [ eq | in_tl ].
+    + apply List.Exists_cons_hd.
+      rewrite eq.
+      apply (P_stable _ _ permut_xs' Pxs).
+    + apply List.Exists_cons_tl.
+      auto.
+Qed.
+
+Lemma ListIn_In: forall {A: Type} xs (x: A), List.In x xs -> exists k, nth (of_list xs) k = x.
+Proof.
+  intros A xs x.
+  induction xs as [ | x' xs IH ].
+  - intro devil; inversion devil.
+  - intro prf.
+    destruct prf as [ | in_rest ].
+    + exists F1; assumption.
+    + destruct (IH in_rest) as [ k prf ].
+      exists (FS k); assumption.
+Qed.
+
+Lemma In_ListIn: forall {A: Type} xs (x: A) k, nth (of_list xs) k = x -> List.In x xs.
+Proof.
+  intros A xs x.
+  induction xs as [ | x' xs IH ].
+  - intro devil; inversion devil.
+  - intro k.
+    apply (Fin.caseS' k).
+    + intro; left; assumption.
+    + simpl; intros; right; eapply IH; eassumption.
+Qed.
+
+Lemma powerset_hd_in: forall {A: Type} (x: A) xs ys,
+    List.In (List.cons x xs) (powerset ys) ->
+    List.In x ys.
+Proof.
+  intros A x xs ys.
+  revert xs.
+  induction ys.
+  - intros ? devil; inversion devil as [ devil' | devil']; inversion devil'.
+  - intros xxs xxs_in.
+    destruct (in_app_or _ _ _ xxs_in) as [ inl | inr ].
+    + destruct (ListIn_map_cons _ _ _ inl) as [ ? [ x_eq nil_in ] ].
+      inversion x_eq; left; reflexivity.
+    + right; eauto.
+Qed.
+
+Lemma powerset_spec_in: forall {A: Type} (xs ys: list A),
+    List.In xs (powerset ys) -> List.Forall (fun x => List.In x ys) xs.
+Proof.
+  intros A xs.
+  induction xs as [ | x xs IH ].
+  - intros; apply List.Forall_nil.
+  - intros ys in_xs.
+    destruct ys.
+    + inversion in_xs as [ devil | devil ].
+      * inversion devil.
+      * inversion devil.
+    + simpl in in_xs.
+      destruct (in_app_or _ _ _ in_xs) as [ inl | inr ].
+      * destruct (ListIn_map_cons _ _ _ inl) as [ ys' [ xs_eq xs_in' ] ].
+        inversion xs_eq as [ [ hd_eq tl_eq ] ].
+        apply List.Forall_cons.
+        { left; reflexivity. }
+        { rewrite tl_eq in IH.
+          apply IH.
+          apply in_or_app; right.
+          assumption. }
+      * apply List.Forall_cons.
+        { eapply powerset_hd_in; eassumption. }
+        { apply Forall_forall.
+          intros x' x'_in_xs.
+          generalize (IH _ (powerset_smaller_set_incl _ _ _ inr)).
+          intro xs_in_ys.
+          right.
+          revert x'_in_xs xs_in_ys.
+          clear ...
+          intros x'_in_xs xs_in_ys.
+          induction xs.
+          - inversion x'_in_xs.
+          - destruct x'_in_xs as [ eq | inr ].
+            + rewrite eq in *.
+              inversion xs_in_ys.
+              assumption.
+            + inversion xs_in_ys.
+              auto. }
+Qed.
+
+Lemma fold_left_append {A B: Type} {m n: nat}:
+  forall (xs : t A m) (ys: t A n) (s: B) f,
+    fold_left f s (append xs ys) = fold_left f (fold_left f s xs) ys.
+Proof.
+  intro xs.
+  induction xs.
+  - intros; reflexivity.
+  - intros; simpl; auto.
+Qed.
+
+Lemma powerset_p: forall {A: Type} (P : A -> Prop) xs,
+    List.Forall P xs ->
+    List.Forall (List.Forall P) (powerset xs).
+Proof.
+  intros A P xs prf.
+  apply List.Forall_forall.
+  intros xs' in_prf.
+  apply List.Forall_forall.
+  intros x x_in_xs.
+  eapply (proj1 (List.Forall_forall _ _)).
+  + apply prf.
+  + generalize (powerset_spec_in _ _ in_prf).
+    intro xs'_prfs. 
+    apply (proj1 (List.Forall_forall _ _) xs'_prfs).
+    assumption.
+Qed.
+
+Lemma powerset_map: forall {A B: Type} (f: A -> B) xs,
+    powerset (List.map f xs) = List.map (List.map f) (powerset xs).
+Proof.
+  intros A B f xs.
+  induction xs as [ | x xs IH ].
+  - reflexivity.
+  - simpl List.map.
+    simpl powerset.
+    rewrite (List.map_app).
+    rewrite IH.
+    apply (f_equal (fun xs => xs ++ _)).
+    rewrite (List.map_map).
+    rewrite (List.map_map).
+    simpl.
+    reflexivity.
+Qed.
+
+
+Lemma deduplicate_map {A B: Type}
+      {A_dec: forall (x y: A), { x = y } + { x <> y }}
+      {B_dec: forall (x y: B), { x = y } + { x <> y }}:
+  forall xs (f: A -> B),
+    (forall x y, f x = f y -> x = y) -> 
+    List.map f (@deduplicate _ A_dec xs) = @deduplicate _ B_dec (List.map f xs).
+Proof.
+  intros xs f f_inj.
+  induction xs as [ | x xs IH ].
+  - reflexivity.
+  - simpl List.map.
+    simpl deduplicate.
+    destruct (In_dec A_dec x xs) as [ in_x | not_in_x ].
+    + rewrite IH.
+      destruct (In_dec B_dec (f x) (List.map f xs)) as [ in_fx | not_in_fx ] .
+      * reflexivity.
+      * assert False; [ | contradiction ].
+        apply not_in_fx.
+        clear not_in_fx IH.
+        induction xs.
+        { inversion in_x. }
+        { destruct in_x as [ here | there ].
+          - rewrite here; left; reflexivity.
+          - right; auto. }
+    + destruct (In_dec B_dec (f x) (List.map f xs)) as [ in_fx | not_in_fx ] .
+      * assert False; [ | contradiction ].
+        apply not_in_x.
+        clear not_in_x IH.
+        induction xs.
+        { inversion in_fx. }
+        { destruct in_fx as [ here | there ].
+          - rewrite (f_inj _ _ here); left; reflexivity.
+          - right; auto. }
+      * simpl; rewrite IH; reflexivity.
+Qed.
+
+Lemma exists_deduplicate {A: Type} {A_dec: forall (x y: A), { x = y } + { x <> y }}:
+  forall (P : A -> Prop) xs, Exists P (of_list xs) -> Exists P (of_list (@deduplicate _ A_dec xs)).
+Proof.
+  intros P xs.
+  induction xs as [ | x xs IH ].
+  - intro devil; inversion devil.
+  - intro ex_prf.
+    inversion ex_prf as [ ? ? ? prf_here | ? ? ? prf_there n_eq [ hd_eq tl_eq ] ].
+    + generalize (proj1 (@deduplicate_spec _ A_dec x (List.cons x xs)) (or_introl (eq_refl x))).
+      intro in_x_dedup.
+      induction (deduplicate (List.cons x xs)).
+      * inversion in_x_dedup.
+      * destruct in_x_dedup as [ eq | in_rest ].
+        { rewrite eq.
+          apply Exists_cons_hd.
+          assumption. }
+        { apply Exists_cons_tl; auto. }
+    + dependent rewrite tl_eq in prf_there.
+      unfold deduplicate.
+      destruct (In_dec A_dec x xs).
+      * auto.
+      * apply Exists_cons_tl; auto.
+Qed.
+
+Lemma exists_permute {A: Type} {A_dec: forall (x y: A), { x = y } + { x <> y }}:
+  forall (P : A -> Prop) xs ys,
+    Permutation xs ys ->
+    Exists P (of_list xs) -> Exists P (of_list ys).
+Proof.
+  intros P xs ys perm_xs_ys ex_x.
+  assert (ex_x': exists x, List.In x xs /\ P x).
+  { revert ex_x; clear ...
+    intro ex_x.
+    induction xs as [ | ? ? IH ].
+    - inversion ex_x.
+    - inversion ex_x as [ | ? ? ? prfs_tl n_eq [ hd_eq tl_eq ]].
+      + eexists; split; [ apply (or_introl (eq_refl _)) | eassumption ].
+      + dependent rewrite tl_eq in prfs_tl.
+        destruct (IH prfs_tl) as [ x' [ in_prf prf ] ].
+        exists x'; split; [ right; assumption | assumption ]. }
+  destruct ex_x' as [ x' [ in_x' prf_x' ] ].
+  generalize (Permutation_in _ perm_xs_ys in_x').
+  revert prf_x'.
+  clear ...
+  induction ys.
+  - intros ? devil; inversion devil.
+  - intros x'_prf in_x'_ys.
+    destruct in_x'_ys as [ here | there ].
+    + rewrite here.
+      apply Exists_cons_hd; assumption.
+    + apply Exists_cons_tl; auto.
+Qed.
+
+Lemma ListLen_impl:
+  forall {A: Type} (xs: list A) (p1 p2: A -> bool),
+    (forall x, p1 x = true -> p2 x = true) ->
+    (List.length (List.filter p1 xs) <= List.length (List.filter p2 xs))%nat.
+Proof.
+  intros A xs p1 p2 p_impl.
+  induction xs as [ | x xs IH ].
+  - reflexivity.
+  - simpl.
+    generalize (p_impl x).
+    destruct (p1 x).
+    + intro prf; rewrite (prf eq_refl).
+      simpl.
+      rewrite <- Nat.succ_le_mono.
+      assumption.
+    + intro prf; clear prf.
+      destruct (p2 x).
+      * simpl.
+        rewrite IH.
+        apply le_S.
+        reflexivity.
+      * assumption.
+Qed.
+
+Lemma ListLen_ineq:
+  forall {A: Type} (xs: list A) (p1 p2: A -> bool) (x: A),
+    List.In x xs -> p1 x = true -> p2 x = false ->
+    (forall y, p2 y = true -> p1 y = true) ->
+    List.length (List.filter p1 xs) > List.length (List.filter p2 xs).
+Proof.
+  intros A xs p1 p2.
+  induction xs as [ | x xs IH ]; intros y in_xxs p1_y not_p2_y p2_impl.
+  - inversion in_xxs.
+  - destruct in_xxs as [ here | there ].
+    + rewrite here.
+      simpl.
+      rewrite p1_y.
+      rewrite not_p2_y.
+      simpl.
+      unfold "_ > _".
+      unfold "_ < _".
+      rewrite <- Nat.succ_le_mono.
+      apply ListLen_impl.
+      assumption.
+    + simpl.
+      generalize (p2_impl x).
+      destruct (p2 x).
+      * intro prf; rewrite (prf eq_refl).
+        simpl.
+        unfold "_ > _".
+        rewrite <- Nat.succ_lt_mono.
+        apply (IH y); auto.
+      * intro prf.
+        destruct (p1 x).
+        { apply le_S.
+          eapply IH; eauto. }
+        { eapply IH; eauto. }
+Qed.
+
+Lemma ListFilter_le:
+  forall {A: Type} (xs: list A) (p: A -> bool), (List.length (List.filter p xs) <= List.length xs)%nat.
+Proof.
+  intros A xs p.
+  induction xs.
+  - reflexivity.
+  - simpl.
+    destruct (p a).
+    + simpl.
+      rewrite <- (Nat.succ_le_mono).
+      assumption.
+    + apply le_S.
+      assumption.
+Qed.
+
+Lemma ListForall_app:
+  forall {A: Type} (xs ys: list A) (P: A -> Prop),
+    List.Forall P xs -> List.Forall P ys -> List.Forall P (xs ++ ys).
+Proof.
+  intros A xs ys P all_xs all_ys.
+  apply List.Forall_forall.
+  intros x x_in.
+  destruct (List.in_app_or _ _ _ x_in) as [ inl | inr ].
+  - apply (proj1 (List.Forall_forall _ _) all_xs).
+    assumption.
+  - apply (proj1 (List.Forall_forall _ _) all_ys).
+    assumption.
+Qed.  

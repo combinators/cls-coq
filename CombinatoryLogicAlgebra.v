@@ -12,6 +12,7 @@ Require Import CombinatoryTerm.
 Require Import SigmaAlgebra.
 Require Import Cantor.
 Require Import VectorQuantification.
+Require Import FunctionSpace.
 
 Import EqNotations.
 
@@ -19,9 +20,9 @@ Module Type SignatureWithCLSig := SignatureSpec <+ CountableTypeAndTermSignature
                                      
 Module Type CompatibleCLSignature <: SignatureWithCLSig.
   Include SignatureSpec.
-  Parameter ConstructorSymbol: Set.
+  Parameter ConstructorSymbol: Type.
   Definition VariableSymbol: Set := Var.
-  Definition CombinatorSymbol: Set := Operation.
+  Definition CombinatorSymbol: Type := Operation.
   Definition VariableSymbol_eq_dec := Var_eq_dec.
   Declare Instance Symbols : ConstructorSpecification ConstructorSymbol.
   Declare Instance ConstructorSymbol_countable: Countable ConstructorSymbol.
@@ -138,11 +139,11 @@ Module Type ProperWellFormedPredicate
        (Import SigSpec: CompatibleCLSignature)
        (Import Types: IntersectionTypes(SigSpec))
        (Import ProperEmbedding: WithProperEmbedding(SigSpec)(Types))
-<: DecidableWellFormedPredicate(SigSpec)(Types).
-  Include DecidableWellFormedPredicate(SigSpec)(Types).
-  Parameter WF_embed: forall S, SigSpec.WellFormed S -> WellFormed (embedSubst S).
-  Parameter WF_unembed: forall S, WellFormed S -> SigSpec.WellFormed (unembedSubst S).
-  Parameter WF_closed: forall S, WellFormed S -> forall alpha, exists s, S alpha = freeze (embed s).
+<: CountableWellFormedPredicate(SigSpec)(Types).
+  Include CountableWellFormedPredicate(SigSpec)(Types).
+  Parameter WF_embed: forall (S: SigSpec.WellFormed), { S' : WellFormed | forall x, take S' x = embedSubst (take S) x }.
+  Parameter WF_unembed: forall (S: WellFormed), { S' : SigSpec.WellFormed | forall x, take S' x = unembedSubst (take S) x }.
+  Parameter WF_closed: forall (S: WellFormed), forall alpha, exists s, take S alpha = freeze (embed s).
 End ProperWellFormedPredicate.
 
 Module CombinatoryLogicAlgebra
@@ -263,29 +264,31 @@ Module CombinatoryLogicAlgebra
   Proof.
     unfold SigmaAlgebra.
     intros s Fs.
-    destruct Fs as [ op S WF_S args tgt_le ].
-    assert (opty : CL Gamma (Symbol op) (Apply (embedSubst S) (Gamma op))).
-    { apply CL_Var.
-      apply WF_embed; assumption. }
-    generalize (source_count_eq S op).
+    destruct Fs as [ op S args tgt_le ].
+    assert (opty : CL Gamma (Symbol op) (Apply (embedSubst (take S)) (Gamma op))).
+    { rewrite <- (Apply_ext (take (proj1_sig (WF_embed S))) (embedSubst (take S))).
+      - apply CL_Var.
+      - destruct (WF_embed S).
+        assumption. }
+    generalize (source_count_eq (take S) op).
     intro source_count_eq.
     assert (args' :
-              { Ns: t Term (src_count (Apply (embedSubst S) (Gamma op)))
-              | Forall2 (CL Gamma) Ns (fst (split_path (Apply (embedSubst S) (Gamma op))
-                                                       (src_count (Apply (embedSubst S) (Gamma op)))
+              { Ns: t Term (src_count (Apply (embedSubst (take S)) (Gamma op)))
+              | Forall2 (CL Gamma) Ns (fst (split_path (Apply (embedSubst (take S)) (Gamma op))
+                                                       (src_count (Apply (embedSubst (take S)) (Gamma op)))
                                                        (le_n _))) }).
     { exists (rew <- source_count_eq in ProjectTerms _ _ _ args).
       apply nth_Forall2.
       unfold eq_rect_r.
       intro k.
       assert (rew_ext:
-                (rew [fun n => t Term n] eq_sym source_count_eq in (ProjectTerms S (arity op) (domain op) args)) =
-                rew [t Term] eq_sym source_count_eq in (ProjectTerms S (arity op) (domain op) args)).
+                (rew [fun n => t Term n] eq_sym source_count_eq in (ProjectTerms (take S) (arity op) (domain op) args)) =
+                rew [t Term] eq_sym source_count_eq in (ProjectTerms (take S) (arity op) (domain op) args)).
       { rewrite <- (eq_sym source_count_eq).
         simpl.
         reflexivity. }
       rewrite rew_ext.
-      rewrite (nth_k (eq_sym source_count_eq) (ProjectTerms S (arity op) (domain op) args) k).
+      rewrite (nth_k (eq_sym source_count_eq) (ProjectTerms (take S) (arity op) (domain op) args) k).
       unfold ProjectTerms.
       rewrite (nth_map _ _ _ _ eq_refl).
       rewrite (positions_spec).
@@ -295,8 +298,8 @@ Module CombinatoryLogicAlgebra
       assumption. }
     clear args.
     assert (tgt_le':
-              snd (split_path (Apply (embedSubst S) (Gamma op))
-                              (src_count (Apply (embedSubst S) (Gamma op)))
+              snd (split_path (Apply (embedSubst (take S)) (Gamma op))
+                              (src_count (Apply (embedSubst (take S)) (Gamma op)))
                               (le_n _)) <= blackBoxEmbed s).
     { unfold blackBoxEmbed.
       simpl freeze.
@@ -398,19 +401,19 @@ Module CombinatoryLogicAlgebra
     intros M s prf.
     generalize (CL_Path_path _ _ _ prf (blackBoxEmbed_Path s)).
     intro ex_subst.
-    destruct ex_subst as [ S [ WF_S ex_path ] ].
+    destruct ex_subst as [ S ex_path ].
     unfold CombinatorSymbol.
-    rewrite <- (source_count_eq (unembedSubst S) (rootOf M)).
-    rewrite (unembedApply_c _ _ (WF_closed _ WF_S)).
-    generalize (ST_organize_ge (Apply S (Gamma (rootOf M)))).
+    rewrite <- (source_count_eq (unembedSubst (take S)) (rootOf M)).
+    rewrite (unembedApply_c _ _ (WF_closed _ )).
+    generalize (ST_organize_ge (Apply (take S) (Gamma (rootOf M)))).
     rewrite (factorize_organized _ (organize_organized _)).
     induction ex_path as [ ? ? ? here | ? x xs ].
     - destruct here as [ path_x [ argCountPrf [ _ tgt_le ] ] ].
       intro x_ge.
       rewrite (ST_intersect_nth _ Fin.F1) in x_ge.
       simpl in x_ge.
-      generalize (Gamma_paths (rootOf M) (unembedSubst S)).
-      rewrite (unembedApply_c _ _ (WF_closed _ WF_S)).
+      generalize (Gamma_paths (rootOf M) (unembedSubst (take S))).
+      rewrite (unembedApply_c _ _ (WF_closed _ )).
       intro path_c.
       generalize (Path_src_count _ _ x_ge path_c path_x).
       intro src_count_eq'.
@@ -468,7 +471,7 @@ Module CombinatoryLogicAlgebra
       unfold ProjectTerms.
       unfold mkF_args.
       intro; assumption.
-  Qed.          
+  Qed.
     
   Definition CL_CoAlgebra:     
       (forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}) ->
@@ -485,25 +488,24 @@ Module CombinatoryLogicAlgebra
     clear ex_subst; intro ex_subst.
     generalize (fully_applied _ _ prf).
     intro fully_applied.
-    apply (mkF _ _ (rootOf M) (unembedSubst (proj1_sig ex_subst)));
-      destruct ex_subst as [ S [ WF_S ex_path ] ].
-    - apply WF_unembed; assumption.
-    - generalize (ST_organize_ge (Apply S (Gamma (rootOf M)))).
+    apply (mkF _ _ (rootOf M) (proj1_sig (WF_unembed (proj1_sig ex_subst))));
+      destruct ex_subst as [ S ex_path ].
+    - generalize (ST_organize_ge (Apply (take S) (Gamma (rootOf M)))).
       simpl.
       intro root_le.
-      rewrite (factorize_organized _ (organize_organized (Apply S (Gamma (rootOf M))))) in root_le.
-      apply (mkF_args (rew fully_applied in argumentsOf M) (unembedSubst S) (domain (rootOf M))).
+      rewrite (factorize_organized _ (organize_organized (Apply (take S) (Gamma (rootOf M))))) in root_le.
+      apply (mkF_args (rew fully_applied in argumentsOf M) (take (proj1_sig (WF_unembed S))) (domain (rootOf M))).
       intro k.
       induction ex_path as [ ? x ? here | ? x xs ? IH ].
       + destruct here as [ path_x [ argCountPrf [ args_inhab tgt_le ] ] ].
         eapply CL_ST.
         * rewrite nth_k.
           apply (Forall2_nth _ _ _ args_inhab (rew <- fully_applied in k)).
-        * generalize (Gamma_paths (rootOf M) (unembedSubst S)).
-          rewrite (unembedApply_c _ _ (WF_closed _ WF_S)).
+        * generalize (Gamma_paths (rootOf M) (unembedSubst (take S))).
+          rewrite (unembedApply_c _ _ (WF_closed _)).
           intro path_c.
           rewrite (ST_intersect_nth _ Fin.F1) in root_le.
-          assert (argCountPrf' : (argumentCount M <= src_count (Apply S (Gamma (rootOf M))))%nat).
+          assert (argCountPrf' : (argumentCount M <= src_count (Apply (take S) (Gamma (rootOf M))))%nat).
           { generalize (Path_src_count _ _ root_le path_c path_x).
             intro count_eq.
             rewrite count_eq.
@@ -523,7 +525,7 @@ Module CombinatoryLogicAlgebra
           clear k'_eq.
           generalize (rew eq_sym fully_applied in k).
           intro k'.
-          revert fully_applied k' argCountPrf' WF_S.
+          revert fully_applied k' argCountPrf'.
           clear ...
           intro fully_applied.
           rewrite fully_applied.
@@ -535,7 +537,7 @@ Module CombinatoryLogicAlgebra
           fold CombinatorSymbol.
           induction (domain (rootOf M)) as [ | ? ? ? IH ].
           { inversion k. }
-          { intros argCountPrf WF_S.
+          { intros argCountPrf.
             apply (Fin.caseS' k).
             - simpl.
               unfold blackBoxEmbed.
@@ -548,24 +550,27 @@ Module CombinatoryLogicAlgebra
               simpl.
               rewrite unembedEmbed.
               apply Forall2_cons; [ | apply Forall2_nil ].
+              match goal with
+              |[|- freeze (embed (applySubst ?S _)) <= freeze (embed (applySubst ?S' _)) ] =>
+               rewrite (applySubst_ext S' S (proj2_sig (WF_unembed _)))
+              end.
               reflexivity.
             - intro k'.
-              apply (IH k' (proj2 (Nat.succ_le_mono _ _) argCountPrf) WF_S). }
+              apply (IH k' (proj2 (Nat.succ_le_mono _ _) argCountPrf)). }
       + rewrite (ST_intersect_append_le (cons _ x _ (nil _)) xs) in root_le.
         rewrite (ST_InterMeetRight) in root_le.
         auto.
-    - assert (source_count_le : (arity (rootOf M) <= src_count (Apply S (Gamma (rootOf M))))%nat).
-      { generalize (source_count_eq (unembedSubst S) (rootOf M)).
+    - assert (source_count_le : (arity (rootOf M) <= src_count (Apply (take S) (Gamma (rootOf M))))%nat).
+      { generalize (source_count_eq (unembedSubst (take S)) (rootOf M)).
         intro source_count_eq.
-        rewrite (unembedApply_c _ _ (WF_closed _ WF_S)) in source_count_eq.
+        rewrite (unembedApply_c _ _ (WF_closed _ )) in source_count_eq.
         unfold CombinatorSymbol.
         rewrite <- source_count_eq.
         reflexivity. }
       assert (split_path_eq:
-                snd (split_path (Apply S (Gamma (rootOf M))) _ source_count_le) =
-                blackBoxEmbed (applySubst (unembedSubst S) (range (rootOf M)))).
-      { revert WF_S.
-        clear ...
+                snd (split_path (Apply (take S) (Gamma (rootOf M))) _ source_count_le) =
+                blackBoxEmbed (applySubst (unembedSubst (take S)) (range (rootOf M)))).
+      { clear ...
         revert source_count_le.
         generalize (rootOf M).
         clear M.
@@ -590,9 +595,9 @@ Module CombinatoryLogicAlgebra
           intro IH'.
           exact IH'. }
       assert (path_tgt_le:
-                snd (split_path (Apply S (Gamma (rootOf M))) _ source_count_le) <=
+                snd (split_path (Apply (take S) (Gamma (rootOf M))) _ source_count_le) <=
                 blackBoxEmbed s).
-      { generalize (ST_organize_ge (Apply S (Gamma (rootOf M)))).
+      { generalize (ST_organize_ge (Apply (take S) (Gamma (rootOf M)))).
         rewrite (factorize_organized _ (organize_organized _)).
         induction ex_path as [ ? ? ? here | ? x xs there IH ].
         - intro x_ge.
@@ -600,8 +605,8 @@ Module CombinatoryLogicAlgebra
           simpl in x_ge.
           destruct here as [ path_x [ argCountPrf [ inhab_args x_tgt_le ] ] ].
           rewrite <- x_tgt_le.
-          generalize (Gamma_paths (rootOf M) (unembedSubst S)).
-          rewrite (unembedApply_c _ _ (WF_closed _ WF_S)).
+          generalize (Gamma_paths (rootOf M) (unembedSubst (take S))).
+          rewrite (unembedApply_c _ _ (WF_closed _)).
           intro path_c.
           clear split_path_eq inhab_args x_tgt_le.
           revert fully_applied source_count_le path_c path_x x_ge argCountPrf.
@@ -637,6 +642,8 @@ Module CombinatoryLogicAlgebra
       rewrite freezeUnfreeze in arg_subsorts.
       rewrite unembedEmbed in arg_subsorts.
       rewrite unembedEmbed in arg_subsorts.
+      simpl.
+      rewrite (applySubst_ext _ _ (proj2_sig (WF_unembed S))).
       exact arg_subsorts.
   Defined.
 
@@ -737,7 +744,7 @@ Module CombinatoryLogicAlgebra
     simpl.
     destruct (CL_Path_path_compute_S Gamma CL_dec M (blackBoxEmbed s) (blackBoxEmbed_Path s)
                                      (CL_Path_path Gamma M (blackBoxEmbed s) prf (blackBoxEmbed_Path s)))
-      as [ S [ wf ex_prf ] ].
+      as [ S ex_prf ].
     rewrite mkF_args_eq.
     generalize (fully_applied M s prf).
     generalize (CL_CoAlgebra_arity CL_dec s (exist _ M prf)).
@@ -784,7 +791,7 @@ Module CombinatoryLogicAlgebra
       revert args_prf arity_eq.
       generalize (CL_CoAlgebra_arity CL_dec s (CL_Algebra s f)).
       generalize (CL_Algebra_argCount s f).
-      generalize (ProjectTerms (subst Carrier s f) (arity (op Carrier s f))
+      generalize (ProjectTerms (take (subst Carrier s f)) (arity (op Carrier s f))
                                (domain (op Carrier s f)) (args Carrier s f)).
       match goal with
       | [|- _ -> _ -> _ -> rew _ in ?xs = _ -> _ ] =>
@@ -836,7 +843,7 @@ Module CombinatoryLogicAlgebra
           inversion terms_eq as [ [ hd_eq tl_eq' ] ].
           exact (vect_exist_eq _ _ tl_eq').
   Qed.
-          
+  
   Lemma CL_CoAlgebraAlgebra_inv:
     forall (CL_dec: forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}),
     forall s c, proj1_sig (CL_Algebra s (CL_CoAlgebra CL_dec s c)) = proj1_sig c.
@@ -891,13 +898,13 @@ Module CombinatoryLogicAlgebra
   Lemma CL_CoAlgebra_smaller (CL_dec : forall M sigma, {CL Gamma M sigma} + {CL Gamma M sigma -> False}):
     forall (s : Sort EmptySet) (c : Carrier s),
       argsDec Carrier Term (ltof Term sizeOf) (fun _ c => proj1_sig c) s c
-              (subst Carrier s (CL_CoAlgebra CL_dec s c))
+              (take (subst Carrier s (CL_CoAlgebra CL_dec s c)))
               (domain (op Carrier s (CL_CoAlgebra CL_dec s c)))
               (args Carrier s (CL_CoAlgebra CL_dec s c)).
   Proof.
     intros s c.
     generalize (CL_CoAlgebra_smaller_nth CL_dec s c).
-    destruct (CL_CoAlgebra CL_dec s c) as [ op S WF_S args subsorts ].
+    destruct (CL_CoAlgebra CL_dec s c) as [ op S args subsorts ].
     simpl.
     revert args.
     generalize (domain op).
@@ -930,8 +937,8 @@ Module CombinatoryLogicAlgebra
       carrier_eq s s' (CL_Algebra s f) (CL_Algebra s' f').
   Proof.
     intros s s' f f'.   
-    destruct f as [ x S WF_S args subsort ].
-    destruct f' as [ x' S' WF_S' args' subsort' ].
+    destruct f as [ x S args subsort ].
+    destruct f' as [ x' S' args' subsort' ].
     intro f_eq.
     unfold carrier_eq.
     match goal with
@@ -952,16 +959,16 @@ Module CombinatoryLogicAlgebra
     simpl.
     destruct f_eq as [ op_eq args_eq ].
     simpl in op_eq.
-    revert args S' WF_S WF_S' args' subsort subsort' args_eq.
+    revert args S' args' subsort subsort' args_eq.
     rewrite <- op_eq.
     clear x' op_eq.
-    intros args S' WF_S WF_S' args' subsort subsort' args_eq.
+    intros args S' args' subsort subsort' args_eq.
     apply f_equal2; [ reflexivity | ].
-    revert S S' args args' WF_S WF_S' subsort subsort' args_eq.
+    revert S S' args args' subsort subsort' args_eq.
     simpl.
     generalize (domain x).
     generalize (arity x).
-    intros n dom S S' args args' _ _ _ _.
+    intros n dom S S' args args' _ _.
     revert args'.
     induction dom as [ | hd n tl IH ].
     - unfold ProjectTerms; intros; reflexivity.
@@ -979,8 +986,8 @@ Module CombinatoryLogicAlgebra
       rewrite <- map_fg.
       simpl.
       simpl in args_eq.
-      fold (ProjectTerms S n tl args).
-      fold (ProjectTerms S' n tl args').
+      fold (ProjectTerms (take S) n tl args).
+      fold (ProjectTerms (take S') n tl args').
       apply IH.
       assumption.
   Qed.
@@ -1005,11 +1012,11 @@ Module CombinatoryLogicAlgebra
       assert (arity_eq: arity (op Carrier s (CL_CoAlgebra CL_dec s c)) =
                         arity (op Carrier s' (CL_CoAlgebra CL_dec s' c'))).
       { rewrite op_eq; reflexivity. }
-      assert (args_eq: ProjectTerms (subst Carrier s (CL_CoAlgebra CL_dec s c)) _
+      assert (args_eq: ProjectTerms (take (subst Carrier s (CL_CoAlgebra CL_dec s c))) _
                                     (domain (op Carrier s (CL_CoAlgebra CL_dec s c)))
                                     (args Carrier s (CL_CoAlgebra CL_dec s c)) =
                        rew <- arity_eq in
-                       ProjectTerms (subst Carrier s' (CL_CoAlgebra CL_dec s' c')) _
+                       ProjectTerms (take (subst Carrier s' (CL_CoAlgebra CL_dec s' c'))) _
                                     (domain (op Carrier s' (CL_CoAlgebra CL_dec s' c')))
                                     (args Carrier s' (CL_CoAlgebra CL_dec s' c'))).
       { match goal with
@@ -1043,8 +1050,8 @@ Module CombinatoryLogicAlgebra
       generalize (CL_CoAlgebra CL_dec s c).
       generalize (CL_CoAlgebra CL_dec s' c').
       intros f' f.
-      destruct f as [ op S WF_S args ].
-      destruct f' as [ op' S' WF_S' args' ].
+      destruct f as [ op S args ].
+      destruct f' as [ op' S' args' ].
       simpl.
       intros c_eq op_eq.
       generalize args'; clear args'.

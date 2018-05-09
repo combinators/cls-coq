@@ -2,6 +2,7 @@ Require Import Coq.Lists.List.
 Require Import Coq.Vectors.Fin.
 Require Import Coq.Vectors.Vector.
 Require Import Coq.Arith.PeanoNat.
+Require Import Coq.Arith.Compare_dec.
 Require Import Coq.Classes.RelationClasses.
 Require Import Coq.Logic.Eqdep_dec.
 Import EqNotations.
@@ -9,8 +10,10 @@ Import EqNotations.
 Require Import SigmaAlgebra.
 Require Import VarianceLabeledTree.
 Require Import SortEmbeddings.
+Require Import ComputationalPathLemma.
 Require Import VectorQuantification.
 Require Import Cantor.
+Require Import FunctionSpace.
 
 Inductive Ty : Set :=
 | Ty_Nat : Ty
@@ -557,12 +560,31 @@ Section WithImplementations.
       solve [ left; reflexivity | right; intro devil; inversion devil ].
   Qed.
 
-  Instance SigVar_Finite : Finite SigVar :=
-    {| cardinality := 4;
-       toFin := fun x => match x with | alpha => F1 | beta => FS F1 | gamma => FS (FS F1) end;
-       fromFin := fun x => match x with | F1 => alpha | Fin.FS F1 => beta | _ => gamma end;
-       fromToFin_id := fun x => match x with | alpha => eq_refl | beta  => eq_refl | gamma => eq_refl end |}.
+  Definition SigVar_card := 3.
+  Definition SigVar_toFin: SigVar -> Fin.t SigVar_card :=
+    fun x => match x with | alpha => F1 | beta => FS F1 | gamma => FS (FS F1) end.
+  Definition SigVar_fromFin: Fin.t SigVar_card -> SigVar :=
+    fun x => match x with | F1 => alpha | Fin.FS F1 => beta | Fin.FS (Fin.FS _) => gamma end.
+  Lemma SigVar_fromToFin_id: forall alpha, SigVar_fromFin (SigVar_toFin alpha) = alpha.
+  Proof.
+    intro alpha.
+    destruct alpha; reflexivity.
+  Qed.
 
+  Lemma SigVar_toFromFin_id: forall alpha, SigVar_toFin (SigVar_fromFin alpha) = alpha.
+  Proof.
+    intro alpha.
+    repeat (apply (Fin.caseS' alpha); [ reflexivity | clear alpha; intro alpha ]).
+    inversion alpha.
+  Qed.
+  
+  Instance SigVar_Finite : Finite SigVar :=
+    {| cardinality := SigVar_card;
+       toFin := SigVar_toFin;
+       fromFin := SigVar_fromFin;
+       fromToFin_id := SigVar_fromToFin_id;
+       toFromFin_id := SigVar_toFromFin_id
+    |}.
   Definition applyRange : VLTree TyConstr SigVar :=
     (Hole _ _ beta).
   Definition applyDom : t (VLTree TyConstr SigVar) 2 :=
@@ -720,7 +742,10 @@ Section WithImplementations.
       S alpha = typeToSort (Ty_Unit) EmptySet ->
       S beta = typeToSort (Ty_Unit) EmptySet ->
       S gamma = typeToSort (Ty_Unit) EmptySet ->
-      WF S.          
+      WF S.
+
+  
+  
 
   Fixpoint liftbox_table (A: Ty): list Ty :=
     match A with
@@ -848,18 +873,280 @@ Section WithImplementations.
        | S n => Ty_Lift n A :: liftings_rec n A
        end) (n - BoxLevel A) A.
 
-  Axiom card : nat.
-  Axiom SubstitutionSpace_sound: Fin.t card -> { S : SigVar -> VLTree TyConstr EmptySet | WF S }.
-  Axiom SubstitutionSpace_complete: { S : SigVar -> VLTree TyConstr EmptySet | WF S } -> Fin.t card.
-  Axiom SubstitutionSpace_eq:
-    forall WFS alpha, proj1_sig (SubstitutionSpace_sound (SubstitutionSpace_complete WFS)) alpha =
-                 proj1_sig WFS alpha.
-  Instance SubstitutionSpace_finite: Finite (Fin.t card) :=
-    {| cardinality := card;
-       toFin := fun x => x;
-       fromFin := fun x => x;
-       fromToFin_id := fun x => eq_refl |}.
-       
+  Lemma BoxLevel_Lift: forall n A, BoxLevel (Ty_Lift n A) = n + BoxLevel A.
+  Proof.
+    intro n.
+    induction n as [ | n IH ]; intro A.
+    - reflexivity.
+    - simpl.
+      rewrite (IH A).
+      reflexivity.
+  Qed.
+  
+  Lemma liftings_correct: forall A n B, List.In A (liftings n B) <-> exists n', BoxLevel A < n /\ IsLiftable n' A B.
+  Proof.
+    intros A n.
+    revert A.
+    unfold liftings.
+    induction n as [ | n IH]; intros A B.
+    - split; [ contradiction | intros [n [ devil ? ]]; inversion devil ].
+    - split.
+      + destruct (Nat.le_gt_cases (BoxLevel B) n) as [ n_ge | devil ].
+        * rewrite (Nat.sub_succ_l _ _ n_ge).
+          intro prf.
+          destruct prf as [ here | there ].
+          { exists (n - BoxLevel B); split.
+            - rewrite <- here.
+              rewrite BoxLevel_Lift.
+              rewrite (Nat.sub_add); [ apply Nat.le_refl | assumption].
+            - exact (eq_sym here). }
+          { destruct (proj1 (IH A B) there) as [ n' [ level_lt liftable ] ].
+            exists n'; split; [ etransitivity; [ eassumption | apply Nat.le_refl ] | assumption ]. }
+        * rewrite (proj2 (Nat.sub_0_le _ _) devil).
+          intro; contradiction.
+      + intros [ n' [ level_lt liftable ] ].
+        unfold IsLiftable in liftable.
+        inversion level_lt as [ level_n | ? level_lt' ];
+          rewrite liftable in *;
+          rewrite BoxLevel_Lift in *.
+        * rewrite (Nat.add_assoc 1).
+          rewrite <- (Nat.add_sub_assoc);  [ | apply (Nat.le_refl _) ].
+          rewrite (Nat.sub_diag).
+          rewrite (Nat.add_0_r).
+          simpl.
+          left; reflexivity.
+        * rewrite (Nat.sub_succ_l).
+          { right.
+            eapply IH.
+            exists n'; split.
+            - rewrite BoxLevel_Lift.
+              exact level_lt'.
+            - reflexivity. }
+          { etransitivity; [ | exact level_lt' ].
+            rewrite (Nat.add_assoc 1).
+            rewrite (Nat.add_comm).
+            apply (Nat.le_add_r). }
+  Qed.
+
+  Definition liftbox_tgt_table: list Ty :=
+    (fix liftbox_tgt_table_rec terms :=
+       match terms as terms' return (forall M, List.In M terms' -> { A : Ty | MiniMLBox [[]] M A}) -> list Ty with
+       | M :: terms' =>
+         fun prf =>
+           List.app
+             (List.flat_map (liftings max_BoxLevel)
+                            (tgt_table (proj1_sig (prf M (or_introl (eq_refl M))))))
+             (liftbox_tgt_table_rec terms' (fun M prf' => prf M (or_intror prf')))
+       | [] => fun _ => []
+       end) Terms Proofs.
+
+  Lemma liftbox_tgt_table_correct:
+    forall A, (exists A' M MIn n,
+             IsTgt (proj1_sig (Proofs M MIn)) A' /\
+             IsLiftable n A A' /\
+             BoxLevel A < max_BoxLevel) <-> List.In A liftbox_tgt_table.
+  Proof.
+    intro A.
+    unfold liftbox_tgt_table.
+    generalize max_BoxLevel.
+    generalize Proofs.
+    clear Proofs.
+    revert A.
+    induction Terms as [ | M Terms' IH ]; intros A proofs max_BoxLevel.
+    - split;
+        intro devil;
+        repeat (let x := fresh "dx" in
+                inversion devil as [ x devil' ];
+                clear devil;
+                rename devil' into devil);
+        contradiction.
+    - split.
+      + intros [ A' [ M' [ M'In [ n  [ isTgt [ isLiftable lvl_ok ] ] ] ] ] ].
+        destruct M'In as [ here | there ].
+        * apply (List.in_or_app); left.
+          rewrite <- here in isTgt.
+          apply (List.in_flat_map).
+          exists A'; split.
+          { apply tgt_table_correct; assumption. }
+          { apply liftings_correct.
+            exists n; split; assumption. }     
+        * apply (List.in_or_app); right.
+          apply (proj1 (IH A (fun M' prf' => proofs _ (or_intror prf')) max_BoxLevel)).
+          exists A', M', there, n; repeat split; assumption.
+      + intro inprf.
+        destruct (List.in_app_or _ _ _ inprf) as [ in_hd | in_tail ].
+        * destruct (proj1 (List.in_flat_map _ _ _) in_hd) as [ A' [ tgt_A' maxlevel_A ] ].
+          destruct (proj1 (liftings_correct _ _ _) maxlevel_A) as [ n [ maxBoxLevel_A liftA ] ].
+          exists A', M, (or_introl eq_refl), n; repeat split;
+            solve [ exact (proj1 (tgt_table_correct _ _) tgt_A') | assumption ].
+        * destruct (proj2 (IH A (fun M prf' => proofs M (or_intror prf')) max_BoxLevel) in_tail)
+            as [ A' [ M' [  M'In result ] ] ].
+          exists A', M', (or_intror M'In).
+          exact result.
+  Qed.
+
+  Definition wf_set : list (t (VLTree TyConstr EmptySet) (@cardinality SigVar SigVar_Finite)) :=
+    nodup (Vector_eq_dec (Tree_eq_dec _ _ TyConstr_eq_dec (fun x => False_rect _ x)))
+          (List.app
+             (List.map
+                (fun ty =>
+                   match ty with
+                   | Ty_Arr A B =>
+                     of_list [ typeToSort A _; typeToSort B _; typeToSort Ty_Unit _]
+                   | _ => of_list [ typeToSort Ty_Unit _; typeToSort Ty_Unit _; typeToSort Ty_Unit _ ]
+                   end) tgt_arrow_table)
+             (List.app (@List.map _ (t _ (@cardinality SigVar SigVar_Finite))
+                          (fun ty =>
+                             of_list [ typeToSort Ty_Unit EmptySet; typeToSort Ty_Unit _; typeToSort ty _])
+                          liftbox_tgt_table)
+                       [of_list [ typeToSort Ty_Unit EmptySet; typeToSort Ty_Unit _; typeToSort Ty_Unit _]])).
+
+  Definition SubstSpaceFromVector :
+    FunctionSpace (t (VLTree TyConstr EmptySet) (@cardinality _ SigVar_Finite)) SigVar (VLTree TyConstr EmptySet) :=
+    TableSpace _ _ SigVar_Finite.
+
+  Definition WellFormed := Fin.t (length wf_set).
+  Definition WF_take (S: WellFormed): SigVar -> VLTree TyConstr EmptySet :=
+    take (nth (of_list wf_set) S).
+  Lemma WF_take_ext: forall e1 e2, (forall x, WF_take e1 x = WF_take e2 x) -> e1 = e2.
+  Proof.
+    generalize (NoDup_nodup _ _ : NoDup wf_set).
+    intros wf_set_set e1 e2 prf.
+    destruct (Fin.eq_dec e1 e2) as [ | devil ]; [ assumption | ].
+    assert (vect_eq: nth (of_list wf_set) e1 = nth (of_list wf_set) e2).
+    { apply (eq_nth_iff _ _ (nth (of_list wf_set) e1) (nth (of_list wf_set) e2)).
+      intros p1 p2 p_eq.
+      rewrite p_eq.
+      rewrite <- (toFromFin_id p2).
+      apply prf. }
+    apply Fin.to_nat_inj.
+    eapply NoDup_nth_error; [ eassumption | | ].
+    - exact (proj2_sig (to_nat e1)).
+    - rewrite (List_nth_nth _ _ (proj2_sig (to_nat e1))).
+      rewrite (List_nth_nth _ _ (proj2_sig (to_nat e2))).
+      apply f_equal.
+      rewrite (Fin.of_nat_to_nat_inv).
+      rewrite (Fin.of_nat_to_nat_inv).
+      assumption.
+  Qed.
+  
+  Instance WellFormedSpace : FunctionSpace WellFormed SigVar (VLTree TyConstr EmptySet) :=
+    {| take := WF_take;
+       extensional := WF_take_ext |}.
+
+  Lemma WellFormedSpace_complete: forall (S : SigVar -> VLTree TyConstr EmptySet), WF S -> { e: WellFormed | forall x, @take _ _ _ WellFormedSpace e x = S x }.
+  Proof.
+    intros S WF_S.
+    assert (inprf: List.In (of_list [S alpha; S beta; S gamma]) wf_set).
+    { unfold wf_set.
+      apply (List.nodup_In).
+      apply (List.in_or_app).
+      destruct WF_S.
+      - left.
+        apply (List.in_map_iff).
+        exists (Ty_Arr (sortToType (S alpha)) (sortToType (S beta))); split.
+        + repeat (rewrite typeSort_inj; [ simpl; apply f_equal | ]);
+            try solve [
+                  match goal with
+                  |[M : Term, MIn: List.In M Terms, H: IsTgt _ _ |- _] =>
+                   induction (proj1_sig (Proofs M MIn));
+                   simpl in H; destruct H as [ x | y ];
+                       try solve [ inversion x | contradiction | eauto ]
+                  end;
+                  try (inversion x;
+                       match goal with |[ eq: _ = sortToType ?rhs |- context [ ?rhs ]] => exists (sortToType rhs) end;
+                       apply sortType_sur)
+                ].
+          * apply (f_equal (fun x => cons  _ x _ (nil _))).
+            rewrite <- (sortType_sur (S gamma)).
+            match goal with
+            |[ eq: _ = Ty_Unit |- _] => rewrite eq
+            end.
+            reflexivity.
+        + apply tgt_arrow_table_correct.
+          repeat eexists; eassumption.
+      - right; apply (List.in_or_app); left.
+        apply (List.in_map_iff).
+        exists (sortToType (S gamma)); split.
+        + repeat match goal with
+                 |[ eq: ?lhs = _ |- context [ ?lhs ] ] =>
+                  rewrite eq; simpl; apply f_equal
+                 end.
+          rewrite (typeSort_inj); [ simpl; reflexivity |].
+          eexists.
+          rewrite sortType_sur.
+          reflexivity.
+        + apply liftbox_tgt_table_correct.
+          repeat eexists; eassumption.
+      - right; apply (List.in_or_app); right.
+        repeat match goal with
+                 |[ eq: ?lhs = _ |- context [ ?lhs ] ] =>
+                  rewrite eq
+               end.
+        left; reflexivity. }
+    revert inprf.
+    unfold WellFormed.
+    unfold take.
+    simpl.
+    unfold WF_take.
+    induction wf_set as [ | hd tl IH ]; intro prf.
+    - inversion prf.
+    - match goal with
+      |[ prf: List.In ?l _ |- _ ]=>
+       destruct (Vector_eq_dec (Tree_eq_dec _ _ TyConstr_eq_dec (fun x => False_rect _ x)) l hd) as [ eq | ineq ]
+      end.
+      + exists Fin.F1.
+        simpl.
+        unfold takeVect.
+        rewrite <- eq.
+        intro x; destruct x; reflexivity.
+      + match goal with
+        |[prf : List.In ?l (hd :: tl) |- _] =>
+         assert (prf': List.In l tl); [ destruct prf as [ devil | ok];
+                                        [ generalize (ineq (eq_sym devil)); intro; contradiction
+                                        | exact ok ] |]
+        end.
+        destruct (IH prf') as [ e e_prf ].
+        exists (Fin.FS e); assumption.
+  Qed.
+
+  Lemma WellFormedSpace_sound:
+    forall e: WellFormed,  { S : SigVar -> VLTree TyConstr EmptySet
+                      | WF S /\ (forall x, @take _ _ _ WellFormedSpace e x = S x) }.
+  Proof.
+    intro e.
+    exists (take e); split.
+    - unfold take.
+      simpl.
+      unfold WF_take.
+      unfold take.
+      simpl.
+      unfold takeVect.
+      match goal with
+      |[|- WF (fun _ => nth ?x _)]  =>
+       generalize (proj1 (List.nodup_In _ _ _) (In_ListIn _ x e eq_refl))
+      end.
+      intro wf_in.
+      destruct (List.in_app_or _ _ _ wf_in) as [ tgt_table | in_rest ].
+      + destruct (proj1 (List.in_map_iff _ _ _) tgt_table) as [ ty [ ty_eq ty_in ] ].
+        destruct (proj2 (tgt_arrow_table_correct _) ty_in) as [ A [ B [ M [ MIn [isTgt A_eq ]]]] ].
+        apply (WF_Arrow  _ M MIn);
+          rewrite <- ty_eq;
+          rewrite A_eq;
+          simpl.
+        * repeat rewrite sortType_inj.
+          assumption.
+        * reflexivity.
+      + destruct (List.in_app_or _ _ _ in_rest) as [ lift_table | unit_case ].
+        * destruct (proj1 (List.in_map_iff _ _ _) lift_table) as [ ty [ ty_eq ty_in ] ].
+          destruct (proj2 (liftbox_tgt_table_correct _) ty_in) as [ A [ M [ MIn [ n [ isTgt [ isLiftable A_lvl ]]]]]].
+          rewrite <- ty_eq.
+          apply (WF_Box _ M MIn A n); try solve [ reflexivity | simpl; try rewrite sortType_inj; assumption ].
+        * destruct unit_case as [ eq | devil ]; [| contradiction].
+          rewrite <- eq.
+          apply WF_Default; reflexivity.
+    - intro; reflexivity.
+  Qed.            
 
   Definition ApplicativeFragment_carrier:
     forall M A, ApplicativeFragment max_BoxLevel M A ->
@@ -877,28 +1164,6 @@ Section WithImplementations.
       assumption.
     - eapply TPI_App; eassumption.
   Defined.
-  
-  (*
-  Lemma liftings_correct: forall n A B,
-      (exists n', IsLiftable n' B A /\ BoxLevel B < n) <-> List.In B (liftings n A).
-  Proof.
-    intros n A B.
-    split.
-    - intros [ n' [ liftprf levelprf ] ].
-      revert A liftprf.
-      induction n' as [ | n' IH ].
-      + admit.
-      + intros A liftprf.
-        inversion liftprf as [ Beq ].
-        rewrite <- Beq.
-        unfold liftings.
-        assert (List.In B (liftings n (Ty_Box A))).
-        { apply IH.
-          rewrite <- Ty_Lift_comm in Beq.
-          assumption. }
-
-   *)
-
 End WithImplementations.
 
 Module Type MiniMLBoxOpsSpec.
@@ -916,7 +1181,9 @@ Module Type MiniMLBoxTreeSpec(Ops: MiniMLBoxOpsSpec) <: TreeSpec.
     {| PreOrder_Reflexive := eq_Reflexive; PreOrder_Transitive := eq_Transitive |}.
   
   Definition Operation := Op Ops.Terms.
-  Definition WellFormed := WF Ops.Terms Ops.Proofs.
+  Definition WellFormed := WellFormed Ops.Terms Ops.Proofs.
+  Instance WellFormedSpace: FunctionSpace WellFormed SigVar (VLTree TyConstr EmptySet) :=
+    WellFormedSpace Ops.Terms Ops.Proofs.
   Instance Sigma : SigmaAlgebra.Signature (VLTree Label) Var Operation :=
     Signature Ops.Terms Ops.Proofs.
 
@@ -932,15 +1199,14 @@ End MiniMLBoxTreeSpec.
 
 Module Type MkMiniMLBoxSigSpec(Ops: MiniMLBoxOpsSpec).
   Declare Module TreeSpec: MiniMLBoxTreeSpec(Ops).
-  Declare Module TreeSigSpec: TreeSignatureSpec(TreeSpec).
-  Declare Module SigSpec: TreeSortCLSignature(TreeSpec)(TreeSigSpec).
+  Declare Module MkCLSig: MakeTreeSortCLSignature(TreeSpec).
 End MkMiniMLBoxSigSpec.
 
 Module Type MiniMLBoxAlgebra
        (Ops: MiniMLBoxOpsSpec)
        (MkSpec: MkMiniMLBoxSigSpec(Ops))
-       (Import Alg: Algebraic(MkSpec.SigSpec)).
-  Import MkSpec.SigSpec.
+       (Import Alg: Algebraic(MkSpec.MkCLSig.SigSpec)).
+  Import MkSpec.MkCLSig.SigSpec.
   Import MkSpec.TreeSpec.
   Import Ops.
 
@@ -1043,7 +1309,7 @@ Module Type MiniMLBoxAlgebra
   Proof.
     unfold SigmaAlgebra.
     intros s Fs.
-    destruct Fs as [ op subst wf_subst args subsort ].
+    destruct Fs as [ op subst args subsort ].
     unfold MiniMLBoxCarrier.
     destruct op as [ M inprf | | | ].
     - exists M.
@@ -1051,7 +1317,7 @@ Module Type MiniMLBoxAlgebra
       intro s_eq; clear subsort.
       unfold range in s_eq.
       simpl in s_eq.
-      rewrite (subst_irrelevant subst) in s_eq.
+      rewrite (subst_irrelevant (WF_take Terms Proofs subst)) in s_eq.
       rewrite <- s_eq.
       simpl.
       rewrite sortType_inj.
@@ -1091,13 +1357,13 @@ Module Type MiniMLBoxAlgebra
                                (proj1_sig c) (sortToType s).
   Proof.
     intros s c gen.
-    induction gen as [ s op S WFS args subsort argsgen IH ] using AlgebraicallyGenerated_ind'.
+    induction gen as [ s op S args subsort argsgen IH ] using AlgebraicallyGenerated_ind'.
     revert args subsort argsgen IH.
     destruct op as [ M MIn | | | ]; intros args subsort argsgen IH.
     - simpl.
       rewrite <- (subsort_eq _ _ subsort).
       simpl.
-      rewrite (subst_irrelevant S).
+      rewrite (subst_irrelevant (WF_take Terms Proofs S)).
       rewrite sortType_inj.
       apply A_Impl.
       rewrite max_BoxLevel_ge.
@@ -1109,15 +1375,22 @@ Module Type MiniMLBoxAlgebra
       simpl.
       intro s_eq.
       rewrite <- s_eq.
+      destruct (WellFormedSpace_sound _ _ S) as [ S' [ WFS S_eq ] ].
       apply A_Box.
       + exact (IH F1).
       + inversion WFS as [ ? ? ? ? gamma_eq | | ? ? ? gamma_eq ].
-        * fold (sortToType (S gamma)).
+        * fold (sortToType (S' gamma)).
+          rewrite <- S_eq in gamma_eq.
+          simpl in gamma_eq.
+          unfold sortToType in gamma_eq.
           rewrite gamma_eq.
           simpl.
           apply (Nat.le_max_l 1).
-        * etransitivity; [ eassumption | eapply (Nat.le_max_r 1); eassumption ].
-        * rewrite gamma_eq.
+        * rewrite <- S_eq in *.
+          etransitivity; [ eassumption | eapply (Nat.le_max_r 1); eassumption ].
+        * rewrite <- S_eq in gamma_eq.
+          simpl in gamma_eq.
+          rewrite gamma_eq.          
           simpl.
           apply (Nat.le_max_l 1).
     - simpl in args.
@@ -1153,12 +1426,15 @@ Module Type MiniMLBoxAlgebra
     - set (S := fun (v: SigVar) => typeToSort Ty_Unit EmptySet).
       assert (WF_S : WF Ops.Terms Ops.Proofs S).
       { apply WF_Default; reflexivity. }
-      assert (sub: subsorts (applySubst S (typeToSort (proj1_sig (Ops.Proofs M MIn)) SigVar))
+      assert (sub: subsorts (applySubst (take (proj1_sig (WellFormedSpace_complete _ _ S WF_S)))
+                                        (typeToSort (proj1_sig (Ops.Proofs M MIn)) SigVar))
                             (typeToSort (proj1_sig (Ops.Proofs M MIn)) EmptySet)).
       { simpl.
-        rewrite (subst_irrelevant S).
-        reflexivity. }
-      generalize (FromF _ MiniMLBox_Algebra _ (OP_Use _ M MIn) S WF_S tt sub (GeneratedArgs_nil _ _ _)).
+        rewrite (subst_irrelevant _).
+        reflexivity. }     
+      generalize (FromF _ MiniMLBox_Algebra _ (OP_Use _ M MIn)
+                        (proj1_sig (WellFormedSpace_complete _ _ S WF_S))
+                        tt sub (GeneratedArgs_nil _ _ _)).
       intro; eexists; eassumption.
     - set (S := fun (v: SigVar) => match v with | gamma => typeToSort A EmptySet | _ => typeToSort Ty_Unit EmptySet end).
       assert (WF_S : WF Ops.Terms Ops.Proofs S).
@@ -1236,8 +1512,28 @@ Module Type MiniMLBoxAlgebra
           rewrite sortType_inj.
           assumption. }
       destruct IH as [ Mprf genprf ].
+      assert (A_eq: (typeToSort A EmptySet) =
+                    (applySubst (take (proj1_sig (WellFormedSpace_complete Terms Proofs S WF_S)))
+                                            (Hole TyConstr SigVar gamma))).
+      { generalize (proj2_sig (WellFormedSpace_complete _ _ S WF_S)).
+        simpl.
+        intro prf.
+        rewrite prf.
+        reflexivity. }
+      revert Mprf genprf.
+      rewrite A_eq.
+      intros Mprf genprf.
+      assert (subs: subsorts (applySubst (take
+                                      (proj1_sig (WellFormedSpace_complete
+                                                    Terms Proofs S WF_S)))
+                                         (range (OP_Box Terms)))
+                             (typeToSort (Ty_Box A) EmptySet)).
+      { simpl.
+        rewrite A_eq.
+        reflexivity. }
       generalize (fun  gen => FromF _ MiniMLBox_Algebra (typeToSort (Ty_Box A) EmptySet)
-                                 (OP_Box Ops.Terms) S WF_S (exist _ M Mprf, tt) (reflexivity _) gen).
+                                 (OP_Box Ops.Terms) (proj1_sig (WellFormedSpace_complete _ _ S WF_S))
+                                 (exist _ M Mprf, tt) subs gen).
       intro mkGenPrf.
       eexists; apply mkGenPrf.
       apply GeneratedArgs_cons.
@@ -1260,8 +1556,25 @@ Module Type MiniMLBoxAlgebra
           rewrite sortType_inj.
           exact(ApplicativeFragment_level _ _ _ _ _ appfrag). }
       destruct IH as [ Mprf genprf ].
-      generalize (fun  gen => FromF _ MiniMLBox_Algebra (typeToSort A EmptySet)
-                                 (OP_Unbox Ops.Terms) S WF_S (exist _ M Mprf, tt) (reflexivity _) gen).
+      assert (A_eq: (typeToSort A EmptySet) =
+                    (applySubst (take (proj1_sig (WellFormedSpace_complete Terms Proofs S WF_S)))
+                                            (Hole TyConstr SigVar gamma))).
+      { generalize (proj2_sig (WellFormedSpace_complete _ _ S WF_S)).
+        simpl.
+        intro prf.
+        rewrite prf.
+        reflexivity. }
+      revert Mprf genprf.
+      simpl.
+      rewrite A_eq.
+      intros Mprf genprf.
+      generalize (fun  gen => FromF _ MiniMLBox_Algebra (applySubst (take
+                                                                    (proj1_sig (WellFormedSpace_complete
+                                                                                  Terms Proofs S WF_S)))
+                                                                 (range (OP_Unbox Terms)))
+                                 (OP_Unbox Ops.Terms)
+                                 (proj1_sig (WellFormedSpace_complete _ _ S WF_S))
+                                 (exist _ M Mprf, tt) (reflexivity _) gen).
       intro mkGenPrf.
       eexists; apply mkGenPrf.
       apply GeneratedArgs_cons.
@@ -1282,8 +1595,33 @@ Module Type MiniMLBoxAlgebra
         - reflexivity. }
       destruct IHM as [ Mprf Mgenprf ].
       destruct IHN as [ Nprf Ngenprf ].
-      generalize (fun gen => FromF _ MiniMLBox_Algebra (typeToSort B EmptySet)
-                                (OP_Apply Ops.Terms) S WF_S (exist _ M Mprf, (exist _ N Nprf, tt))
+      assert (A_eq: (typeToSort A EmptySet) =
+                    (applySubst (take (proj1_sig (WellFormedSpace_complete Terms Proofs S WF_S)))
+                                            (Hole TyConstr SigVar alpha))).
+      { generalize (proj2_sig (WellFormedSpace_complete _ _ S WF_S)).
+        simpl.
+        intro prf.
+        rewrite prf.
+        reflexivity. }
+      assert (B_eq: (typeToSort B EmptySet) =
+                    (applySubst (take (proj1_sig (WellFormedSpace_complete Terms Proofs S WF_S)))
+                                            (Hole TyConstr SigVar beta))).
+      { generalize (proj2_sig (WellFormedSpace_complete _ _ S WF_S)).
+        simpl.
+        intro prf.
+        rewrite prf.
+        reflexivity. }
+      revert Mprf Nprf Mgenprf Ngenprf.
+      simpl.
+      rewrite A_eq.
+      rewrite B_eq.
+      intros Mprf Nprf Mgenprf Ngenprf.
+      generalize (fun gen => FromF _ MiniMLBox_Algebra
+                                (applySubst (take (proj1_sig (WellFormedSpace_complete Terms Proofs S WF_S)))
+                                            (Hole TyConstr SigVar beta))
+                                (OP_Apply Ops.Terms)
+                                (proj1_sig (WellFormedSpace_complete _ _ S WF_S))
+                                (exist _ M Mprf, (exist _ N Nprf, tt))
                                 (reflexivity _) gen).
       intro mkGenPrf.
       eexists; apply mkGenPrf.
@@ -1328,8 +1666,8 @@ Module Type MiniMLBoxAlgebra
       TermEq s1 s2 (MiniMLBox_Algebra s1 f1) (MiniMLBox_Algebra s2 f2).
   Proof.
     intros s1 s2 f1 f2 feq.
-    destruct f1 as [ op1 S1 WF_S1 args1 subsort1 ]. 
-    destruct f2 as [ op2 S2 WF_S2 args2 subsort2 ].
+    destruct f1 as [ op1 S1 args1 subsort1 ]. 
+    destruct f2 as [ op2 S2 args2 subsort2 ].
     destruct feq as [ op_eq args_eq ].
     simpl in op_eq.
     revert args1 args2 subsort1 subsort2 args_eq.    
@@ -1397,587 +1735,28 @@ Module Type MiniMLBoxAlgebra
   Qed.
         
 End MiniMLBoxAlgebra.
-  
-        
-(*
-          
 
-  Definition lift_table: list Ty :=
-    (fix lift_table_rec terms :=
-       match terms as terms' return (forall M, List.In M terms' -> { A : Ty | MiniMLBox [[]] M A }) -> list Ty with
-       | M :: terms' =>
-         fun prf =>
-           List.app
-             (List.flat_map () (tgt_table (proj1_sig (prf M (or_introl (eq_refl M))))))
-             (tgt_arrow_table_rec terms' (fun m mp => prf m (or_intror mp)))
-       | [] => fun prf => []
-       end) Terms Proofs.    
 
-  
 
-  Definition subst_table_pos: Fin.t (length subst_alpha_table) -> (SigVar -> VLTree TyConstr EmptySet).
-  Proof.
-    intros pos v.
-    destruct (Fin.to_nat pos) as [ n n_le ].
-    set (AB := List.nth n subst_alpha_table Ty_Nat).
-    assert (liftprf: exists A' B' n, IsLiftable n AB (Ty_Arr A' B')).
-    { destruct (proj2 (subst_alpha_table_correct AB) (List.nth_In subst_alpha_table Ty_Nat n_le))
-        as [ A' [ B' [ n' [ ? [ ? [ ? liftprf ] ] ] ] ] ].
-      repeat eexists; eassumption. }
-    set (A := Ty_Lift (fst (fst (arrow_shape AB liftprf))) (snd (fst (arrow_shape AB liftprf)))).
-    set (B := Ty_Lift (fst (fst (arrow_shape AB liftprf))) (snd (arrow_shape AB liftprf))).
-    destruct v.
-    - exact (typeToSort AB EmptySet).
-    - exact (typeToSort A EmptySet).
-    - exact (typeToSort B EmptySet).
-  Defined.   
 
-  Lemma subst_table_sound': forall (pos : Fin.t (length subst_alpha_table)), WF (subst_table_pos pos).
-  Proof.
-    intro pos.
-    unfold subst_table_pos.
-    destruct (Fin.to_nat pos) as [ n n_le ].
-    set (AB := List.nth n subst_alpha_table Ty_Nat).
-    match goal with
-    |[|- WF (fun v => match v with
-                  | alpha => _
-                  | beta => typeToSort (Ty_Lift (fst (fst (arrow_shape AB ?lp))) _) EmptySet
-                  | gamma => _
-                  end) ] =>
-     generalize lp
-    end.
-    intro liftprf.
-    set (A := Ty_Lift (fst (fst (arrow_shape AB liftprf))) (snd (fst (arrow_shape AB liftprf)))).
-    set (B := Ty_Lift (fst (fst (arrow_shape AB liftprf))) (snd (arrow_shape AB liftprf))).
-    destruct (proj2 (subst_alpha_table_correct AB) (List.nth_In subst_alpha_table Ty_Nat n_le))
-      as [ A' [ B' [ n' [ M [ MIn [ tgtprf liftprf' ] ] ] ] ] ].
-    eapply WF_Proof.
-    - intro v; destruct v; eexists; reflexivity.
-    - rewrite sortType_inj.
-      eassumption.
-    - rewrite sortType_inj.
-      eassumption.
-    - rewrite sortType_inj.
-      unfold A.
-      generalize (arrow_shape_spec AB liftprf).
-      unfold IsLiftable.
-      intro liftprf''.
-      rewrite liftprf'' in liftprf'.
-      revert liftprf'.
-      generalize (fst (fst (arrow_shape AB liftprf))).
-      induction n' as [ | n' IH ]; intros n''.
-      + simpl.
-        destruct n''.
-        * simpl.
-          intro liftprf'.
-          inversion liftprf' as [ [ A'_eq B'_eq ]  ].
-          reflexivity.
-        * simpl.
-          intro liftprf'; inversion liftprf'.
-      + destruct n''.
-        * simpl.
-          intro liftprf'.
-          inversion liftprf'.
-        * intro liftprf'.
-          inversion liftprf' as [ liftprf''' ].
-          generalize (IH _ liftprf''').
-          intro res.
-          simpl.
-          rewrite res.
-          reflexivity.
-    - rewrite sortType_inj.
-      unfold B.
-      generalize (arrow_shape_spec AB liftprf).
-      unfold IsLiftable.
-      intro liftprf''.
-      rewrite liftprf'' in liftprf'.
-      revert liftprf'.
-      generalize (fst (fst (arrow_shape AB liftprf))).
-      induction n' as [ | n' IH ]; intros n''.
-      + simpl.
-        destruct n''.
-        * simpl.
-          intro liftprf'.
-          inversion liftprf' as [ [ A'_eq B'_eq ]  ].
-          reflexivity.
-        * simpl.
-          intro liftprf'; inversion liftprf'.
-      + destruct n''.
-        * simpl.
-          intro liftprf'.
-          inversion liftprf'.
-        * intro liftprf'.
-          inversion liftprf' as [ liftprf''' ].
-          generalize (IH _ liftprf''').
-          intro res.
-          simpl.
-          rewrite res.
-          reflexivity.
-  Defined.
 
-  Definition pos_subst_table: (length subst_alpha_table > 0) -> (SigVar -> VLTree TyConstr EmptySet) -> Fin.t (length subst_alpha_table).
-  Proof.
-    intros nonempty S.
-    set (AB := sortToType (S alpha)).
-    revert nonempty.
-    induction subst_alpha_table as [ | alpha table IH ].
-    - intro devil.
-      apply False_rect.
-      inversion devil.
-    - intro prf.
-      destruct (Ty_dec_eq AB alpha).
-      + exact Fin.F1.
-      + destruct table.
-        * exact Fin.F1.
-        * apply Fin.FS.
-          apply IH.
-          apply le_n_S.
-          apply le_0_n.
-  Defined.
 
-  Lemma WF_table_non_empty: forall S, WF S -> length subst_alpha_table > 0.
-  Proof.
-    intros S WF_S.
-    destruct WF_S as [ S A B n M MIn exty tgtprf is_arrow betaprf gammaprf ].
-    unfold subst_alpha_table.
-    revert tgtprf.
-    generalize Proofs.
-    clear Proofs.
-    induction Terms as [ | N terms IH ].
-    - contradiction.
-    - intros Proofs tgtprf.
-      rewrite List.app_length.
-      unfold "_ > _".
-      match goal with
-      |[|- 0 < ?x + ?y ] =>
-       assert (xy_gt : 0 < x \/ 0 < y);
-         [ | destruct xy_gt; [ apply Nat.add_pos_l | apply Nat.add_pos_r ]; assumption ]
-      end.
-      destruct MIn as [ here | there ].
-      + left.
-        generalize (proj2 (filter_In _ _ _)
-                          (conj (proj2 (tgt_table_correct _ _) tgtprf)
-                                (proj2 (is_lifted_arrow_spec _)
-                                       (ex_intro _ n (ex_intro _ A (ex_intro _ B is_arrow)))))).
-        rewrite <- here.
-        match goal with
-        |[|- _ -> 0 < length ?xs] => destruct xs
-        end.
-        * intro; contradiction.
-        * intro; apply le_n_S; apply le_0_n.
-      + right.
-        apply (IH there _ tgtprf).
-  Qed.          
+Require Import IntersectionTypes.
+Require Import CombinatoryTerm.
+Require Import CombinatoryLogicAlgebra.
+Module Type MkMiniBoxCLAlgebra(Import Ops: MiniMLBoxOpsSpec).
+  Declare Module MkSpec : MkMiniMLBoxSigSpec(Ops).
+  Declare Module Types: IntersectionTypes(MkSpec.MkCLSig.Signature).
+  Declare Module Terms: Terms(MkSpec.MkCLSig.Signature).
+  Declare Module TypesCountable: CountableTypes(MkSpec.MkCLSig.Signature)(Types).
+  (*Declare Module CL: CombinatoryLogic(MkSpec.MkCLSig.Signature)(Types)(Terms)(
+  Declare Module CPL: ComputationalPathLemma(MkSpec.MkCLSig.Signature)(Types)(Terms)
+                                            (TypesCountable)().
 
-  Definition pos_subst_table_complete': forall S, WF S -> Fin.t (length subst_alpha_table) :=
-    fun S WF_S => pos_subst_table (WF_table_non_empty S WF_S) S.
+  Declare Module Embedding: ProperTreeSortEmbedding(MkSpec.TreeSpec)(MkSpec.MkCLSig)(Types).
+  (Import Alg: Algebraic(SigSpec)).*)
+End MkMiniBoxCLAlgebra.
 
-  Definition subst_table_sound: Fin.t (length subst_alpha_table) -> { S : _ | WF S } :=
-    fun pos => exist _ (subst_table_pos pos) (subst_table_sound' pos).
-  Definition subst_table_complete: { S : _ | WF S } -> Fin.t (length subst_alpha_table) :=
-    fun SWF => pos_subst_table_complete' (proj1_sig SWF) (proj2_sig SWF).
-
-  Lemma SubstitutionSpace_eq:
-    forall WFS v, proj1_sig (subst_table_sound (subst_table_complete WFS)) v =
-             proj1_sig WFS v.
-  Proof.
-    simpl.    
-    intros WFS v.
-    set (step := subst_table_complete WFS).
-    destruct WFS as [ _ [ S A' B' n' M MIn exty tgtprf is_arrow betaprf gammaprf ] ].
-    simpl.
-    unfold subst_table_pos.
-    set (AB := typeToSort (List.nth (proj1_sig (to_nat step)) subst_alpha_table Ty_Nat) EmptySet).
-    destruct (proj2 (subst_alpha_table_correct (List.nth (proj1_sig (to_nat step)) subst_alpha_table Ty_Nat))
-                    (List.nth_In subst_alpha_table Ty_Nat (proj2_sig (to_nat step))))
-      as [ A [ B [ n [ M' [ M'In [ tgtprf' liftprf ] ] ] ] ] ].
-    set (arr := arrow_shape (List.nth (proj1_sig (to_nat step))
-                                      subst_alpha_table Ty_Nat)
-                            (ex_intro _ A (ex_intro _ B (ex_intro _ n liftprf)))).                             
-    set (Ares := typeToSort (Ty_Lift (fst (fst arr)) (snd (fst arr))) EmptySet).                                  
-    set (Bres := typeToSort (Ty_Lift (fst (fst arr)) (snd arr)) EmptySet).
-    assert (match v with
-            | alpha => AB
-            | beta => Ares
-            | gamma => Bres
-            end = S v).
-    { destruct v.
-      - unfold AB.
-        unfold step.
-        unfold subst_table_complete.
-        unfold pos_subst_table_complete'.
-        unfold pos_subst_table.
-        simpl.
-        generalize (WF_table_non_empty S (WF_Proof S A' B' n' M MIn exty tgtprf is_arrow betaprf gammaprf)).
-        generalize (proj1 (subst_alpha_table_correct (sortToType (S alpha)))
-                          (ex_intro _ A' (ex_intro _ B' (ex_intro _ (ex_intro _ M (ex_intro _ MIn (conj tgtprf is_arrow))))))).
-        clear AB arr Ares Bres step tgtprf' liftprf.
-        induction subst_alpha_table as [ | C table IH ].
-        + intro gtprf; inversion gtprf.
-        + simpl.
-          destruct (Ty_dec_eq (sortToType (S alpha)) C) as [ eq | ineq ].
-          * simpl.
-            intro.
-            rewrite <- eq.
-            rewrite (typeSort_inj _ (exty alpha)).
-            reflexivity.
-          * simpl.
-            intro gtprf.
-            
-      
-    
-
-    
-    destruct v.
-    - simpl.
-      unfold subst_table_pos.
-      unfold subst_table_complete.
-      unfold pos_subst_table_complete'.
-      unfold pos_subst_table.
-      generalize (WF_table_non_empty (proj1_sig WFS) (proj2_sig WFS)).
-      destruct WFS as [ _ [ S A' B' n' M MIn exty tgtprf is_arrow betaprf gammaprf ] ].
-      generalize (proj1 (subst_alpha_table_correct _)
-                        (ex_intro
-                           _ A'
-                           (ex_intro
-                              _ B'
-                              (ex_intro
-                                 _ n'
-                                 (ex_intro _ M
-                                           (ex_intro _ MIn
-                                                     (conj tgtprf is_arrow))))))).
-      induction subst_alpha_table as [ | A table IH ].
-      + intro devil; apply False_rect; inversion devil.
-      + intros inprf gtprf.
-        simpl.
-        destruct (Ty_dec_eq (sortToType (S alpha)) A) as [ eq | ineq ].
-        * simpl.
-          rewrite <- eq.          
-          simpl.
-          rewrite (typeSort_inj _ (exty alpha)).
-          reflexivity.
-        * assert (inprf' : List.In (sortToType (S alpha)) table).
-          { destruct inprf as [ here | there ].
-            - apply False_rect.
-              apply ineq.
-              apply eq_sym.
-              assumption.
-            - assumption. }
-          assert (gtprf' : length table > 0).
-          { destruct table.
-            + contradiction.
-            + apply le_n_S.
-              apply le_0_n. }
-          generalize (IH inprf' gtprf').
-          intro S_eq.
-          simpl proj1_sig in S_eq.
-          rewrite <- S_eq.
-          simpl.
-          match goal with
-          | [|- _ = (let (_, _) := to_nat ?pos in _)] =>
-            generalize pos
-          end.
-          intro xxxxxxxxxx.
-          destruct table.
-          { inversion xxxxxxxxxx. }
-          { simpl.
-            
-
-          destruct table.
-          { destruct inprf as [ here | there ];
-              [ | contradiction ].
-            apply False_rect.
-            apply ineq.
-            exact (eq_sym here). }
-          { destruct inprf as [ here | there ].
-            - apply False_rect.
-              apply ineq.
-              exact (eq_sym here).
-            - 
-              match goal with
-              | [|- (let (_, _) := to_nat (Fin.FS (list_rec _ _ _ _ ?gtprf')) in _) = _] =>
-                generalize (IH there gtprf');
-                  intro S_eq
-              end.
-              simpl.
-              unfold proj1_sig in S_eq.
-              rewrite <- S_eq.
-              match goal with
-              | [|- _ = (let (_, _) := to_nat ?pos in _)] =>
-                generalize pos
-              end.
-              intro 
- 
-              assert (gtprf': length (t :: table) > 0).
-              { unfold "_ > _".
-                apply le_n_S.
-                apply le_0_n. }
-              
-              
-g
-              simpl in IH.
-              
-              rewrite <- (IH there gtprf').
-              simpl.
-
-              eapply IH.
-      simpl.
-      simpl.
-      un
-      simpl.
-    
-    (*unfold subst_table_pos.
-    simpl.
-    unfold subst_table_complete.
-    unfold pos_subst_table_complete'.
-    generalize (WF_table_non_empty (proj1_sig WFS) (proj2_sig WFS)).
-    intro lengthprf.
-    unfold pos_subst_table.
-    unfold subst_table_pos.*)
-    unfold subst_table_pos.
-    unfold subst_table_complete.
-    unfold pos_subst_table_complete'.
-    generalize (WF_table_non_empty (proj1_sig WFS) (proj2_sig WFS)).
-    intro lengthprf.
-    unfold pos_subst_table.
-    match goal with
-    |[|- 
-    
-    match goal with
-    |[|- (let (_, _) := _ in
-         fun v => match v with
-               | alpha => _
-               | beta => typeToSort (Ty_Lift (fst (fst (arrow_shape _ ?liftprf))) _) EmptySet
-               | gamma => _
-               end) v = _ ] =>
-     (*generalize liftprf*) idtac
-    end.
-    intro liftprf.
-    destruct WFS as [ _ [ S A B n' M MIn exty tgtprf is_arrow betaprf gammaprf ] ].
-    simpl.
-    destruct v.
-    - rewrite <- (typeSort_inj _ (exty alpha)).
-      generalize
-        (proj1 (subst_alpha_table_correct _)
-               (ex_intro
-                  _ A (ex_intro
-                         _ B
-                         (ex_intro _ n'
-                                   (ex_intro _ M (ex_intro _ MIn (conj tgtprf is_arrow))))))).
-      
-      clear ...
-      induction subst_alpha_table; intros intprf.
-      + contradiction.
-      +  
-    
-    
-  
-  Definition get_subst_sound: Fin.t (length src_tgt_table) -> { S : _ | WF S }.
-  Proof.
-    intro pos.
-    destruct (Fin.to_nat pos) as [ n n_le ].
-    set (A := typeToSort (fst (List.nth n src_tgt_table (Ty_Nat, Ty_Nat))) EmptySet).
-    set (B := typeToSort (snd (List.nth n src_tgt_table (Ty_Nat, Ty_Nat))) EmptySet).
-    exists (fun v => match v with | alpha => A | beta => B end).
-    assert (res:
-              exists M MIn, IsSrc (proj1_sig (Proofs M MIn)) (sortToType A) /\
-                       IsTgt (proj1_sig (Proofs M MIn)) (sortToType B)).
-    { apply src_tgt_table_correct.
-      unfold A.
-      unfold B.
-      rewrite sortType_inj.
-      rewrite sortType_inj.
-      rewrite <- surjective_pairing.
-      apply List.nth_In.
-      exact n_le. }
-    destruct res as [ M [ MIn [ srcprf tgtprf ] ] ].
-    eapply WF_Proof; try solve [ eassumption ].
-    intro v; destruct v; eexists; reflexivity.
-  Defined.
-
-  Definition get_subst_complete: { S : _ | WF S } -> Fin.t (length src_tgt_table).
-  Proof.
-    intros [ S WF_S ].
-    set (A := sortToType (S alpha)).
-    set (B := sortToType (S beta)).
-    assert (in_prf: List.In (A, B) src_tgt_table).
-    { destruct WF_S as [ M MIn srcprf tgtprf ].
-      apply src_tgt_table_correct.
-      eexists; eexists; split; eassumption. }
-    induction (src_tgt_table) as [ | [A' B'] table IH ].
-    - contradiction.
-    - destruct (Ty_dec_eq A' A);
-        [ destruct (Ty_dec_eq B' B);
-          [ exact Fin.F1 | ] | ];
-        apply Fin.FS;
-        apply IH;
-        destruct in_prf as [ here | there ];
-        solve [ inversion here; contradiction | assumption ].
-  Defined.      
-    
-  Lemma SubstitutionSpace_eq:
-    forall WFS alpha, proj1_sig (get_subst_sound (get_subst_complete WFS)) alpha =
-                 proj1_sig WFS alpha.
-  Proof.
-    intros WFS alpha.
-    destruct WFS as [ S WF_S ].
-    inversion WF_S as [ S' M MIn ex_ty srcprf tgtprf S_eq ].
-    clear S' S_eq.
-    simpl proj1_sig at 2.
-    set (step := get_subst_complete (exist _ S WF_S)).
-    set (A := typeToSort (fst (List.nth (proj1_sig (Fin.to_nat step)) src_tgt_table (Ty_Nat, Ty_Nat))) EmptySet).
-    set (B := typeToSort (snd (List.nth (proj1_sig (Fin.to_nat step)) src_tgt_table (Ty_Nat, Ty_Nat))) EmptySet).
-    assert (outer_eq : (fun v => match v with | alpha => A | beta => B end) alpha =
-                       proj1_sig (get_subst_sound step) alpha).
-    { unfold get_subst_sound.
-      destruct (Fin.to_nat step) as [ n prf ].
-      simpl.
-      reflexivity. }
-    rewrite <- outer_eq.
-    destruct alpha.
-    - unfold A.
-      unfold step.
-      simpl.
-      match goal with
-      |[|- typeToSort (fst (List.nth (proj1_sig (to_nat (list_rec _ _ _ _ ?prf))) _ _)) _ = _] =>
-       generalize prf
-      end.
-      generalize src_tgt_table.
-      intro src_tgt_table.
-      induction src_tgt_table as [ | [ A' B' ] table IH ] .
-      + intro; contradiction.
-      + simpl.
-        destruct (Ty_dec_eq A' (sortToType (S alpha))) as [ eq1 | ineq1 ];
-          [ destruct (Ty_dec_eq B' (sortToType (S beta))) as [ eq2 | ineq2 ]
-          | ].
-        * simpl.
-          intro.
-          rewrite eq1.
-          rewrite (typeSort_inj _ (ex_ty alpha)).
-          reflexivity.
-        * intro rec_prf.
-          simpl.
-          destruct rec_prf as [ here | there ];
-            [ inversion here; contradiction | ].
-          simpl.
-          rewrite <- (IH there).
-          match goal with
-          |[|- typeToSort ?x _ = typeToSort ?y _] =>
-           assert (eq: x = y); [ | rewrite eq; reflexivity ]
-          end.
-          apply f_equal.
-          match goal with
-          |[|- match proj1_sig (let (i, P) := to_nat ?x in exist _ _ _) with | _ => _ end =
-              List.nth (proj1_sig (to_nat _)) _ _] =>
-           generalize x
-          end.
-          clear ...
-          fold (List.length table).
-          generalize (length table).
-          intros n t.
-          match goal with            
-          |[|- match ?m with | _ => _ end = _ ] =>
-           assert (m_eq: m = S (proj1_sig (to_nat t))); [ | rewrite m_eq; simpl; reflexivity ]
-          end.
-          destruct (to_nat t).
-          reflexivity.
-        * intro rec_prf.
-          simpl.
-          destruct rec_prf as [ here | there ];
-            [ inversion here; contradiction | ].
-          simpl.
-          rewrite <- (IH there).
-          match goal with
-          |[|- typeToSort ?x _ = typeToSort ?y _] =>
-           assert (eq: x = y); [ | rewrite eq; reflexivity ]
-          end.
-          apply f_equal.
-          match goal with
-          |[|- match proj1_sig (let (i, P) := to_nat ?x in exist _ _ _) with | _ => _ end =
-              List.nth (proj1_sig (to_nat _)) _ _] =>
-           generalize x
-          end.
-          clear ...
-          fold (List.length table).
-          generalize (length table).
-          intros n t.
-          match goal with            
-          |[|- match ?m with | _ => _ end = _ ] =>
-           assert (m_eq: m = S (proj1_sig (to_nat t))); [ | rewrite m_eq; simpl; reflexivity ]
-          end.
-          destruct (to_nat t).
-          reflexivity.
-    - unfold B.
-      unfold step.
-      simpl.
-      match goal with
-      |[|- typeToSort (snd (List.nth (proj1_sig (to_nat (list_rec _ _ _ _ ?prf))) _ _)) _ = _] =>
-       generalize prf
-      end.
-      generalize src_tgt_table.
-      intro src_tgt_table.
-      induction src_tgt_table as [ | [ A' B' ] table IH ] .
-      + intro; contradiction.
-      + simpl.
-        destruct (Ty_dec_eq A' (sortToType (S alpha))) as [ eq1 | ineq1 ];
-          [ destruct (Ty_dec_eq B' (sortToType (S beta))) as [ eq2 | ineq2 ]
-          | ].
-        * simpl.
-          intro.
-          rewrite eq2.
-          rewrite (typeSort_inj _ (ex_ty beta)).
-          reflexivity.
-        * intro rec_prf.
-          simpl.
-          destruct rec_prf as [ here | there ];
-            [ inversion here; contradiction | ].
-          simpl.
-          rewrite <- (IH there).
-          match goal with
-          |[|- typeToSort ?x _ = typeToSort ?y _] =>
-           assert (eq: x = y); [ | rewrite eq; reflexivity ]
-          end.
-          apply f_equal.
-          match goal with
-          |[|- match proj1_sig (let (i, P) := to_nat ?x in exist _ _ _) with | _ => _ end =
-              List.nth (proj1_sig (to_nat _)) _ _] =>
-           generalize x
-          end.
-          clear ...
-          fold (List.length table).
-          generalize (length table).
-          intros n t.
-          match goal with            
-          |[|- match ?m with | _ => _ end = _ ] =>
-           assert (m_eq: m = S (proj1_sig (to_nat t))); [ | rewrite m_eq; simpl; reflexivity ]
-          end.
-          destruct (to_nat t).
-          reflexivity.
-        * intro rec_prf.
-          simpl.
-          destruct rec_prf as [ here | there ];
-            [ inversion here; contradiction | ].
-          simpl.
-          rewrite <- (IH there).
-          match goal with
-          |[|- typeToSort ?x _ = typeToSort ?y _] =>
-           assert (eq: x = y); [ | rewrite eq; reflexivity ]
-          end.
-          apply f_equal.
-          match goal with
-          |[|- match proj1_sig (let (i, P) := to_nat ?x in exist _ _ _) with | _ => _ end =
-              List.nth (proj1_sig (to_nat _)) _ _] =>
-           generalize x
-          end.
-          clear ...
-          fold (List.length table).
-          generalize (length table).
-          intros n t.
-          match goal with            
-          |[|- match ?m with | _ => _ end = _ ] =>
-           assert (m_eq: m = S (proj1_sig (to_nat t))); [ | rewrite m_eq; simpl; reflexivity ]
-          end.
-          destruct (to_nat t).
-          reflexivity.
-  Qed.
-*)  
+Module ToMiniBoxCLAlgebra(Ops: MiniMLBoxOpsSpec) <: MkMiniBoxCLAlgebra(Ops).
+  Include MkMiniBoxCLAlgebra(Ops).
+End ToMiniBoxCLAlgebra.

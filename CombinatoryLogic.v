@@ -11,6 +11,7 @@ Require Import VectorQuantification.
 Require Import Coq.Sorting.Permutation.
 Require Import Coq.Lists.ListDec.
 
+Require Import FunctionSpace.
 Require Import CombinatoryTerm.
 Require Import IntersectionTypes.
 
@@ -19,7 +20,8 @@ Module Type TypeAndTermSignature := TypeSignature <+ TermSignature.
 Module Type WellFormedPredicate
        (Signature: TypeSignature)
        (Import Types: IntersectionTypes.IntersectionTypes Signature). 
-  Parameter WellFormed: Substitution -> Prop.
+  Parameter WellFormed: Type.
+  Declare Instance WellFormedSpace: FunctionSpace WellFormed Signature.VariableSymbol IntersectionType.
 End WellFormedPredicate.
 
 Module Type CombinatoryLogic
@@ -31,7 +33,7 @@ Module Type CombinatoryLogic
   Definition Context: Type := CombinatorSymbol -> @TypeScheme VariableSymbol.
 
   Inductive CL (Gamma : Context): Term -> IntersectionType -> Prop :=
-  | CL_Var: forall c S, WellFormed S -> CL Gamma (Symbol c) (Apply S (Gamma c))
+  | CL_Var: forall c (S: WellFormed), CL Gamma (Symbol c) (Apply (take S) (Gamma c))
   | CL_MP: forall M N sigma tau,
       CL Gamma M (Arrow sigma tau) ->
       CL Gamma N sigma ->
@@ -45,12 +47,12 @@ Module Type CombinatoryLogic
       sigma <= tau ->
       CL Gamma M tau. 
 
-  Lemma CL_omega (S: Substitution) (WF_S: WellFormed S): forall Gamma M, CL Gamma M omega.
+  Lemma CL_omega (S: WellFormed): forall Gamma M, CL Gamma M omega.
   Proof.
     intros Gamma M.
     induction M as [ c | M IHM N IHN ].
-    - apply (CL_ST _ _ (Apply S (Gamma c)) omega).
-      + exact (CL_Var _ _ _ WF_S).
+    - apply (CL_ST _ _ (Apply (take S) (Gamma c)) omega).
+      + exact (CL_Var _ _ _).
       + apply ST_OmegaTop.
     - apply (CL_MP _ _ _ omega omega).
       + apply (CL_ST _ _ omega _).
@@ -113,7 +115,7 @@ Module Type CombinatoryLogic
   Lemma MinimalSubst_PerPath: forall Gamma c tau,
       CL Gamma (Symbol c) tau ->
       Forall (fun tau' =>
-                exists S, WellFormed S /\ Apply S (Gamma c) <= tau') (projT2 (factorize (organize tau))).
+                exists S, Apply (take S) (Gamma c) <= tau') (projT2 (factorize (organize tau))).
   Proof.
     intros Gamma c tau prf.
     remember (Symbol c) as c' eqn:c'_eq.
@@ -125,12 +127,11 @@ Module Type CombinatoryLogic
       rewrite <- c_eq.
       apply (nth_Forall).
       intro k.
-      eexists; split.
-      + eassumption.
-      + rewrite <- (ST_intersect_nth).
-        rewrite <- (factorize_organized).
-        * apply ST_organize_ge.
-        * apply organize_organized.
+      eexists.
+      rewrite <- (ST_intersect_nth).
+      rewrite <- (factorize_organized).
+      * apply ST_organize_ge.
+      * apply organize_organized.
     - intros ? c'_eq; inversion c'_eq.
     - intros c M_eq.
       simpl.
@@ -160,45 +161,39 @@ Module Type CombinatoryLogic
       generalize (IH _ c'_eq).
       clear IH.
       induction (ST_path _ _ kth_ge kth_path) as [ ? ? ? [ ? x_le ] | ? ? ? ? IH' ]; intro IH.
-      + inversion IH as [ | ? ? ? [ S [ WF_S ? ] ] ].
-        exists S; split; [ assumption | etransitivity; [ eassumption | apply x_le ] ].          
+      + inversion IH as [ | ? ? ? [ S ? ] ].
+        exists S; etransitivity; [ eassumption | apply x_le ].          
       + inversion IH as [ | ? ? ? ? ? n_eq [ x_eq xs_eq ] ].
         dependent rewrite <- xs_eq in IH'.
         auto.
   Qed.
   
   Lemma SingleMinimalSubst: forall Gamma c sigma,
-      CL Gamma (Symbol c) sigma -> Path sigma -> exists S, WellFormed S /\ Apply S (Gamma c) <= sigma.
+      CL Gamma (Symbol c) sigma -> Path sigma -> exists S, Apply (take S) (Gamma c) <= sigma.
   Proof.
     intros Gamma c sigma prf path_sigma.
     generalize (MinimalSubst_PerPath _ _ _ prf).
     induction (ST_path _ _ (ST_Refl sigma) path_sigma) as [ n x xs [ path_x sigma_gt ] | ].
     - intro exsubsts. 
-      inversion exsubsts as [ | ? ? ? [ S [ WF_S S_le ] ] ].
-      exists S; split.
-      + assumption.
-      + rewrite S_le; assumption.
+      inversion exsubsts as [ | ? ? ? [ S S_le ] ].
+      exists S; rewrite S_le; assumption.
     - intro exsubsts.
       inversion exsubsts as [ | ? ? ? ? exsubsts' n_eq [ x_eq xs_eq ] ].
       dependent rewrite xs_eq in exsubsts'.
       auto.
   Qed.
-
-  
-  
   
   Lemma CL_Path: forall Gamma M sigma,
       CL Gamma M sigma ->
       Forall (fun sigma' =>
-                exists S, WellFormed S /\
-                     Exists (fun path =>
+                exists S, Exists (fun path =>
                                Path path /\
                                exists argCountPrf : (argumentCount M <= src_count path)%nat,
                                  Forall2 (CL Gamma) (argumentsOf M)
                                          (fst (split_path path _ argCountPrf)) /\
                                  (snd (split_path path _ argCountPrf)) <= sigma'
                             )
-                            (projT2 (factorize (organize (Apply S (Gamma (rootOf M)))))))
+                            (projT2 (factorize (organize (Apply (take S) (Gamma (rootOf M)))))))
              (projT2 (factorize (organize sigma))).
   Proof.
     intros Gamma M sigma prf.
@@ -209,32 +204,31 @@ Module Type CombinatoryLogic
         | ? sigma tau prf IH sigma_le ].
     - apply (nth_Forall).
       intro k.
-      eexists; split.
-      + eassumption.
-      + simpl.
-        generalize (Forall_nth _ _ (organized_path_factors _ (organize_organized (Apply S (Gamma c))))).
-        revert k.
-        generalize (factorize (organize (Apply S (Gamma c)))).
-        intros [ n factors ].
+      exists S;
+      simpl.
+      generalize (Forall_nth _ _ (organized_path_factors _ (organize_organized (Apply (take S) (Gamma c))))).
+      revert k.
+      generalize (factorize (organize (Apply (take S) (Gamma c)))).
+      intros [ n factors ].
+      simpl.
+      intro k.
+      induction k as [ | ? k IH ].
+      * apply (caseS' factors).
+        clear factors; intros factor factors.
+        intro kth_path.
+        apply Exists_cons_hd; split.
+        { exact (kth_path F1). }
+        { exists (le_0_n _); split.
+          - apply Forall2_nil.
+          - reflexivity. }
+      * apply (caseS' factors).
+        clear factors; intros factor factors.
+        intro kth_path.
+        apply Exists_cons_tl.
         simpl.
-        intro k.
-        induction k as [ | ? k IH ].
-        * apply (caseS' factors).
-          clear factors; intros factor factors.
-          intro kth_path.
-          apply Exists_cons_hd; split.
-          { exact (kth_path F1). }
-          { exists (le_0_n _); split.
-            - apply Forall2_nil.
-            - reflexivity. }
-        * apply (caseS' factors).
-          clear factors; intros factor factors.
-          intro kth_path.
-          apply Exists_cons_tl.
-          simpl.
-          apply IH.
-          intro k'.
-          exact (kth_path (FS k')).
+        apply IH.
+        intro k'.
+        exact (kth_path (FS k')).
     - clear IHN.
       simpl rootOf.
       destruct (Omega_dec tau) as [ omega_tau | not_omega_tau ].
@@ -251,8 +245,8 @@ Module Type CombinatoryLogic
           apply Forall_nil.
         * intro factor_paths.
           apply Forall_cons.
-          { destruct factor_prf as [ S [ WF_S ex_prf ] ].
-            exists S; split; [ assumption | ].
+          { destruct factor_prf as [ S ex_prf ].
+            exists S.
             induction ex_prf as
                 [ n' factor' factors' [ path_factor' [ argCountPrf [ args_prf tgt_prf ]]]
                 | n' factor' factors' IHex
@@ -315,8 +309,8 @@ Module Type CombinatoryLogic
       + apply Forall_cons.
         clear sigma_paths.
         * induction prf' as [ sigma' ? ?  [ path_sigma' sigma'_le ] | ? ? ? ? IH' ].
-          { inversion IH as [ | ? ? ? [ S [ WF_S prfs ] ] ].
-            exists S; split; [ assumption | ].
+          { inversion IH as [ | ? ? ? [ S prfs ] ].
+            exists S.
             induction prfs as [ ? path ? [ path_path [ argPrf [ args_le tgt_le ] ] ] | ].
             - apply Exists_cons_hd.
               split; [ assumption | ].
@@ -336,15 +330,14 @@ Module Type CombinatoryLogic
   Lemma CL_Path_path: forall Gamma M sigma,
       CL Gamma M sigma ->
       Path sigma ->
-      exists S, WellFormed S /\
-           Exists (fun path =>
+      exists S, Exists (fun path =>
                      Path path /\
                      exists argCountPrf : (argumentCount M <= src_count path)%nat,
                        Forall2 (CL Gamma) (argumentsOf M)
                                (fst (split_path path _ argCountPrf)) /\
                        (snd (split_path path _ argCountPrf)) <= sigma
                   )
-                  (projT2 (factorize (organize (Apply S (Gamma (rootOf M)))))).
+                  (projT2 (factorize (organize (Apply (take S) (Gamma (rootOf M)))))).
   Proof.
     intros Gamma M sigma prf path_sigma.
     generalize (CL_Path _ _ _ prf).
@@ -353,8 +346,8 @@ Module Type CombinatoryLogic
     intro ex_path.
     induction ex_path as [ ? ? ? here | ? ? ? there ]; intro all_s.
     - inversion all_s as [ | ? ? ? prf prfs n_eq [ hd_eq tl_eq ] ].
-      destruct prf as [ S [ WF_S ex_prf ] ].
-      exists S; split; [ assumption | ].
+      destruct prf as [ S ex_prf ].
+      exists S.
       revert ex_prf here.
       clear ...
       intros ex_prf here.
@@ -375,9 +368,8 @@ Module Type CombinatoryLogic
   Lemma CL_Path_c: forall Gamma c sigma,
       CL Gamma (Symbol c) sigma ->
       Forall (fun sigma' =>
-                exists S, WellFormed S /\
-                     Exists (fun path => Path path /\ path <= sigma')
-                            (projT2 (factorize (organize (Apply S (Gamma c))))))
+                exists S, Exists (fun path => Path path /\ path <= sigma')
+                            (projT2 (factorize (organize (Apply (take S) (Gamma c))))))
              (projT2 (factorize (organize sigma))).
   Proof.
     intros Gamma c sigma prf.
@@ -391,8 +383,8 @@ Module Type CombinatoryLogic
     - apply Forall_cons.
       + generalize (Forall_nth _ _ path_prfs F1).
         intro path_prf.
-        destruct path_prf as [ S [ WF_S ex_prf ] ].
-        eexists; split; [ eassumption | ].
+        destruct path_prf as [ S ex_prf ].
+        exists S.
         simpl in ex_prf.
         induction ex_prf as [ path' ? ? [ pathPrf [ argCountPrf [ argsPrfs tgtPrf ] ] ] | ].
         * apply Exists_cons_hd; split; assumption.
@@ -402,11 +394,10 @@ Module Type CombinatoryLogic
   Qed.
 
   Lemma CL_Path_c_inv: forall Gamma c sigma,
-      (exists S, WellFormed S) ->
+      inhabited WellFormed ->
       Forall (fun sigma' =>
-                exists S, WellFormed S /\
-                     Exists (fun path => Path path /\ path <= sigma')
-                            (projT2 (factorize (organize (Apply S (Gamma c))))))
+                exists S, Exists (fun path => Path path /\ path <= sigma')
+                            (projT2 (factorize (organize (Apply (take S) (Gamma c))))))
              (projT2 (factorize (organize sigma))) ->
       CL Gamma (Symbol c) sigma.
   Proof.
@@ -422,8 +413,8 @@ Module Type CombinatoryLogic
       { generalize (Forall_nth _ _ prfs F1).
         intro ex_prf.
         simpl.
-        destruct ex_prf as [ S [ WF_S ex_prfs ] ].
-        eapply CL_ST; [ eapply CL_Var; eassumption | ].
+        destruct ex_prf as [ S ex_prfs ].
+        eapply CL_ST; [ apply (CL_Var _ _ S); eassumption | ].
         rewrite ST_organize_ge.
         rewrite (factorize_organized _ (organize_organized _)).
         induction ex_prfs as [ ? path' ? [ path_path' path'_le ] | ? x xs ? IH' ] .
@@ -440,11 +431,11 @@ Module Type CombinatoryLogic
         end.
         intro.
         apply CL_II; auto.
-  Qed.          
+  Qed.
 
   Lemma CL_all_paths:
     forall Gamma M sigma,
-      (exists S, WellFormed S) ->
+      inhabited WellFormed ->
       Forall (CL Gamma M) (projT2 (factorize (organize sigma))) ->
       CL Gamma M sigma.
   Proof.
@@ -456,7 +447,7 @@ Module Type CombinatoryLogic
     - destruct xs.
       + assumption.
       + apply CL_II; [ assumption | apply IH ].
-  Qed.          
+  Qed.
 
   Lemma CL_ApplyPath:
     forall Gamma c n (args: t Term n) sigma argsPrf,
@@ -491,17 +482,16 @@ Module Type CombinatoryLogic
 
   Lemma CL_Path_inv:
     forall Gamma M sigma,
-      (exists S, WellFormed S) ->
+      inhabited WellFormed ->
       Forall (fun sigma' =>
-                exists S, WellFormed S /\
-                     Exists (fun path =>
+                exists S, Exists (fun path =>
                                Path path /\
                                exists argCountPrf : (argumentCount M <= src_count path)%nat,
                                  Forall2 (CL Gamma) (argumentsOf M)
                                          (fst (split_path path _ argCountPrf)) /\
                                  (snd (split_path path _ argCountPrf)) <= sigma'
                             )
-                            (projT2 (factorize (organize (Apply S (Gamma (rootOf M)))))))
+                            (projT2 (factorize (organize (Apply (take S) (Gamma (rootOf M)))))))
              (projT2 (factorize (organize sigma))) ->
       CL Gamma M sigma.
   Proof.
@@ -511,9 +501,9 @@ Module Type CombinatoryLogic
     induction prfs as [ | n sigma' sigmas' prf prfs IH ].
     - destruct ex_S; eapply CL_omega; eassumption.
     - assert (CL Gamma M sigma').
-      { destruct prf as [ S [ WF_S ex_prfs ] ].
+      { destruct prf as [ S ex_prfs ].
         assert (root_prf: CL Gamma (Symbol (rootOf M))
-                             (intersect (projT2 (factorize (organize (Apply S (Gamma (rootOf M)))))))).
+                             (intersect (projT2 (factorize (organize (Apply (take S) (Gamma (rootOf M)))))))).
         { rewrite <- (factorize_organized _ (organize_organized _)).
           eapply CL_ST; [ | apply ST_organize_ge ].
           apply CL_Var; assumption. }

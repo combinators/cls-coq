@@ -13,7 +13,7 @@ Require Import VectorQuantification.
 Delimit Scope intersection_types with it.
 Open Scope intersection_types.
 
-Class ConstructorSpecification (ConstructorSymbol: Set) :=
+Class ConstructorSpecification (ConstructorSymbol: Type) :=
   { constructorArity: ConstructorSymbol -> nat;
     ConstructorTaxonomy : ConstructorSymbol -> ConstructorSymbol -> Prop;
     CTPreorder :> PreOrder ConstructorTaxonomy;
@@ -24,7 +24,7 @@ Class ConstructorSpecification (ConstructorSymbol: Set) :=
   }.
 
 Module Type TypeSignature.
-  Parameter ConstructorSymbol: Set.
+  Parameter ConstructorSymbol: Type.
   Parameter VariableSymbol: Set.
   Parameter VariableSymbol_eq_dec:
       forall (alpha beta: VariableSymbol), {alpha = beta} + {alpha <> beta}.
@@ -32,13 +32,13 @@ Module Type TypeSignature.
 End TypeSignature.
 
 Module Type IntersectionTypes(Import TySig: TypeSignature). 
-  Inductive PreType {T: Set}: Set :=
+  Inductive PreType {T: Type}: Type :=
   | PT_omega: PreType 
   | PT_Const: forall (C: ConstructorSymbol), t T (constructorArity C) -> PreType
   | PT_Arrow: forall (sigma tau : T), PreType
   | PT_Inter: forall (sigma tau: T), PreType.
   
-  Inductive TypeScheme {VariableSymbol: Set}: Set :=
+  Inductive TypeScheme {VariableSymbol: Set}: Type :=
   | Var: forall alpha: VariableSymbol, TypeScheme
   | Skeleton: forall skel: @PreType TypeScheme, TypeScheme.
 
@@ -91,7 +91,7 @@ Module Type IntersectionTypes(Import TySig: TypeSignature).
                                    inter_case tau)
     end.
   
-  Inductive IntersectionType: Set :=
+  Inductive IntersectionType: Type :=
   | Ty: forall sigma : @PreType IntersectionType, IntersectionType.
   
   Fixpoint IntersectionType_rect'
@@ -296,7 +296,7 @@ Module Type IntersectionTypes(Import TySig: TypeSignature).
     - simpl; rewrite IHl; rewrite IHr; reflexivity.
   Qed.
 
-  Definition Substitution: Set := VariableSymbol -> IntersectionType.
+  Definition Substitution: Type := VariableSymbol -> IntersectionType.
 
   Fixpoint Apply (S: Substitution) (sigma: TypeScheme): IntersectionType :=
     match sigma with

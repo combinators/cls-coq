@@ -6,13 +6,13 @@ Require Import Coq.Arith.Wf_nat.
 
 
 Module Type TermSignature.
-  Parameter CombinatorSymbol: Set.
+  Parameter CombinatorSymbol: Type.
 End TermSignature.
   
 Module Type Terms(Import TermSig: TermSignature).
   Import EqNotations.
   
-  Inductive Term : Set :=
+  Inductive Term : Type :=
   | Symbol: forall (c : CombinatorSymbol), Term
   | App: forall (M N: Term), Term.
 

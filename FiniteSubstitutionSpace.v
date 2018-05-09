@@ -13,6 +13,7 @@ Require Import Coq.Init.Wf.
 Require Import Coq.Wellfounded.Transitive_Closure.
 Require Import Coq.Relations.Relation_Operators.
 
+Require Import FunctionSpace.
 Require Import VectorQuantification.
 Require Import CombinatoryLogic.
 Require Import IntersectionTypes.
@@ -26,13 +27,7 @@ Module Type FiniteWellFormedPredicate
        (Signature: TypeSignature)
        (Import Types: IntersectionTypes.IntersectionTypes Signature) <: WellFormedPredicate(Signature)(Types).
   Include WellFormedPredicate(Signature)(Types).
-  Parameter SubstitutionSpace : Set.
-  Parameter SubstitutionSpace_sound: SubstitutionSpace -> { S : Substitution | WellFormed S }.
-  Parameter SubstitutionSpace_complete: { S : Substitution | WellFormed S } -> SubstitutionSpace.
-  Parameter SubstitutionSpace_eq:
-    forall WFS alpha, proj1_sig (SubstitutionSpace_sound (SubstitutionSpace_complete WFS)) alpha =
-                 proj1_sig WFS alpha.
-  Declare Instance SubstitutionSpace_finite: Finite SubstitutionSpace.
+  Declare Instance SubstitutionSpace_finite: Finite WellFormed.
 End FiniteWellFormedPredicate.
 
 Module Type FiniteCombinators(Import TermSig: TermSignature).
@@ -48,7 +43,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
   Definition minimalInstance (sigma_pre: TypeScheme): IntersectionType :=
     intersect
       (map
-         (fun k => Apply (proj1_sig (SubstitutionSpace_sound (fromFin k))) sigma_pre) (positions cardinality)).
+         (fun k => Apply (take (fromFin k)) sigma_pre) (positions cardinality)).
   
   Lemma MinimalType_sound:
     forall Gamma c, (cardinality > 0) ->
@@ -56,16 +51,16 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
   Proof.
     intros Gamma c.
     assert (all_prfs: forall k, CL Gamma (Symbol c)
-                              (Apply (proj1_sig (SubstitutionSpace_sound (fromFin k)))
+                              (Apply (take (fromFin k))
                                      (Gamma c))).
-    { intro k.
-      apply CL_Var; exact (proj2_sig (SubstitutionSpace_sound (fromFin k))). }
+    { intro k; apply CL_Var. }
     intro card_gt.
     unfold minimalInstance.
     revert all_prfs.
     inversion card_gt as [ prf | ? ? prf ];
-      destruct SubstitutionSpace_finite as [ card to from id ];
+      destruct SubstitutionSpace_finite as [ card to from id id' ];
       simpl in *;
+      clear id';
       revert to from id;
       rewrite <- prf in *;
       intros;
@@ -82,16 +77,14 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
     intros Gamma c sigma prf.
     remember (Symbol c) as M eqn:M_eq.
     revert c M_eq.
-    induction prf as [ ? S WF_S | | | ].
+    induction prf as [ ? S | | | ].
     - intros c' M_eq.
       inversion M_eq.
       unfold minimalInstance.
-      rewrite (ST_intersect_nth _ (toFin (SubstitutionSpace_complete (exist _ S WF_S)))).      
+      rewrite (ST_intersect_nth _ (toFin S)).
       rewrite (nth_map _ _ _ _ eq_refl).
       rewrite (positions_spec).
       rewrite (fromToFin_id).
-      transitivity (Apply (proj1_sig (exist _ S WF_S)) (Gamma c')); [ | reflexivity ].
-      rewrite (Apply_ext _ _ (SubstitutionSpace_eq (exist _ S WF_S))).
       reflexivity.
     - intros ? MN_eq; inversion MN_eq.
     - intros; apply ST_Both; auto.
@@ -158,16 +151,6 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
         apply (Path_split_path); assumption.
       + auto.
   Qed.
-
-  
-  Fixpoint powerset {A: Type} (xs: list A): list (list A) :=
-    match xs with
-    | List.nil => List.cons List.nil List.nil
-    | List.cons x xs =>
-      List.app
-        (List.map (List.cons x) (powerset xs))
-        (powerset xs)
-    end.
 
   Lemma CL_MP_inv_dec_complete: forall Gamma M N tau,
       { CL Gamma (App M N) tau } + { CL Gamma (App M N) tau -> False } ->
@@ -254,15 +237,14 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
     forall Gamma M sigma
       (M_dec: forall sigma, { CL Gamma M sigma } + { CL Gamma M sigma -> False }),
       Path sigma ->
-      ( exists S, WellFormed S /\
-             Exists (fun path =>
+      ( exists S, Exists (fun path =>
                        Path path /\
                        exists argCountPrf : (argumentCount M <= src_count path)%nat,
                          Forall2 (CL Gamma) (argumentsOf M)
                                  (fst (split_path path _ argCountPrf)) /\
                          (snd (split_path path _ argCountPrf)) <= sigma
                     )
-                    (projT2 (factorize (organize (Apply S (Gamma (rootOf M))))))) ->
+                    (projT2 (factorize (organize (Apply (take S) (Gamma (rootOf M))))))) ->
       exists sigma',
         sigma' <= sigma /\
         List.In sigma'
@@ -273,30 +255,25 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
                                          (minimalInstance (Gamma (rootOf M))))).
   Proof.
     intros Gamma M sigma M_dec path_sigma ex_prf.
-    destruct ex_prf as [ S [ WF_S ex_prf ] ] .
+    destruct ex_prf as [ S ex_prf ] .
     assert (in_prf_compatible : forall sigma',
                List.In sigma'
                        (filter (fun sigma' : IntersectionType =>
                                   if M_dec sigma' then true else false)
                                (allPathSuffixes (argumentCount M)
-                                                (Apply S (Gamma (rootOf M))))) ->
+                                                (Apply (take S) (Gamma (rootOf M))))) ->
                List.In sigma'
                        (filter (fun sigma' : IntersectionType =>
                                   if M_dec sigma' then true else false)
                                (allPathSuffixes (argumentCount M)
                                                 (minimalInstance (Gamma (rootOf M)))))).
     { intro sigma'.
-      assert (S_fin: Apply S (Gamma (rootOf M)) =
-                     Apply (proj1_sig (SubstitutionSpace_sound
-                                         (fromFin (toFin (SubstitutionSpace_complete (exist _ S WF_S))))))
-                           (Gamma (rootOf M))).
+      assert (S_fin: Apply (take S) (Gamma (rootOf M)) =
+                     Apply (take (fromFin (toFin S))) (Gamma (rootOf M))).
       { rewrite fromToFin_id.
-        transitivity (Apply (proj1_sig (exist _ S WF_S)) (Gamma (rootOf M))); [ reflexivity | ].
-        apply Apply_ext.
-        intro; apply eq_sym.
-        apply (SubstitutionSpace_eq (exist _ S WF_S)). }      
+        reflexivity. }
       rewrite S_fin.
-      generalize (toFin (SubstitutionSpace_complete (exist _ S WF_S))).
+      generalize (toFin S).
       unfold minimalInstance.
       intros k prfs.
       apply filter_In.
@@ -313,7 +290,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
                   sigma' <= sigma /\
                   List.In sigma'
                           (filter (fun sigma' => if M_dec sigma' then true else false)
-                                  (allPathSuffixes (argumentCount M) (Apply S (Gamma (rootOf M)))))) ->
+                                  (allPathSuffixes (argumentCount M) (Apply (take S) (Gamma (rootOf M)))))) ->
               (exists sigma' : IntersectionType,
                   sigma' <= sigma /\
                   List.In sigma'
@@ -327,12 +304,12 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
     unfold allPathSuffixes.
     assert (root_prfs :
               Forall (CL Gamma (Symbol (rootOf M)))
-                     (projT2 (factorize (organize (Apply S (Gamma (rootOf M))))))).
+                     (projT2 (factorize (organize (Apply (take S) (Gamma (rootOf M))))))).
     { apply nth_Forall.
       intro k.
       eapply CL_ST; [ apply CL_Var; eassumption | ].
       etransitivity; [ eapply ST_organize_ge | ].
-      rewrite (factorize_organized _ (organize_organized (Apply S (Gamma (rootOf M))))) at 1.
+      rewrite (factorize_organized _ (organize_organized (Apply (take S) (Gamma (rootOf M))))) at 1.
       apply ST_intersect_nth. } 
     induction ex_prf
       as [ ? path paths [ path_path [ argCountPrf [ args_prfs tgt_prf ] ] ]
@@ -459,268 +436,6 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
       + apply List.Forall_cons; assumption.
   Qed.
 
-  Lemma powerset_empty_incl: forall {A} (xs: list A), List.In List.nil (powerset xs).
-  Proof.
-    intros A xs.
-    induction xs as [ | x xs IH ].
-    - left; reflexivity.
-    - simpl.
-      induction (List.map (List.cons x) (powerset xs)).
-      + assumption.
-      + right; assumption.
-  Qed.
-  
-  Lemma powerset_smaller_set_incl: forall {A} (x: A) xs ys,
-      List.In (List.cons x xs) (powerset ys) ->
-      List.In xs (powerset ys).
-  Proof.
-    intros A x xs ys.
-    induction ys as [ | y ys IH ].
-    - intro devil; inversion devil as [ devil' | devil' ]; inversion devil'.
-    - unfold powerset.
-      fold (powerset ys).
-      intro in_app.
-      destruct (in_app_or _ _ _ in_app) as [ inleft | inright ].
-      + apply in_app_iff.
-        right.
-        clear in_app IH.
-        induction (powerset ys).
-        * contradiction.
-        * inversion inleft as [ eq | ].
-          { left; inversion eq; reflexivity. }
-          { right; auto. }
-      + apply in_or_app; right; auto.
-  Qed.
-
-  Lemma powerset_split: forall {A} xs (y: A) ys,
-      List.In xs (powerset (List.cons y ys)) ->
-      List.In xs (List.map (List.cons y) (powerset ys)) \/
-      List.In xs (powerset ys).
-  Proof.
-    intros A xs.
-    induction xs as [ | x xs IH ].
-    - intros; right; apply powerset_empty_incl.
-    - intros y ys xxs_in.
-      unfold powerset in xxs_in.
-      fold (powerset ys) in xxs_in.
-      apply in_app_or.
-      assumption.
-  Qed.
-
-  Lemma ListIn_map_cons: forall {A} (x: A) xs ys,
-      List.In ys (List.map (List.cons x) xs) -> exists ys', ys = List.cons x ys' /\ List.In ys' xs.
-  Proof.
-    intros A x xs.
-    induction xs as [ | x' xs IH ].
-    - intros ? devil; inversion devil.
-    - intros ys in_prf.
-      destruct in_prf as [ eq | in_rest ].
-      + destruct ys as [ | y ys ].
-        * inversion eq.
-        * inversion eq.
-          eexists; split; [ reflexivity | left; reflexivity ].
-      + destruct (IH _ in_rest) as [ ? [ ? ? ]].
-        eexists; split; [ eassumption | right; eassumption ].
-  Qed.
-
-  Lemma ListIn_map_cons': forall {A} (x: A) xs ys,
-      List.In xs ys -> List.In (List.cons x xs) (List.map (List.cons x) ys).
-  Proof.
-    intros A x xs ys.
-    revert xs.
-    induction ys.
-    - intros ? devil; inversion devil.
-    - intros xs in_prf.
-      destruct in_prf as [ eq | ].
-      + inversion eq.
-        left; reflexivity.
-      + right; auto.
-  Qed.
-  
-  
-
-  Lemma powerset_spec {A: Type} {A_dec : forall (x y : A), { x = y } + { x <> y }}:
-    forall (x : A) xs ys,
-      List.In x ys ->
-      List.In xs (powerset ys) ->
-      exists xs',
-        List.In xs' (powerset ys) /\
-        Permutation (if In_dec A_dec x xs then xs else List.cons x xs) xs'.
-  Proof.
-    intros x xs ys.
-    revert xs.
-    induction ys as [ | y ys IH ].
-    - intros ? devil; inversion devil.
-    - intros xs x_in xs_in.
-      destruct (In_dec _ x xs) as [ x_in_xs | x_not_in_xs ].
-      + simpl in xs_in.
-        destruct (in_app_or _ _ _ xs_in) as [ xs_inl | xs_inr ].
-        * destruct (ListIn_map_cons _ _ _ xs_inl) as [ xs' [ xs_eq xs'_in ] ].
-          exists (List.cons y xs'); split.
-          { apply in_or_app; left; apply ListIn_map_cons'; assumption. }
-          { rewrite xs_eq; reflexivity. }
-        * exists xs; split.
-          { apply in_or_app; right; assumption. }
-          { reflexivity. }
-      + simpl in x_in.
-        destruct x_in as [ x_eq | x_not_eq ].
-        * destruct (in_app_or _ _ _ xs_in) as [ xs_inl | xs_inr ].
-          { destruct (ListIn_map_cons _ _ _ xs_inl) as [ xs' [ xs_eq xs'_in ] ].
-            rewrite x_eq in xs_eq.
-            rewrite xs_eq in x_not_in_xs.
-            assert False; [ apply x_not_in_xs; left; reflexivity | contradiction ]. }
-          { exists (List.cons x xs); split.
-            - apply in_or_app.
-              left.
-              rewrite x_eq.
-              apply ListIn_map_cons'.
-              assumption.
-            - reflexivity. }
-        * destruct (in_app_or _ _ _ xs_in) as [ xs_inl | xs_inr ].
-          { destruct (ListIn_map_cons _ _ _ xs_inl) as [ xs' [ xs_eq xs'_in ] ].
-            destruct (IH _ x_not_eq xs'_in) as [ xs_res [ xs_res_in xs_res_prem ] ].
-            exists (List.cons y xs_res); split.
-            - apply in_or_app.
-              left.
-              apply ListIn_map_cons'.
-              assumption.
-            - rewrite xs_eq.
-              destruct (In_dec _ x xs') as [ x_in_xs' | ].
-              + rewrite xs_eq in x_not_in_xs.
-                assert False; [ apply x_not_in_xs; right; assumption | contradiction ].
-              + rewrite (Permutation_middle (List.cons y List.nil) xs' x).
-                simpl.
-                rewrite xs_res_prem.
-                reflexivity. }
-          { generalize (IH _ x_not_eq xs_inr).
-            destruct (In_dec A_dec x xs).
-            - contradiction.
-            - intro prf.
-              destruct prf as [ ? [ ? ? ] ].
-              eexists; split; [ | eassumption ].
-              apply in_or_app.
-              right; assumption. }
-  Qed.
-  
-  Fixpoint deduplicate {A: Type} {A_dec: forall (x y: A), {x = y} + {x <> y}} (xs: list A): list A :=
-    match xs with
-    | List.cons x xs =>
-      if In_dec A_dec x xs
-      then @deduplicate _ A_dec xs
-      else List.cons x (@deduplicate _ A_dec xs)
-    | List.nil => List.nil
-    end.
-
-  Lemma deduplicate_spec {A: Type} {A_dec: forall (x y: A), {x = y} + {x <> y}}: forall (x: A) xs,
-      List.In x xs <-> List.In x (@deduplicate _ A_dec xs).
-  Proof.
-    intros x xs.
-    induction xs as [ | x' xs IH ].
-    - split; intro devil; inversion devil.
-    - split.
-      + intro prf.
-        inversion prf as [ eq | in_rest ].
-        * simpl.
-          destruct (In_dec A_dec x' xs) as [ in_xs | not_in_xs ].
-          { rewrite eq in in_xs; apply IH; assumption. }
-          { left; rewrite eq; reflexivity. }
-        * simpl.
-          destruct (In_dec A_dec x' xs) as [ in_xs | not_in_xs ].
-          { apply IH; assumption. }
-          { right; apply IH; assumption. }
-      + intro prf.
-        simpl in prf.
-        destruct (In_dec A_dec x' xs) as [ in_xs | not_in_xs ].
-        * right; apply IH; assumption.
-        * inversion prf as [ eq | in_rest ].
-          { rewrite eq; left; reflexivity. }
-          { right; apply IH; assumption. }
-  Qed.
-  
-  Lemma powerset_permut_incl {A: Type} {A_dec: forall (x y : A), {x = y} + {x <> y}}:
-    forall (xs: list A) ys,
-      List.Forall (fun x' => List.In x' ys) xs ->
-      exists xs',
-        List.In xs' (powerset ys) /\
-        Permutation (@deduplicate _ A_dec xs) xs'.
-  Proof.
-    intros xs.
-    induction xs as [ | x xs IH ].
-    - intros.
-      exists List.nil; split.
-      + apply powerset_empty_incl.
-      + reflexivity.
-    - intros ys prf.
-      inversion prf as [ | ? ? x_prf xs_prf ].
-      simpl.
-      generalize (IH _ xs_prf).
-      intro IH'.
-      destruct IH' as [ xs' [ in_xs' perm_xs' ] ].
-      destruct (In_dec A_dec x xs) as [ in_x_xs | not_in_x_xs ].
-      + exists xs'; split.
-        * assumption.
-        * assumption.
-      + destruct (@powerset_spec _ A_dec x xs' ys x_prf in_xs') as [ xs'' [ in_xs'' perm_xs'' ] ].
-        exists xs''; split.
-        * assumption.
-        * assert (x_dedup : List.In x (@deduplicate _ A_dec xs) -> False).
-          { intro devil.
-            apply not_in_x_xs.
-            apply (@deduplicate_spec _ A_dec).
-            assumption. }
-          destruct (In_dec A_dec x xs') as [ in_x_xs' | ].
-          { assert False.
-            { apply x_dedup.
-              eapply Permutation_in.
-              - symmetry; eassumption.
-              - assumption. }
-            contradiction. }
-          { rewrite perm_xs'.
-            assumption. }
-  Qed.
-
-  Lemma powerset_permute_prop {A: Type} {A_dec: forall (x y : A), {x = y} + { x <> y }}:
-    forall (P : list A -> Prop) xs ys,
-      P (@deduplicate _ A_dec xs) ->
-      (forall xs ys, Permutation (@deduplicate _ A_dec xs) ys -> P (@deduplicate _ A_dec xs) -> P ys) ->
-      List.Forall (fun x => List.In x ys) xs ->
-      List.Exists P (powerset ys).
-  Proof.
-    intros P xs ys Pxs P_stable xs_in.
-    destruct (@powerset_permut_incl _ A_dec xs ys xs_in) as [ xs' [ in_xs' permut_xs' ] ].
-    induction (powerset ys).
-    - inversion in_xs'.
-    - inversion in_xs' as [ eq | in_tl ].
-      + apply List.Exists_cons_hd.
-        rewrite eq.
-        apply (P_stable _ _ permut_xs' Pxs).
-      + apply List.Exists_cons_tl.
-        auto.
-  Qed.
-
-  Lemma ListIn_In: forall {A: Type} xs (x: A), List.In x xs -> exists k, nth (of_list xs) k = x.
-  Proof.
-    intros A xs x.
-    induction xs as [ | x' xs IH ].
-    - intro devil; inversion devil.
-    - intro prf.
-      destruct prf as [ | in_rest ].
-      + exists F1; assumption.
-      + destruct (IH in_rest) as [ k prf ].
-        exists (FS k); assumption.
-  Qed.
-
-  Lemma In_ListIn: forall {A: Type} xs (x: A) k, nth (of_list xs) k = x -> List.In x xs.
-  Proof.
-    intros A xs x.
-    induction xs as [ | x' xs IH ].
-    - intro devil; inversion devil.
-    - intro k.
-      apply (Fin.caseS' k).
-      + intro; left; assumption.
-      + simpl; intros; right; eapply IH; eassumption.
-  Qed.
-
   Lemma ST_deduplicate: forall sigmas,
       intersect (of_list (@deduplicate _ IntersectionType_eq_dec sigmas)) <= intersect (of_list sigmas).
   Proof.
@@ -735,17 +450,35 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
           { destruct (ListIn_In _ _ (proj1 (@deduplicate_spec _ IntersectionType_eq_dec _ _)
                                            in_sigma_sigmas))
               as [ pos pos_eq ].
+            match goal with
+            |[|- context[in_dec ?dec ?x ?xs]] =>
+             destruct (in_dec dec x xs); [ | contradiction ]
+            end.            
             rewrite <- pos_eq.
             apply ST_intersect_nth. }
-          { assumption. }
+          { destruct (ListIn_In _ _ (proj1 (@deduplicate_spec _ IntersectionType_eq_dec _ _)
+                                           in_sigma_sigmas))
+              as [ pos pos_eq ].
+            match goal with
+            |[|- context[in_dec ?dec ?x ?xs]] =>
+             destruct (in_dec dec x xs); [ | contradiction ]
+            end.
+            assumption. }
       + destruct sigmas as [ | sigma' sigmas ].
         * reflexivity.
         * apply ST_Both.
-          { simpl of_list.
+          { match goal with
+            |[|- context[in_dec ?dec ?x ?xs]] =>
+             destruct (in_dec dec x xs); [ contradiction | ]
+            end.
             match goal with
             | [ |- intersect ?xs <= _ ] => apply (ST_intersect_nth xs F1)
             end. }
-          { simpl of_list.                   
+          { match goal with
+            |[|- context[in_dec ?dec ?x ?xs]] =>
+             destruct (in_dec dec x xs); [ contradiction | ]
+            end.
+            simpl of_list.
             match goal with
             | [ |- intersect (cons _ sigma _ ?xs) <= _ ] =>
               rewrite (ST_intersect_append_le (cons _ sigma _ (nil _)) xs)
@@ -791,7 +524,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
       assumption.
     - apply (List.in_map (fun x => intersect (of_list x))).
       assumption.
-  Qed.    
+  Qed.
   
   Lemma CL_Mintype_suffix_complete:
     forall Gamma M
@@ -870,67 +603,10 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
         * auto.
       + intro; auto.
   Qed.
-
-  Lemma powerset_hd_in: forall {A: Type} (x: A) xs ys,
-      List.In (List.cons x xs) (powerset ys) ->
-      List.In x ys.
-  Proof.
-    intros A x xs ys.
-    revert xs.
-    induction ys.
-    - intros ? devil; inversion devil as [ devil' | devil']; inversion devil'.
-    - intros xxs xxs_in.
-      destruct (in_app_or _ _ _ xxs_in) as [ inl | inr ].
-      + destruct (ListIn_map_cons _ _ _ inl) as [ ? [ x_eq nil_in ] ].
-        inversion x_eq; left; reflexivity.
-      + right; eauto.
-  Qed.
-  
-  Lemma powerset_spec_in: forall {A: Type} (xs ys: list A),
-      List.In xs (powerset ys) -> List.Forall (fun x => List.In x ys) xs.
-  Proof.
-    intros A xs.
-    induction xs as [ | x xs IH ].
-    - intros; apply List.Forall_nil.
-    - intros ys in_xs.
-      destruct ys.
-      + inversion in_xs as [ devil | devil ].
-        * inversion devil.
-        * inversion devil.
-      + simpl in in_xs.
-        destruct (in_app_or _ _ _ in_xs) as [ inl | inr ].
-        * destruct (ListIn_map_cons _ _ _ inl) as [ ys' [ xs_eq xs_in' ] ].
-          inversion xs_eq as [ [ hd_eq tl_eq ] ].
-          apply List.Forall_cons.
-          { left; reflexivity. }
-          { rewrite tl_eq in IH.
-            apply IH.
-            apply in_or_app; right.
-            assumption. }
-        * apply List.Forall_cons.
-          { eapply powerset_hd_in; eassumption. }
-          { apply Forall_forall.
-            intros x' x'_in_xs.
-            generalize (IH _ (powerset_smaller_set_incl _ _ _ inr)).
-            intro xs_in_ys.
-            right.
-            revert x'_in_xs xs_in_ys.
-            clear ...
-            intros x'_in_xs xs_in_ys.
-            induction xs.
-            - inversion x'_in_xs.
-            - destruct x'_in_xs as [ eq | inr ].
-              + rewrite eq in *.
-                inversion xs_in_ys.
-                assumption.
-              + inversion xs_in_ys.
-                auto. }
-  Qed.
   
   Lemma CL_Mintype_suffix_sound:
     forall Gamma M
-      (M_dec: forall sigma, { CL Gamma M sigma } + { CL Gamma M sigma -> False }) S,
-      WellFormed S ->
+      (M_dec: forall sigma, { CL Gamma M sigma } + { CL Gamma M sigma -> False }) (exS: inhabited WellFormed),
       forall sigma,
         (exists sigma',
             sigma' <= sigma /\
@@ -944,7 +620,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
                                                                     (Gamma (rootOf M)))))))) ->
         CL Gamma M sigma.
   Proof.
-    intros Gamma M M_dec S WF_S sigma prf.
+    intros Gamma M M_dec [ S ] sigma prf.
     destruct prf as [ sigma' [ sigma'_le sigma'_in_powerset ] ].
     eapply CL_ST; [ | apply sigma'_le ].
     generalize (proj1 (in_map_iff (fun xs => intersect (of_list xs)) _ _) sigma'_in_powerset).
@@ -973,8 +649,8 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
     - intro sigma.
       right.
       intro prf.
-      induction prf as [ ? S WF_S | | | ]; try solve [ contradiction ].
-      generalize (toFin (SubstitutionSpace_complete (exist _ S WF_S))).
+      induction prf as [ ? S | | | ]; try solve [ contradiction ].
+      generalize (toFin S).
       destruct cardinality.
       + intro k; inversion k.
       + inversion card_eq.
@@ -991,11 +667,10 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
           generalize (MinimalType_minimal _ _ _ prf).
           assumption.
       + intro sigma.
-        assert (exS : { S : _ | WellFormed S }).
-        { eapply (fun k => SubstitutionSpace_sound (fromFin k)).
-          destruct cardinality; [ contradict (card_ineq eq_refl) | ].
-          exact F1. }
-        destruct exS as [ S WF_S ].
+        assert (exS : inhabited WellFormed).
+        { constructor.
+          eapply (fun k => fromFin k).
+          destruct cardinality; [ contradict (card_ineq eq_refl) | exact F1 ]. }
         apply CL_MP_inv_dec_sound.
         assert (M_dec:
                   {List.Exists
@@ -1023,7 +698,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
           destruct (proj1 (List.Exists_exists _ _) Mprf) as [ sigma' [ in_prf p_prf ] ].
           { exists sigma'; split.
             - assumption.
-            - apply (CL_Mintype_suffix_sound _ _ IHN S WF_S).
+            - apply (CL_Mintype_suffix_sound _ _ IHN exS).
               eexists; split; [ reflexivity | eassumption ]. }
         * right.
           intro sigma_prf.
@@ -1052,15 +727,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
       fold_left (fun s path => max s (src_count path)) 0
                 (projT2 (factorize (organize tau))).
 
-    Lemma fold_left_append {A B: Type} {m n: nat}:
-      forall (xs : t A m) (ys: t A n) (s: B) f,
-        fold_left f s (append xs ys) = fold_left f (fold_left f s xs) ys.
-    Proof.
-      intro xs.
-      induction xs.
-      - intros; reflexivity.
-      - intros; simpl; auto.
-    Qed.
+   
 
     Lemma max_count_fold {n : nat}: forall (xs: t IntersectionType n) x s,
         (x <= s)%nat -> (x <= fold_left (fun s tau => max s (src_count tau)) s xs)%nat.
@@ -1159,15 +826,12 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
             rewrite <- rhs_eq.
             apply max_count_fold_append.
     Qed.
-
-    
-    
+   
     Lemma MaximalSourceCount_Maximal: forall (Gamma: Context) c S,
-        WellFormed S ->
         Forall (fun path => (src_count path <= MaximalSourceCount (minimalInstance (Gamma c)))%nat)
-               (projT2 (factorize (organize (Apply S (Gamma c))))).
+               (projT2 (factorize (organize (Apply (take S) (Gamma c))))).
     Proof.
-      intros Gamma c S WF_S.
+      intros Gamma c S.
       unfold minimalInstance.
       match goal with
       | [|- Forall (fun path => (_ <= MaximalSourceCount (intersect ?xs))%nat) _ ] =>
@@ -1176,13 +840,12 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
       intro prf.
       apply nth_Forall.
       intro k.
-      generalize (prf (toFin (SubstitutionSpace_complete (exist _ S WF_S)))).
+      generalize (prf (toFin S)).
       intro nth_le.
       rewrite <- nth_le.
       rewrite (nth_map _ _ _ _ eq_refl).
       rewrite (positions_spec).
-      rewrite (fromToFin_id (SubstitutionSpace_complete (exist _ S WF_S))).
-      rewrite (Apply_ext _ _ (SubstitutionSpace_eq (exist _ S WF_S)) (Gamma c)).
+      rewrite (fromToFin_id S).
       simpl.
       unfold MaximalSourceCount.
       apply max_count_nth.
@@ -1214,8 +877,8 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
       induction prf' as [ | n path paths path_prf paths_prfs IH n_eq [ path_eq paths_eq ] ].
       - contradiction (factors_not_empty eq_refl).
       - destruct n. 
-        + destruct path_prf as [ S [ WF_S ex_prf ] ].
-          generalize( MaximalSourceCount_Maximal Gamma (rootOf M) S WF_S).
+        + destruct path_prf as [ S ex_prf ].
+          generalize( MaximalSourceCount_Maximal Gamma (rootOf M) S).
           induction ex_prf as [ n path' paths' [ pathPrf [ argCountPrf _ ] ] | n path' paths' ].
           * rewrite argCountPrf.
             intro path_prfs; inversion path_prfs; assumption.
@@ -1300,44 +963,10 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
                                (intersect_pointwise (of_list (List.map fst paths)),
                                 intersect (of_list (List.map snd paths))))
                             (powerset (allSplitPaths n (minimalInstance (Gamma c))))).
-
-    Lemma powerset_p: forall {A: Type} (P : A -> Prop) xs,
-        List.Forall P xs ->
-        List.Forall (List.Forall P) (powerset xs).
-    Proof.
-      intros A P xs prf.
-      apply List.Forall_forall.
-      intros xs' in_prf.
-      apply List.Forall_forall.
-      intros x x_in_xs.
-      eapply (proj1 (List.Forall_forall _ _)).
-      + apply prf.
-      + generalize (powerset_spec_in _ _ in_prf).
-        intro xs'_prfs. 
-        apply (proj1 (List.Forall_forall _ _) xs'_prfs).
-        assumption.
-    Qed.
-
-    Lemma powerset_map: forall {A B: Type} (f: A -> B) xs,
-        powerset (List.map f xs) = List.map (List.map f) (powerset xs).
-    Proof.
-      intros A B f xs.
-      induction xs as [ | x xs IH ].
-      - reflexivity.
-      - simpl List.map.
-        simpl powerset.
-        rewrite (List.map_app).
-        rewrite IH.
-        apply (f_equal (fun xs => xs ++ _)).
-        rewrite (List.map_map).
-        rewrite (List.map_map).
-        simpl.
-        reflexivity.
-    Qed.
     
     Lemma allPossibleInhabitants_sound:
       forall Gamma tau c n,
-        { S : _ | WellFormed S } ->
+        inhabited WellFormed ->
         List.Forall (fun arrow =>
                        forall arguments,
                          Forall2 (CL Gamma) arguments (fst arrow) ->
@@ -1359,8 +988,8 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
             eapply CL_ST; [ | eassumption ].
             clear tgt_le.
             destruct paths as  [ | path paths ].
-            { destruct ex_S as [ S WF_S ].
-              apply (CL_omega S WF_S). }
+            { destruct ex_S as [ S ].
+              apply (CL_omega S). }
             { apply (CL_intersect_many).
               assert (length_eq: S (length (List.map snd paths)) = length (List.map snd (List.cons path paths))).
               { reflexivity. }
@@ -1381,7 +1010,8 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
                     eapply CL_ST; [ | apply ST_organize_ge ].
                     apply MinimalType_sound.
                     destruct SubstitutionSpace_finite as [ card toFin fromFin toFrom_id ].
-                    generalize (toFin (SubstitutionSpace_complete ex_S)).
+                    destruct ex_S as [ S ].
+                    generalize (toFin S).
                     intro k.
                     destruct card.
                     - inversion k.
@@ -1465,95 +1095,6 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
         intro devil.
         rewrite devil in not_eq.
         apply not_eq; reflexivity.
-    Qed.
-
-    Lemma exists_deduplicate {A: Type} {A_dec: forall (x y: A), { x = y } + { x <> y }}:
-      forall (P : A -> Prop) xs, Exists P (of_list xs) -> Exists P (of_list (@deduplicate _ A_dec xs)).
-    Proof.
-      intros P xs.
-      induction xs as [ | x xs IH ].
-      - intro devil; inversion devil.
-      - intro ex_prf.
-        inversion ex_prf as [ ? ? ? prf_here | ? ? ? prf_there n_eq [ hd_eq tl_eq ] ].
-        + generalize (proj1 (@deduplicate_spec _ A_dec x (List.cons x xs)) (or_introl (eq_refl x))).
-          intro in_x_dedup.
-          induction (deduplicate (List.cons x xs)).
-          * inversion in_x_dedup.
-          * destruct in_x_dedup as [ eq | in_rest ].
-            { rewrite eq.
-              apply Exists_cons_hd.
-              assumption. }
-            { apply Exists_cons_tl; auto. }
-        + dependent rewrite tl_eq in prf_there.
-          unfold deduplicate.
-          destruct (In_dec A_dec x xs).
-          * auto.
-          * apply Exists_cons_tl; auto.
-    Qed.
-
-    Lemma exists_permute {A: Type} {A_dec: forall (x y: A), { x = y } + { x <> y }}:
-      forall (P : A -> Prop) xs ys,
-        Permutation xs ys ->
-        Exists P (of_list xs) -> Exists P (of_list ys).
-    Proof.
-      intros P xs ys perm_xs_ys ex_x.
-      assert (ex_x': exists x, List.In x xs /\ P x).
-      { revert ex_x; clear ...
-        intro ex_x.
-        induction xs as [ | ? ? IH ].
-        - inversion ex_x.
-        - inversion ex_x as [ | ? ? ? prfs_tl n_eq [ hd_eq tl_eq ]].
-          + eexists; split; [ apply (or_introl (eq_refl _)) | eassumption ].
-          + dependent rewrite tl_eq in prfs_tl.
-            destruct (IH prfs_tl) as [ x' [ in_prf prf ] ].
-            exists x'; split; [ right; assumption | assumption ]. }
-      destruct ex_x' as [ x' [ in_x' prf_x' ] ].
-      generalize (Permutation_in _ perm_xs_ys in_x').
-      revert prf_x'.
-      clear ...
-      induction ys.
-      - intros ? devil; inversion devil.
-      - intros x'_prf in_x'_ys.
-        destruct in_x'_ys as [ here | there ].
-        + rewrite here.
-          apply Exists_cons_hd; assumption.
-        + apply Exists_cons_tl; auto.
-    Qed.
-
-    Lemma deduplicate_map {A B: Type}
-          {A_dec: forall (x y: A), { x = y } + { x <> y }}
-          {B_dec: forall (x y: B), { x = y } + { x <> y }}:
-      forall xs (f: A -> B),
-        (forall x y, f x = f y -> x = y) -> 
-        List.map f (@deduplicate _ A_dec xs) = @deduplicate _ B_dec (List.map f xs).
-    Proof.
-      intros xs f f_inj.
-      induction xs as [ | x xs IH ].
-      - reflexivity.
-      - simpl List.map.
-        simpl deduplicate.
-        destruct (In_dec A_dec x xs) as [ in_x | not_in_x ].
-        + rewrite IH.
-          destruct (In_dec B_dec (f x) (List.map f xs)) as [ in_fx | not_in_fx ] .
-          * reflexivity.
-          * assert False; [ | contradiction ].
-            apply not_in_fx.
-            clear not_in_fx IH.
-            induction xs.
-            { inversion in_x. }
-            { destruct in_x as [ here | there ].
-              - rewrite here; left; reflexivity.
-              - right; auto. }
-        + destruct (In_dec B_dec (f x) (List.map f xs)) as [ in_fx | not_in_fx ] .
-          * assert False; [ | contradiction ].
-            apply not_in_x.
-            clear not_in_x IH.
-            induction xs.
-            { inversion in_fx. }
-            { destruct in_fx as [ here | there ].
-              - rewrite (f_inj _ _ here); left; reflexivity.
-              - right; auto. }
-          * simpl; rewrite IH; reflexivity.
     Qed.                  
     
     Lemma sufficient_paths_deduplicate:
@@ -1586,8 +1127,8 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
             rewrite (ST_intersect_append_le (cons _ (nth (fst x) k') _ (nil _))
                                             (map (fun xs => nth xs k') (of_list (List.map fst xs)))).
             apply ST_InterMeetRight. }
-          unfold deduplicate.
-          destruct (In_dec (split_eq (argumentCount M)) x xs).
+          simpl deduplicate.
+          destruct (in_dec (split_eq (argumentCount M)) x xs).
           * apply nth_Forall2.
             assumption.
           * apply nth_Forall2.
@@ -1615,7 +1156,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
         induction xs as [ | x xs IH ]; intros tau tgt_le.
         + assumption.
         + unfold deduplicate.
-          destruct (In_dec (split_eq _) x xs) as [ inprf | ].
+          destruct (in_dec (split_eq _) x xs) as [ inprf | ].
           * apply IH.
             rewrite <- tgt_le.
             clear IH tgt_le.
@@ -1726,18 +1267,18 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
           + intro.
             exists List.nil; split; [ split | ].
             * simpl.
-              assert (ex_S : exists S, WellFormed S).
+              assert (ex_S : inhabited WellFormed).
               { clear notOmegaTau.
                 induction Mtau; try solve [ assumption ].
                 eexists; eassumption. }
               apply nth_Forall2.
-              inversion ex_S as [ S WF_S ].
+              inversion ex_S as [ S ].
               intro.
               rewrite const_nth.
-              apply (CL_omega S WF_S).
+              apply (CL_omega S).
             * reflexivity.
             * apply List.Forall_nil.
-          + destruct prf as [ S [ WF_S ex_prf ] ].
+          + destruct prf as [ S ex_prf ].
             generalize (Exists_in _ _ ex_prf); clear ex_prf; intro ex_prf.
             inversion ex_prf as [ y [ [ path_y [ arg_count_y [ inhab_y y_le ] ] ] in_y ] ].
             intro path_prfs.
@@ -1762,31 +1303,29 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
             * apply List.Forall_cons; [ | assumption ].
               unfold xs.
               unfold allSplitPaths.
-              revert notOmegaTau Mtau WF_S in_y y_le path_y path_path.
+              revert notOmegaTau Mtau in_y y_le path_y path_path.
               clear ...
-              intros notOmegaTau Mtau WF_S in_y y_le path_y path_path.
+              intros notOmegaTau Mtau in_y y_le path_y path_path.
               unfold minimalInstance.
-              destruct (SubstitutionSpace_finite) as [ card toFin fromFin toFrom_id ].
+              destruct (SubstitutionSpace_finite) as [ card toFin fromFin toFrom_id fromTo_id ].
               simpl.
-              assert (S_eq: Apply S (Gamma (rootOf M)) =
-                            Apply (proj1_sig (SubstitutionSpace_sound
-                                                (fromFin (toFin (SubstitutionSpace_complete (exist _ S WF_S))))))
+              assert (S_eq: Apply (take S) (Gamma (rootOf M)) =
+                            Apply (take (fromFin (toFin S)))
                                   (Gamma (rootOf M))).
               { simpl.
-                rewrite (toFrom_id (SubstitutionSpace_complete (exist _ S WF_S))).
-                rewrite (Apply_ext _ _ (SubstitutionSpace_eq (exist _ S WF_S))).
+                rewrite (toFrom_id S).
                 reflexivity. }                
               simpl in S_eq.
               rewrite S_eq in in_y.
-              remember (toFin (SubstitutionSpace_complete (exist WellFormed S WF_S))) as k eqn:k_eq.
-              clear k_eq toFin S_eq toFrom_id.
+              remember (toFin S) as k eqn:k_eq.
+              clear k_eq toFin S_eq toFrom_id fromTo_id.
               assert (in_y' :
                         List.In (split_path y (argumentCount M) arg_count_y)
                                 (allSplitPaths (argumentCount M)
-                                               (Apply (proj1_sig (SubstitutionSpace_sound (fromFin k)))
+                                               (Apply (take (fromFin k))
                                                       (Gamma (rootOf M))))).
               { unfold allSplitPaths.
-                destruct (factorize (organize (Apply (proj1_sig (SubstitutionSpace_sound (fromFin k)))
+                destruct (factorize (organize (Apply (take (fromFin k))
                                                      (Gamma (rootOf M)))))
                   as [ n paths ].
                 simpl.
@@ -1871,7 +1410,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
 
     Lemma allPossibleInhabitants_maxcount_sound:
       forall Gamma tau c,
-        { S : _ | WellFormed S } ->
+        inhabited WellFormed ->
         List.Forall (fun possible =>
                        List.Forall (fun arrow =>
                                       forall arguments,
@@ -1937,7 +1476,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
 
     Lemma grammarEntry_sound:
       forall Gamma tau,
-        { S : _ | WellFormed S } ->
+        inhabited WellFormed ->
         Forall (fun entry =>
                   List.Forall (fun possible =>
                                  List.Forall (fun arrow =>
@@ -1950,9 +1489,9 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
     Proof.
       intros Gamma tau ex_S.
       unfold grammarEntry.
-      destruct combinatorsFinite as [ card toFin fromFin toFrom_id ].
+      destruct combinatorsFinite as [ card toFin fromFin toFrom_id fromTo_id ].
       simpl.
-      clear toFin toFrom_id.          
+      clear toFin toFrom_id fromTo_id. 
       induction card as [ | card' IH ].
       - apply Forall_nil.
       - apply Forall_cons.
@@ -1981,14 +1520,14 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
     Proof.
       intros Gamma tau M notOmegaTau Mtau.
       unfold grammarEntry.
-      destruct combinatorsFinite as [ card toFin fromFin toFrom_id ].
+      destruct combinatorsFinite as [ card toFin fromFin toFrom_id fromTo_id ].
       simpl.
       rewrite <- (toFrom_id (rootOf M)).
       remember (toFin (rootOf M)) as k eqn:k_eq.
       generalize (f_equal fromFin k_eq).
       intro k_eq'.
       rewrite toFrom_id in k_eq'.
-      clear k_eq toFrom_id toFin.
+      clear k_eq toFrom_id fromTo_id toFin.
       revert k_eq'.
       induction card as [ | card' IH ].
       - inversion k.
@@ -2122,9 +1661,9 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
           exists c. exists arrows.
           dependent rewrite tl_eq in there.
           split; assumption.
-    Qed.    
+    Qed.
 
-    Definition TreeGrammar: Set :=
+    Definition TreeGrammar: Type :=
       list (IntersectionType *
             t (CombinatorSymbol *
                list { n : nat & list (t IntersectionType n * IntersectionType)})
@@ -2137,80 +1676,6 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
           List.In lhs (MaximalInhabGrammarTgts Gamma) ->
           (List.In lhs (List.map fst oldGrammar) -> False) ->
           NextInhabGrammar Gamma (List.cons (lhs, rhs) oldGrammar) oldGrammar.
-
-    Lemma ListLen_impl:
-      forall {A: Type} (xs: list A) (p1 p2: A -> bool),
-        (forall x, p1 x = true -> p2 x = true) ->
-        (List.length (List.filter p1 xs) <= List.length (List.filter p2 xs))%nat.
-    Proof.
-      intros A xs p1 p2 p_impl.
-      induction xs as [ | x xs IH ].
-      - reflexivity.
-      - simpl.
-        generalize (p_impl x).
-        destruct (p1 x).
-        + intro prf; rewrite (prf eq_refl).
-          simpl.
-          rewrite <- Nat.succ_le_mono.
-          assumption.
-        + intro prf; clear prf.
-          destruct (p2 x).
-          * simpl.
-            rewrite IH.
-            apply le_S.
-            reflexivity.
-          * assumption.
-    Qed.
-
-    Lemma ListLen_ineq:
-      forall {A: Type} (xs: list A) (p1 p2: A -> bool) (x: A),
-        List.In x xs -> p1 x = true -> p2 x = false ->
-        (forall y, p2 y = true -> p1 y = true) ->
-        List.length (List.filter p1 xs) > List.length (List.filter p2 xs).
-    Proof.
-      intros A xs p1 p2.
-      induction xs as [ | x xs IH ]; intros y in_xxs p1_y not_p2_y p2_impl.
-      - inversion in_xxs.
-      - destruct in_xxs as [ here | there ].
-        + rewrite here.
-          simpl.
-          rewrite p1_y.
-          rewrite not_p2_y.
-          simpl.
-          unfold "_ > _".
-          unfold "_ < _".
-          rewrite <- Nat.succ_le_mono.
-          apply ListLen_impl.
-          assumption.
-        + simpl.
-          generalize (p2_impl x).
-          destruct (p2 x).
-          * intro prf; rewrite (prf eq_refl).
-            simpl.
-            unfold "_ > _".
-            rewrite <- Nat.succ_lt_mono.
-            apply (IH y); auto.
-          * intro prf.
-            destruct (p1 x).
-            { apply le_S.
-              eapply IH; eauto. }
-            { eapply IH; eauto. }
-    Qed.
-
-    Lemma ListFilter_le:
-      forall {A: Type} (xs: list A) (p: A -> bool), (List.length (List.filter p xs) <= List.length xs)%nat.
-    Proof.
-      intros A xs p.
-      induction xs.
-      - reflexivity.
-      - simpl.
-        destruct (p a).
-        + simpl.
-          rewrite <- (Nat.succ_le_mono).
-          assumption.
-        + apply le_S.
-          assumption.
-    Qed.
 
     Lemma NextInhabGrammar_wf:
       forall (Gamma: Context), well_founded (NextInhabGrammar Gamma).
@@ -2311,21 +1776,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
                           List.flat_map (fun x => to_list (fst x)) (projT2 arrowsOfSize))
                        (snd rule))
                     (recursiveTargets_rec _ rules)
-         end) _ entry.
-
-    Lemma ListForall_app:
-      forall {A: Type} (xs ys: list A) (P: A -> Prop),
-        List.Forall P xs -> List.Forall P ys -> List.Forall P (xs ++ ys).
-    Proof.
-      intros A xs ys P all_xs all_ys.
-      apply List.Forall_forall.
-      intros x x_in.
-      destruct (List.in_app_or _ _ _ x_in) as [ inl | inr ].
-      - apply (proj1 (List.Forall_forall _ _) all_xs).
-        assumption.
-      - apply (proj1 (List.Forall_forall _ _) all_ys).
-        assumption.
-    Qed.   
+         end) _ entry. 
     
     Lemma recursiveTargets_sound:
       forall (Gamma: Context)
@@ -2337,9 +1788,9 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
       unfold recursiveTargets.
       unfold IsRecursiveTarget.
       unfold grammarEntry.
-      destruct combinatorsFinite as [ card toFin fromFin toFrom_id ].
+      destruct combinatorsFinite as [ card toFin fromFin toFrom_id fromTo_id ].
       simpl.
-      clear toFin toFrom_id.
+      clear toFin toFrom_id fromTo_id.
       induction (positions card) as [ | hd n tl IH ].
       - apply List.Forall_nil.
       - simpl.
@@ -2371,9 +1822,9 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
       unfold IsRecursiveTarget.
       unfold recursiveTargets.
       unfold grammarEntry.
-      destruct  combinatorsFinite as [ card toFin fromFin toFrom_id ].
+      destruct  combinatorsFinite as [ card toFin fromFin toFrom_id fromTo_id ].
       simpl.
-      clear toFin toFrom_id.
+      clear toFin toFrom_id fromTo_id.
       induction (positions card) as [ | hd n tl IH ].
       - intro prf; destruct prf as [ ? [ ? [ devil ] ] ].
         inversion devil.
@@ -2772,7 +2223,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
           generalize (Forall2_shiftout _ _ _ prfs).
           rewrite <- (shiftout_shiftin).
           intro; assumption.
-    Qed.      
+    Qed.
     
     Fixpoint WordOf
              (grammar: TreeGrammar)
@@ -2792,7 +2243,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
             arrows.
     
     Lemma inhabit_sound:
-      forall (ex_S: { S : Substitution | WellFormed S })
+      forall (ex_S: inhabited WellFormed)
         (Gamma: Context)
         (M: Term)
         (tau: IntersectionType),
@@ -2816,7 +2267,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
         intro prf.
         destruct prf as [ omega_tau' | prf ];
           [ eapply CL_ST;
-            [ eapply (CL_omega _ (proj2_sig ex_S))
+            [ destruct ex_S as [ S ]; eapply (CL_omega S _ _)
             | apply Omega_sound; assumption ] | ].
         inversion prf as [ entry [ entry_in_g [ arrows [ root_arrows_in_entry ex_args ] ] ] ].
         assert (entry_sound: entry = grammarEntry Gamma tau').
@@ -2871,7 +2322,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
         intro prf.
         destruct prf as [ omega_tau' | prf ];
           [ eapply CL_ST;
-            [ eapply (CL_omega _ (proj2_sig ex_S))
+            [ destruct ex_S as [ S ]; eapply (CL_omega S _ _)
             | apply Omega_sound; assumption ] | ].
         inversion prf as [ entry [ entry_in_g [ arrows [ root_arrows_in_entry ex_args ] ] ] ].
         assert (entry_sound: entry = grammarEntry Gamma tau').

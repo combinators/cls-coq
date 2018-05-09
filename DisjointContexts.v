@@ -9,6 +9,7 @@ Require Import VectorQuantification.
 Require Import CombinatoryLogic.
 Require Import CombinatoryTerm.
 Require Import IntersectionTypes.
+Require Import FunctionSpace.
 
 Module Type DisjointTypeSig(Import Types: TypeSignature).
   Parameter numberOfContexts : nat.
@@ -533,8 +534,7 @@ Module Type DisjointCombinatoryLogic
        (Import TyDisjoint: DisjointTypes(TypesAndTermsSig)(DisjointSig)(Types)).
   
   Parameter WF_respectful:
-    forall S, WellFormed S ->
-         forall sigma n, TypeSchemeOf n sigma -> TypeOf n (Apply S sigma).
+    forall S, forall sigma n, TypeSchemeOf n sigma -> TypeOf n (Apply (take S) sigma).
 
   Fixpoint intersectContexts {n} (ctxts: t Context n): Context :=
     fun c =>
@@ -610,11 +610,11 @@ Module Type DisjointCombinatoryLogic
     Qed.
 
     Lemma TypeOf_singular_context:
-      forall S c (singular_context: numberOfContexts = 1) (WF_S: WellFormed S),
-        TypeOf (rew <- singular_context in F1) (Apply S (Gamma c)).
+      forall S c (singular_context: numberOfContexts = 1),
+        TypeOf (rew <- singular_context in F1) (Apply (take S) (Gamma c)).
     Proof.
       unfold Gamma.
-      intros S c singular_context WF_S.
+      intros S c singular_context.
       revert contextsWF.
       revert singular_context contexts.
       generalize TypeSchemeOf TypeOf WF_respectful.
@@ -636,8 +636,7 @@ Module Type DisjointCombinatoryLogic
           intro contextsWF.
           simpl.
           apply (WF_respectful).
-          * assumption.
-          * apply (contextsWF F1 c).
+          apply (contextsWF F1 c).
         + inversion n_eq.
     Qed.
 
@@ -683,11 +682,10 @@ Module Type DisjointCombinatoryLogic
     Qed.
 
     Lemma Combinator_path_types:
-      forall c S, WellFormed S ->
-             Forall (fun path => exists n, TypeOf n path)
-                    (projT2 (factorize (organize (Apply S (Gamma c))))).
+      forall c S, Forall (fun path => exists n, TypeOf n path)
+                    (projT2 (factorize (organize (Apply (take S) (Gamma c))))).
     Proof.
-      intros c S WFS.
+      intros c S.
       unfold Gamma.
       rewrite Apply_Distrib.
       rewrite factorize_organize_intersect.
@@ -701,7 +699,7 @@ Module Type DisjointCombinatoryLogic
       rewrite (nth_map _ _ _ _ eq_refl).
       apply organize_typeOf.
       rewrite (nth_map _ _ _ _ eq_refl).
-      apply WF_respectful; [ assumption | ].
+      apply WF_respectful.
       apply contextsWF.
     Qed.
 
@@ -792,15 +790,13 @@ Module Type DisjointCombinatoryLogic
         destruct dec_l; destruct dec_r;
           solve [ left; split; assumption
                 | right; assumption ].
-    Qed.           
-    
+    Qed.   
     
     Lemma Combinator_path_typesOfn:
-      forall c n S, WellFormed S ->
-               Forall (fun path => TypeOf n path -> CL (nth contexts n) (Symbol c) path)
-                      (projT2 (factorize (organize (Apply S (Gamma c))))).
+      forall c n S, Forall (fun path => TypeOf n path -> CL (nth contexts n) (Symbol c) path)
+                      (projT2 (factorize (organize (Apply (take S) (Gamma c))))).
     Proof.
-      intros c n S WFS.
+      intros c n S.
       unfold Gamma.
       rewrite Apply_Distrib.
       rewrite (factorize_organize_intersect numberOfContexts).
@@ -811,8 +807,8 @@ Module Type DisjointCombinatoryLogic
       intro n_factor.          
       eapply CL_ST; [ apply CL_Var; eassumption | ].
       assert (nk_eq: n = k \/
-                     Omega (nth (projT2 (factorize (organize (Apply S (nth contexts k c))))) k')).
-      { assert (k_assumption : TypeOf k (Apply S (nth contexts k c))).
+                     Omega (nth (projT2 (factorize (organize (Apply (take S) (nth contexts k c))))) k')).
+      { assert (k_assumption : TypeOf k (Apply (take S) (nth contexts k c))).
         { apply WF_respectful; auto. }
         generalize (Forall_nth _ _
                                (factorize_typeOf _ _ (organize_typeOf _ _ k_assumption))
@@ -827,7 +823,7 @@ Module Type DisjointCombinatoryLogic
         apply ST_intersect_nth.
       + rewrite <- (Omega_sound _ c_omega).
         apply ST_OmegaTop.
-    Qed.        
+    Qed.
     
     Lemma split_path_typeOf_snd: forall sigma n k prf,
         TypeOf n sigma -> TypeOf n (snd (split_path sigma k prf)).
@@ -869,7 +865,6 @@ Module Type DisjointCombinatoryLogic
 
     Lemma Exist_path_unapply:
       forall S M N sigma,
-        WellFormed S ->
         Exists
           (fun path : IntersectionType =>
              Path path /\
@@ -877,7 +872,7 @@ Module Type DisjointCombinatoryLogic
                  Forall2 (CL Gamma) (argumentsOf (App M N))
                          (fst (split_path path (argumentCount (App M N)) argCountPrf)) /\
                  snd (split_path path (argumentCount (App M N)) argCountPrf) <= sigma))
-          (projT2 (factorize (organize (Apply S (Gamma (rootOf (App M N))))))) ->
+          (projT2 (factorize (organize (Apply (take S) (Gamma (rootOf (App M N))))))) ->
         Exists 
           (fun path : IntersectionType =>
              Path path /\
@@ -887,11 +882,11 @@ Module Type DisjointCombinatoryLogic
                                    (snd (split_path path (argumentCount (App M N)) argCountPrf))) /\
                  CL Gamma N (last (fst (split_path path (argumentCount (App M N)) argCountPrf))) /\
                  snd (split_path path (argumentCount (App M N)) argCountPrf) <= sigma))
-          (projT2 (factorize (organize (Apply S (Gamma (rootOf (App M N))))))).
+          (projT2 (factorize (organize (Apply (take S) (Gamma (rootOf (App M N))))))).
     Proof.
-      intros S M N sigma WF_S ex_prf.
+      intros S M N sigma ex_prf.
       assert (root_prf : CL Gamma (Symbol (rootOf (App M N)))
-                            (intersect (projT2 (factorize (organize (Apply S (Gamma (rootOf (App M N))))))))).
+                            (intersect (projT2 (factorize (organize (Apply (take S) (Gamma (rootOf (App M N))))))))).
       { rewrite <- (factorize_organized _ (organize_organized _)).
         eapply CL_ST; [ | apply ST_organize_ge ].
         apply CL_Var; assumption. }
@@ -945,8 +940,7 @@ Module Type DisjointCombinatoryLogic
           - simpl; rewrite (ST_InterMeetRight); reflexivity. }
         auto.
     Qed.
-    
-    
+        
     Lemma CL_ContextSeparation_sound:
       forall M sigma,
         CL Gamma M sigma ->
@@ -955,9 +949,9 @@ Module Type DisjointCombinatoryLogic
     Proof.
       intro M.
       intros sigma prf.
-      assert (existsS : exists S, WellFormed S).
+      assert (existsS : inhabited WellFormed).
       { induction prf; try solve [ assumption ].
-        eexists; eassumption. }
+        constructor; assumption. }
       revert sigma prf.
       induction M as [ c | M IHM N IHN ].
       - intros sigma prf n n_sigma.
@@ -968,15 +962,15 @@ Module Type DisjointCombinatoryLogic
         intro types_of.
         generalize (organized_path_factors _ (organize_organized sigma)).
         intro organized_xs.
-        induction path_prfs as [ | ? ? ? [ S [ WF_S ex_prf ] ] ].
+        induction path_prfs as [ | ? ? ? [ S ex_prf ] ].
         + apply Forall_nil.
-        + generalize (Combinator_path_typesOfn (rootOf (Symbol c)) n S WF_S).
+        + generalize (Combinator_path_typesOfn (rootOf (Symbol c)) n S).
           intro paths_inhabited.            
           inversion types_of as [ | ? ? ? type_of_hd types_of_tl n_eq [ hd_eq tl_eq ] ] .
           dependent rewrite tl_eq in types_of_tl.
           apply Forall_cons; [ | auto ].
           clear types_of_tl n_eq hd_eq tl_eq types_of.
-          generalize (Combinator_path_types (rootOf (Symbol c)) S WF_S).
+          generalize (Combinator_path_types (rootOf (Symbol c)) S).
           intro path_types.              
           induction ex_prf
             as [ ? path ? [ path_path [ argCountPrf [ _  tgt_le ] ] ]
@@ -1013,16 +1007,16 @@ Module Type DisjointCombinatoryLogic
         intro types_of.
         generalize (organized_path_factors _ (organize_organized sigma)).
         intro organized_xs.
-        induction path_prfs as [ | ? ? ? [ S [ WF_S ex_prf ] ] ].
+        induction path_prfs as [ | ? ? ? [ S ex_prf ] ].
         + apply Forall_nil.
         + inversion types_of as [ | ? ? ? type_of_hd types_of_tl n_eq [ hd_eq tl_eq ] ] .
           dependent rewrite tl_eq in types_of_tl.
           apply Forall_cons; [ | auto ].
           clear types_of_tl n_eq hd_eq tl_eq types_of. 
-          generalize (Exist_path_unapply _ _ _ _ WF_S ex_prf).
+          generalize (Exist_path_unapply _ _ _ _ ex_prf).
           intro ex_prf'.
           clear ex_prf.
-          generalize (Combinator_path_types (rootOf (App M N)) S WF_S).
+          generalize (Combinator_path_types (rootOf (App M N)) S).
           intro path_types.
           induction ex_prf'
             as [ ? path ? [ path_path [ argCountPrf [ Mprf [ Nprf tgt_le ] ] ] ]
@@ -1069,7 +1063,7 @@ Module Type DisjointCombinatoryLogic
         unfold Gamma.
         rewrite Apply_Distrib.
         etransitivity; [ apply (ST_intersect_nth _ n) | ].
-        rewrite (nth_map (fun ctxt => Apply S (ctxt c)) contexts _ n eq_refl).
+        rewrite (nth_map (fun ctxt => Apply (take S) (ctxt c)) contexts _ n eq_refl).
         reflexivity.
       - eapply CL_MP; eassumption.
       - eapply CL_II; eassumption.
@@ -1077,4 +1071,3 @@ Module Type DisjointCombinatoryLogic
     Qed.
   End CombinedContext.
 End DisjointCombinatoryLogic.        
-        

@@ -12,20 +12,15 @@ Require Import ComputationalPathLemma.
 Require Import VarianceLabeledTree.
 Require Import Cantor.
 Require Import VectorQuantification.
-
-Module Type FiniteCountableSignatureSpec <: SignatureSpec.
-  Include SignatureSpec.
-  Declare Instance ClosedSortsCountable: Countable (Sort EmptySet).
-  Declare Instance Vars_finite: Finite Var.
-  Parameter OpenSortsInhabited: Sort Var.
-End FiniteCountableSignatureSpec.
+Require Import FunctionSpace.
 
 Module Type SortConstructorCLSignature(SigSpec: FiniteCountableSignatureSpec) <: CompatibleCLSignature.
-  Definition Sort: Set -> Set := SigSpec.Sort.
+  Definition Sort: Set -> Type := SigSpec.Sort.
   Definition Var: Set := SigSpec.Var.
-  Definition Operation: Set := SigSpec.Operation.
-  Definition WellFormed: (Var -> Sort EmptySet) -> Prop := SigSpec.WellFormed.
+  Definition Operation: Type := SigSpec.Operation.
+  Definition WellFormed: Type := SigSpec.WellFormed.
   Instance SigSpec: SignatureSpecification Sort Var Operation := SigSpec.SigSpec.
+  Instance WellFormedSpace: FunctionSpace WellFormed Var (Sort EmptySet) := SigSpec.WellFormedSpace.
   
   Definition ConstructorSymbol := (unit + Sort EmptySet)%type.
   Definition VariableSymbol := Var.
@@ -141,11 +136,12 @@ End CountableClosedSortSignatureSpec.
 
 Module Type FiniteCountableFromCountableClosedSortSignatureSpec
        (SigSpec: CountableClosedSortSignatureSpec) <: FiniteCountableSignatureSpec.
-  Definition Sort: Set -> Set := SigSpec.Sort.
+  Definition Sort: Set -> Type := SigSpec.Sort.
   Definition Var: Set := SigSpec.Var.
-  Definition Operation: Set := SigSpec.Operation.
-  Definition WellFormed: (Var -> Sort EmptySet) -> Prop := SigSpec.WellFormed.
+  Definition Operation: Type := SigSpec.Operation.
+  Definition WellFormed: Type := SigSpec.WellFormed.
   Instance SigSpec: SignatureSpecification Sort Var Operation := SigSpec.SigSpec.
+  Instance WellFormedSpace: FunctionSpace WellFormed Var (Sort EmptySet) := SigSpec.WellFormedSpace.
   Instance ClosedSortsCountable: Countable (Sort EmptySet) := SigSpec.ClosedSortsCountable.
   Instance Vars_finite: Finite Var :=
     {| cardinality := 0;
@@ -163,7 +159,8 @@ Module Type FiniteCountableFromCountableClosedSortSignatureSpec
                         | eq_refl => I
                         end
                     end eq_refl;
-       fromToFin_id := fun devil => False_rect _ devil |}.
+       fromToFin_id := fun devil => False_rect _ devil;
+       toFromFin_id := fun devil => Fin.case0 _ devil |}.
   Definition OpenSortsInhabited: Sort Var := fromNat 0.
 End FiniteCountableFromCountableClosedSortSignatureSpec.
 
@@ -277,43 +274,25 @@ Module Type ConstantFiniteWellFormedPredicate
        (Import MakeSignature: MakeClosedSortCLSignature(SigSpec))
        (Import Types: IntersectionTypes(MakeSignature.Signature))
 <: FiniteWellFormedPredicate(MakeSignature.Signature)(Types)
-<: DecidableWellFormedPredicate(MakeSignature.Signature)(Types).
-  Definition WellFormed: Substitution -> Prop := fun S => forall alpha, S alpha = omega.
-  Definition SubstitutionSpace : Set := unit.
-  Definition SubstitutionSpace_sound: SubstitutionSpace -> { S : Substitution | WellFormed S } :=
-    fun _ => exist _ (fun _ => omega) (fun alpha => eq_refl).
-  Definition SubstitutionSpace_complete: { S : Substitution | WellFormed S } -> SubstitutionSpace :=
-    fun _ => tt.
-  Lemma SubstitutionSpace_eq:
-    forall WFS alpha, proj1_sig (SubstitutionSpace_sound (SubstitutionSpace_complete WFS)) alpha =
-                 proj1_sig WFS alpha.
-  Proof.
-    intros WFS alpha; simpl.
-    rewrite (proj2_sig WFS alpha).
-    reflexivity.
-  Qed.
-  Instance SubstitutionSpace_finite: Finite SubstitutionSpace :=
+<: CountableWellFormedPredicate(MakeSignature.Signature)(Types).
+  Definition WellFormed: Type := unit.
+  Instance WellFormedSpace: FunctionSpace WellFormed SigSpec.Var IntersectionType := ConstantSpace _ _ omega.
+  Instance SubstitutionSpace_finite: Finite WellFormed :=
     {| cardinality := 1;
        toFin := fun _ => Fin.F1;
        fromFin := fun _ => tt;
-       fromToFin_id := fun x => match x with | tt => eq_refl end |}.
-  Lemma WF_dec: forall S, { WellFormed S } + { ~ WellFormed S }.
-  Proof.
-    intro S; left; intro alpha.
-    contradiction.
-  Qed.
-
-  Lemma WF_ext: forall S S', (forall alpha, S alpha = S' alpha) -> WellFormed S -> WellFormed S'.
-  Proof.
-    intros S S' S_eq WF_S.
-    intro alpha.
-    rewrite <- (S_eq alpha).
-    apply WF_S.
-  Qed.
-   
+       fromToFin_id := fun x => match x with | tt => eq_refl end;
+       toFromFin_id := fun x => match x as x' in Fin.t (S n) return n = 0 ->  Fin.F1 = x' with
+                             | Fin.F1 => fun devil => eq_refl
+                             | Fin.FS x => fun devil => Fin.case0 (fun _ => Fin.F1 = Fin.FS x) (eq_rect _ _ x _ devil)
+                             end eq_refl |}.
+  Instance SubstitutionSpace_nonEmpty : NonEmptyFinite WellFormed :=
+    {| IsFinite := SubstitutionSpace_finite;
+       cardinality_nonempty :=
+         fun devil => eq_rect cardinality (fun (x: nat) => match x with | 1 => True | _ => False end) I _ devil |}.
+  Instance SubstitutionSpace_countable: Countable WellFormed :=
+    @CountableFromFinite WellFormed SubstitutionSpace_nonEmpty.
 End ConstantFiniteWellFormedPredicate.                  
-
-
 
 (* Trees *)
 Module Type TreeSpec.
@@ -325,8 +304,9 @@ Module Type TreeSpec.
   Declare Instance LOrder_pre: PreOrder LOrder.
   
   Parameter Operation: Set.
-  Parameter WellFormed: (Var -> VLTree Label EmptySet) -> Prop.
+  Parameter WellFormed: Type.
   Declare Instance Sigma: Signature (VLTree Label) Var Operation.
+  Declare Instance WellFormedSpace: FunctionSpace WellFormed Var (VLTree Label EmptySet).
 
   Parameter Var_eq_dec:  forall (alpha beta: Var), { alpha = beta } + { alpha <> beta }.
   Parameter Label_eq_dec: forall (l1 l2: Label), { l1 = l2 } + { l1 <> l2 }.
@@ -342,9 +322,11 @@ Module Type TreeSignatureSpec(Import Trees: TreeSpec) <: FiniteCountableSignatur
   Definition Sort: Set -> Set := VLTree Label.
   Definition Var: Set := Trees.Var.
   Definition Operation: Set := Trees.Operation.
-  Definition WellFormed: (Var -> Sort EmptySet) -> Prop := Trees.WellFormed.
+  Definition WellFormed: Type := Trees.WellFormed.
+  Instance WellFormedSpace: FunctionSpace WellFormed Var (VLTree Label EmptySet) := Trees.WellFormedSpace.
   Instance TreeSubst: CanSubst (VLTree Label) :=
-    {| applySubst := fun _ f t => substitute f t |}.
+    {| applySubst := fun _ f t => substitute f t;
+       applySubst_ext := fun Var => @substitute_ext _ Var EmptySet Info |}.
   Definition TreeSubsorts: Sort EmptySet -> Sort EmptySet -> Prop :=
     VLTreeOrder Trees.Label LOrder.
   Instance SigSpec: SignatureSpecification Sort Var Operation :=
@@ -358,7 +340,7 @@ Module Type TreeSignatureSpec(Import Trees: TreeSpec) <: FiniteCountableSignatur
   Instance ClosedSortsCountable: Countable (Sort EmptySet) :=
     {| toNat := VLTreeToNat _ toNat;
        fromNat := natToVLTree _ fromNat (proj1_sig GroundLabel) (proj2_sig GroundLabel);
-       fromTo_id := natVLTree_inj toNat fromNat (proj1_sig GroundLabel) (proj2_sig GroundLabel) fromTo_id |}.       
+       fromTo_id := natVLTree_inj toNat fromNat (proj1_sig GroundLabel) (proj2_sig GroundLabel) fromTo_id |}.
   Instance Vars_finite: Finite Var := Trees.Vars_finite.
   Definition OpenSortsInhabited: Sort Var :=
     substitute (fun devil => False_rect _ devil) (fromNat 0).
@@ -370,8 +352,9 @@ Module Type TreeSortCLSignature
   Definition Sort: Set -> Set := SigSpec.Sort.
   Definition Var: Set := SigSpec.Var.
   Definition Operation: Set := SigSpec.Operation.
-  Definition WellFormed: (Var -> Sort EmptySet) -> Prop := SigSpec.WellFormed.
+  Definition WellFormed: Type := SigSpec.WellFormed.
   Instance SigSpec: SignatureSpecification Sort Var Operation := SigSpec.SigSpec.
+  Instance WellFormedSpace: FunctionSpace WellFormed Var (VLTree Trees.Label EmptySet) := Trees.WellFormedSpace.
 
   Inductive CtorSym : Set := BB | Dot | Label: Trees.Label -> CtorSym.
   

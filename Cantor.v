@@ -4,30 +4,33 @@ Require Import Coq.NArith.NArith.
 Require Import Coq.NArith.Nnat.
 Require Import Coq.NArith.Ndigits.
 Require Import Coq.Vectors.Vector.
+Require Import Coq.Classes.RelationClasses.
+Require Import Coq.Arith.Compare_dec.
 Require Import VectorQuantification.
 Require Import Coq.Logic.Eqdep_dec.
 
 Import EqNotations.
 
-Class Countable (A: Set) : Set :=
+Class Countable (A: Type) : Type :=
   { toNat : A -> nat;
     fromNat : nat -> A;
     fromTo_id : forall x, fromNat (toNat x) = x }.
 
-Class Finite (A : Set) : Set :=
+Class Finite (A : Type) : Type :=
   { cardinality : nat;
     toFin : A -> Fin.t cardinality;
     fromFin : Fin.t cardinality -> A;
-    fromToFin_id : forall x, fromFin (toFin x) = x }.
+    fromToFin_id : forall x, fromFin (toFin x) = x;
+    toFromFin_id : forall x, toFin (fromFin x) = x }.
 
-Class NonEmptyFinite (A: Set): Set :=
+Class NonEmptyFinite (A: Type): Type :=
   { IsFinite :> Finite A;
     cardinality_nonempty: cardinality = 0 -> False }.
 
-Definition toNatFromToFin {A: Set} {card: nat} (toFin: A -> Fin.t card): A -> nat :=
+Definition toNatFromToFin {A: Type} {card: nat} (toFin: A -> Fin.t card): A -> nat :=
   fun x => proj1_sig (Fin.to_nat (toFin x)).
 
-Definition fromNatFromFromFin {A: Set} {card: nat} (fromFin: Fin.t card -> A) (not_empty: card = 0 -> False): nat -> A:=
+Definition fromNatFromFromFin {A: Type} {card: nat} (fromFin: Fin.t card -> A) (not_empty: card = 0 -> False): nat -> A:=
   fun n =>
     match lt_dec n card with
     | left ltprf => fromFin (Fin.of_nat_lt ltprf)
@@ -39,7 +42,7 @@ Definition fromNatFromFromFin {A: Set} {card: nat} (fromFin: Fin.t card -> A) (n
     end.
 
 Lemma fromTo_of_FromFin:
-  forall {A: Set} {card: nat} (toFin: A -> Fin.t card) (fromFin: Fin.t card -> A)
+  forall {A: Type} {card: nat} (toFin: A -> Fin.t card) (fromFin: Fin.t card -> A)
     (not_empty: card = 0 -> False)
     (fromToFin_id : forall x, fromFin (toFin x) = x) x,
     fromNatFromFromFin fromFin not_empty (toNatFromToFin toFin x) = x.
@@ -486,14 +489,14 @@ Proof.
   reflexivity.
 Qed.
 
-Definition vectToNat {A: Set} (toNat: A -> nat) {n: nat} (xs: t A n): nat :=
+Definition vectToNat {A: Type} (toNat: A -> nat) {n: nat} (xs: t A n): nat :=
   (fix vectToNat_rec (n: nat) (xs: t A n): nat :=
      match xs with
      | nil _ => 0
      | cons _ x n xs => cantor_pair (toNat x) (vectToNat_rec _ xs)
      end) _ xs.
 
-Definition vectFromNat {A: Set} (fromNat: nat -> A) (m: nat) (n: nat): t A m :=
+Definition vectFromNat {A: Type} (fromNat: nat -> A) (m: nat) (n: nat): t A m :=
   (fix vectFromNat_rec m n: t A m :=
      match m with
      | 0 => nil _
@@ -502,7 +505,7 @@ Definition vectFromNat {A: Set} (fromNat: nat -> A) (m: nat) (n: nat): t A m :=
      end) m n.
 
 Lemma vect_inj:
-  forall (A: Set) n (xs: t A n) (fromNat: nat -> A) (toNat: A -> nat)
+  forall (A: Type) n (xs: t A n) (fromNat: nat -> A) (toNat: A -> nat)
     (IH: Forall (fun x => fromNat (toNat x) = x) xs),
     vectFromNat fromNat n (vectToNat toNat xs) = xs.
 Proof.
@@ -517,4 +520,280 @@ Proof.
     rewrite prf.
     apply f_equal.
     apply IH.
+Defined.
+
+Definition listToNat {A: Type} (toNat: A -> nat) (xs: list A): nat :=
+  cantor_pair (length xs) (vectToNat toNat (of_list xs)).
+
+Definition listFromNat {A: Type} (fromNat: nat -> A) (n : nat): list A :=
+  to_list (vectFromNat fromNat (fst (cantor_pair_inv n)) (snd (cantor_pair_inv n))).
+
+Lemma listToNat_inj:
+  forall (A: Type) (xs: list A) (fromNat: nat -> A) (toNat: A -> nat)
+    (IH: List.Forall (fun x => fromNat (toNat x) = x) xs),
+    listFromNat fromNat (listToNat toNat xs) = xs.
+Proof.
+  intros A xs fromNat toNat prfs.
+  unfold listFromNat.
+  unfold listToNat.
+  rewrite <- cantor_pair_inj.
+  simpl fst.
+  simpl snd.
+  rewrite (vect_inj A _ _ fromNat toNat (ListForall_Forall _ prfs)).
+  rewrite to_list_of_list_opp.
+  reflexivity.
 Qed.
+
+Lemma n_add_sub_le_lt: forall n k j, n < k + j -> n >= k -> n - k < j.
+Proof.
+  intros n k j n_lt n_ge.
+  rewrite Nat.add_comm in n_lt.
+  destruct (Nat.lt_trichotomy (n - k) j) as [ | [ nk_eq | nk_gt ] ]; [ assumption | | ].
+  - rewrite <- nk_eq in n_lt.
+    rewrite (Nat.sub_add _ _ n_ge) in n_lt.
+    assert False; [ | contradiction ].
+    apply (Nat.nle_succ_diag_l n).
+    exact n_lt.
+  - generalize (proj2 (Nat.lt_add_lt_sub_r _ _ _) nk_gt).
+    intro n_gt.
+    assert False; [| contradiction].
+    apply (@asymmetry nat lt (StrictOrder_Asymmetric Nat.lt_strorder) (j + k) n); assumption.
+Qed.      
+
+Definition toFin_union {A B: Type} `{finA: Finite A} `{finB: Finite B} (x: A + B):
+  Fin.t ((@cardinality A finA) + (@cardinality B finB)) :=
+  match x with
+  | inl a => Fin.L _ (toFin a)
+  | inr b => Fin.R _ (toFin b)
+  end.
+
+Definition fromFin_union {A B: Type} `{finA: Finite A} `{finB: Finite B}
+           (x: Fin.t ((@cardinality A finA) + (@cardinality B finB))): A + B :=
+  match le_lt_dec (@cardinality A finA) (proj1_sig (Fin.to_nat x)) with
+  | right n_lt => inl (fromFin (Fin.of_nat_lt n_lt))
+  | left n_gte => inr (fromFin (Fin.of_nat_lt (n_add_sub_le_lt _ _ _ (proj2_sig (Fin.to_nat x)) n_gte)))
+  end.
+
+Lemma fromToFin_union_id {A B: Type} `{finA: Finite A} `{finB: Finite B}:
+  forall (x: A + B), fromFin_union (toFin_union x) = x.
+Proof.
+  intro x.
+  destruct x as [ a | b ].
+  - simpl.
+    generalize (Fin.L_sanity (@cardinality B finB) (toFin a)).
+    intro l_sane.
+    unfold fromFin_union.
+    match goal with
+    |[|- match ?x with | _ => _ end = _ ] =>
+     destruct x as [ n_gte | n_lt ]
+    end.
+    + assert False; [ | contradiction ].
+      rewrite l_sane in n_gte.
+      generalize (proj2_sig (Fin.to_nat (toFin a))).
+      intro devil.
+      apply (@irreflexivity nat lt _ _ (Nat.lt_le_trans _ _ _ devil n_gte)).
+    + revert n_lt.
+      rewrite l_sane.
+      intro n_lt.
+      rewrite (Fin.of_nat_ext n_lt (proj2_sig (Fin.to_nat (toFin a)))).
+      rewrite (Fin.of_nat_to_nat_inv).
+      rewrite (fromToFin_id a).
+      reflexivity.
+  - simpl.
+    generalize (Fin.R_sanity (@cardinality A finA) (toFin b)).
+    intro r_sane.
+    unfold fromFin_union.
+    match goal with
+    |[|- match ?x with | _ => _ end = _ ] =>
+     destruct x as [ n_gte | n_lt ]
+    end.
+    + match goal with
+      |[|- context [ n_add_sub_le_lt ?a ?b ?c ?d ?e] ] =>
+       generalize (n_add_sub_le_lt a b c d e)
+      end.
+      revert n_gte.
+      rewrite r_sane.
+      intro n_gte.
+      rewrite Nat.add_comm.
+      rewrite (Nat.add_sub).
+      intro prf.
+      rewrite (Fin.of_nat_ext prf (proj2_sig (Fin.to_nat (toFin b)))).
+      rewrite (Fin.of_nat_to_nat_inv (toFin b)).
+      rewrite (fromToFin_id b).
+      reflexivity.
+    + assert False; [ | contradiction ].
+      rewrite r_sane in n_lt.
+      generalize (Nat.le_lt_trans _ _ _ (Nat.le_add_r _ _) n_lt).
+      intro devil.
+      apply (@irreflexivity nat lt _ _ devil).
+Qed.
+
+Lemma toFromFin_union_id  {A B: Type} `{finA: Finite A} `{finB: Finite B}:
+  forall (x: Fin.t ((@cardinality A finA) + (@cardinality B finB))), toFin_union (fromFin_union x) = x.
+Proof.
+  intro x.
+  unfold fromFin_union.
+  remember (Fin.to_nat x) as xnat eqn:xnat_eq.
+  destruct (le_lt_dec (@cardinality A finA) (proj1_sig xnat)).
+  - unfold toFin_union.
+    rewrite (toFromFin_id).
+    apply (Fin.to_nat_inj).
+    rewrite (Fin.R_sanity).
+    rewrite (Fin.to_nat_of_nat _).
+    simpl.
+    rewrite Nat.add_comm.
+    rewrite (Nat.sub_add); [| assumption ].
+    rewrite xnat_eq.
+    reflexivity.
+  - unfold toFin_union.
+    apply (Fin.to_nat_inj).
+    rewrite (Fin.L_sanity).
+    rewrite (toFromFin_id).
+    rewrite (Fin.to_nat_of_nat).
+    simpl.
+    rewrite xnat_eq.
+    reflexivity.
+Qed.      
+
+Instance FiniteUnion (A B: Type) `(finA: Finite A) `(finB: Finite B): Finite (A + B) :=
+  { cardinality := (@cardinality A finA) + (@cardinality B finB);
+    toFin := toFin_union;
+    fromFin := fromFin_union;
+    fromToFin_id := fromToFin_union_id;
+    toFromFin_id := toFromFin_union_id }.
+
+Definition toFin_product {A B: Type} `{finA: Finite A} `{finB: Finite B} (x: A * B):
+  Fin.t ((@cardinality A finA) * (@cardinality B finB)) :=
+  Fin.depair (toFin (fst x)) (toFin (snd x)).
+
+Definition fromFin_product {A B: Type} `{finA: Finite A} `{finB: Finite B}
+           (x: Fin.t ((@cardinality A finA) * (@cardinality B finB))): A * B :=
+  (@fromFin A finA (@Fin.of_nat_lt
+                      (Nat.div (proj1_sig (Fin.to_nat x)) (@cardinality B finB))
+                      (@cardinality A finA)
+                      (Nat.div_lt_upper_bound _ (@cardinality B finB) _
+                                              (fun eq => Fin.case0 (fun _ => False)
+                                                                (rew [Fin.t] Nat.mul_0_r _ in
+                                                                    rew [fun x => Fin.t (_ * x)] eq in x))
+                                              (rew [fun x => _ < x] Nat.mul_comm _ _ in proj2_sig (Fin.to_nat x)))),
+   @fromFin B finB (@Fin.of_nat_lt
+                      (Nat.modulo (proj1_sig (Fin.to_nat x)) (@cardinality B finB))
+                      (@cardinality B finB)
+                      (Nat.mod_upper_bound _ _
+                                           (fun eq => Fin.case0 (fun _ => False)
+                                                             (rew [Fin.t] Nat.mul_0_r _ in
+                                                                 rew [fun x => Fin.t (_ * x)] eq in x))))).
+
+Lemma fromToFin_product_id {A B: Type} `{finA: Finite A} `{finB: Finite B}:
+  forall (x: A * B), fromFin_product (toFin_product x) = x.
+Proof.
+  intro x.
+  unfold fromFin_product.
+  match goal with
+  |[|- (fromFin (Fin.of_nat_lt ?p1), fromFin (Fin.of_nat_lt ?p2)) = _] =>
+   generalize p1 p2
+  end.
+  unfold toFin_product.
+  rewrite Fin.depair_sanity.
+  rewrite (Nat.mul_comm).
+  rewrite (Nat.add_comm).
+  rewrite (Nat.mod_add).
+  - rewrite (Nat.mod_small _ _ (proj2_sig (Fin.to_nat _))).
+    rewrite (Nat.div_add).
+    + rewrite (Nat.div_small _ _ (proj2_sig (Fin.to_nat _))).
+      simpl.
+      do 2 (intro eq;
+            rewrite (Fin.of_nat_ext eq (proj2_sig (Fin.to_nat _)));
+            clear eq;
+            rewrite (Fin.of_nat_to_nat_inv);
+            rewrite fromToFin_id
+           ).
+      destruct x; reflexivity.
+    + intro eq.
+      apply Fin.case0.
+      rewrite <- eq.
+      apply (toFin (snd x)).
+  - intro eq.
+    apply Fin.case0.
+    rewrite <- eq.
+    apply (toFin (snd x)).
+Qed.
+
+Lemma toFromFin_product_id  {A B: Type} `{finA: Finite A} `{finB: Finite B}:
+  forall (x: Fin.t ((@cardinality A finA) * (@cardinality B finB))), toFin_product (fromFin_product x) = x.
+Proof.
+  intro x.
+  unfold toFin_product.
+  apply (Fin.to_nat_inj).
+  rewrite (Fin.depair_sanity).
+  unfold fromFin_product.
+  simpl.
+  repeat (rewrite (toFromFin_id); rewrite (Fin.to_nat_of_nat)).
+  simpl.
+  rewrite (Nat.mod_eq).
+  - rewrite (Nat.add_comm).
+    rewrite (Nat.sub_add).
+    + reflexivity.
+    + apply (Nat.mul_div_le).
+      intro eq.
+      apply (Fin.case0).
+      rewrite eq in x.
+      rewrite (Nat.mul_0_r _) in x.
+      exact x.
+  - intro eq.
+    apply (Fin.case0).
+    rewrite eq in x.
+    rewrite (Nat.mul_0_r _) in x.
+    exact x.
+Qed.
+
+Instance FiniteProduct (A B: Type) `(finA: Finite A) `(finB: Finite B): Finite (A * B) :=
+  { cardinality := (@cardinality A finA) * (@cardinality B finB);
+    toFin := toFin_product;
+    fromFin := fromFin_product;
+    fromToFin_id := fromToFin_product_id;
+    toFromFin_id := toFromFin_product_id }.
+
+
+Lemma fromToFin_bijection_id {A B: Type} `{finA: Finite A}
+      (f : A -> B) (g : B -> A) (fg_eq: forall x, f (g x) = x):
+  forall x, f (fromFin (toFin (g x))) = x.
+Proof.
+  intro x.
+  rewrite (fromToFin_id (g x)).
+  exact (fg_eq x).
+Qed.
+
+Lemma toFromFin_bijection_id {A B: Type} `{finA: Finite A}
+      (f : A -> B) (g : B -> A) (gf_eq: forall x, g (f x) = x):
+  forall x, toFin (g (f (fromFin x))) = x.
+Proof.
+  intro x.
+  rewrite (gf_eq (fromFin x)).
+  exact (toFromFin_id x).
+Qed. 
+
+Instance FiniteBijection (A B: Type) `(finA: Finite A)
+         (f : A -> B) (g : B -> A) (fg_eq: forall x, f (g x) = x) (gf_eq: forall x, g (f x) = x): Finite B :=
+  { cardinality := @cardinality A finA;
+    toFin x := toFin (g x);
+    fromFin x := f (fromFin x);
+    fromToFin_id := fromToFin_bijection_id f g fg_eq;
+    toFromFin_id := toFromFin_bijection_id f g gf_eq }.
+
+Instance FinFinite (n: nat): Finite (Fin.t n) :=
+  { cardinality := n;
+    toFin x := x;
+    fromFin x := x;
+    fromToFin_id x := eq_refl;
+    toFromFin_id x := eq_refl }.
+
+Instance UnitFinite: Finite unit :=
+  { cardinality := 1;
+    toFin x := Fin.F1;
+    fromFin x := tt;
+    fromToFin_id x := match x with | tt => eq_refl end;
+    toFromFin_id x := match x as x' in Fin.t (S n') return n' = 0 -> @Fin.F1 n'  = x' with
+                      | Fin.F1 => fun _ => eq_refl
+                      | Fin.FS n => fun devil => False_rect _ (Fin.case0 (fun _ => False)  (rew devil in n))
+                      end eq_refl }.
