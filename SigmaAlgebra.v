@@ -49,12 +49,22 @@ Module Type SignatureSpec.
   Declare Instance SigSpec: SignatureSpecification Sort Var Operation.
 End SignatureSpec.
 
-Module Type FiniteCountableSignatureSpec <: SignatureSpec.
+Module Type FiniteVarsCountableSortSignatureSpec <: SignatureSpec.
   Include SignatureSpec.
   Declare Instance ClosedSortsCountable: Countable (Sort EmptySet).
   Declare Instance Vars_finite: Finite Var.
   Parameter OpenSortsInhabited: Sort Var.
-End FiniteCountableSignatureSpec.
+End FiniteVarsCountableSortSignatureSpec.
+
+Module Type CountableWellFormedSpaceSignature(Import Spec: SignatureSpec).
+  Declare Instance WellFormedSpace_countable: Countable WellFormed.
+End CountableWellFormedSpaceSignature.
+
+Module Type NonEmptyFiniteWellFormedSpaceSignature(Import Spec: SignatureSpec)
+  <: CountableWellFormedSpaceSignature(Spec).
+  Include CountableWellFormedSpaceSignature(Spec).
+  Declare Instance WellFormedSpace_finite: NonEmptyFinite WellFormed.
+End NonEmptyFiniteWellFormedSpaceSignature.
 
 Module Type Algebraic(Import SigSpec: SignatureSpec).
   Section WithCarrier.

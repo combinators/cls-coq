@@ -1317,6 +1317,10 @@ Module Type MiniMLBoxTreeSpec(Ops: MiniMLBoxOpsSpec) <: TreeSpec.
   Definition WellFormed := WellFormed Ops.Terms Ops.Proofs.
   Instance WellFormedSpace: FunctionSpace WellFormed SigVar (VLTree TyConstr EmptySet) :=
     WellFormedSpace Ops.Terms Ops.Proofs.
+  Instance WellFormedSpace_finite: NonEmptyFinite WellFormed :=
+    WellFormedSpace_finite _ _.
+  Instance WellFormedSpace_countable: Countable WellFormed :=
+    @CountableFromFinite _ WellFormedSpace_finite.
   Instance Sigma : SigmaAlgebra.Signature (VLTree Label) Var Operation :=
     Signature Ops.Terms Ops.Proofs.
 
@@ -1330,9 +1334,18 @@ Module Type MiniMLBoxTreeSpec(Ops: MiniMLBoxOpsSpec) <: TreeSpec.
     exist _ (TC_Nat) (@eq_refl _ 0).
 End MiniMLBoxTreeSpec.
 
+Module Type NonEmptyFiniteWellFormedSpaceMiniMLSignature
+       (Import Ops: MiniMLBoxOpsSpec)
+       (Import TreeSpec: MiniMLBoxTreeSpec(Ops))
+       (Import SigSpec: TreeSignatureSpec(TreeSpec)) <: NonEmptyFiniteWellFormedSpaceSignature(SigSpec).
+  Instance WellFormedSpace_finite: NonEmptyFinite WellFormed := TreeSpec.WellFormedSpace_finite.
+  Instance WellFormedSpace_countable: Countable WellFormed := TreeSpec.WellFormedSpace_countable.
+End NonEmptyFiniteWellFormedSpaceMiniMLSignature.
+
 Module Type MkMiniMLBoxSigSpec(Ops: MiniMLBoxOpsSpec).
   Declare Module TreeSpec: MiniMLBoxTreeSpec(Ops).
   Declare Module MkCLSig: MakeTreeSortCLSignature(TreeSpec).
+  Declare Module WFFiniteSig: NonEmptyFiniteWellFormedSpaceMiniMLSignature(Ops)(TreeSpec)(MkCLSig.SigSpec).
 End MkMiniMLBoxSigSpec.
 
 Module Type MiniMLBoxAlgebra

@@ -14,7 +14,7 @@ Require Import Cantor.
 Require Import VectorQuantification.
 Require Import FunctionSpace.
 
-Module Type SortConstructorCLSignature(SigSpec: FiniteCountableSignatureSpec) <: CompatibleCLSignature.
+Module Type SortConstructorCLSignature(SigSpec: FiniteVarsCountableSortSignatureSpec) <: CompatibleCLSignature.
   Definition Sort: Set -> Type := SigSpec.Sort.
   Definition Var: Set := SigSpec.Var.
   Definition Operation: Type := SigSpec.Operation.
@@ -135,7 +135,7 @@ Module Type CountableClosedSortSignatureSpec.
 End CountableClosedSortSignatureSpec.
 
 Module Type FiniteCountableFromCountableClosedSortSignatureSpec
-       (SigSpec: CountableClosedSortSignatureSpec) <: FiniteCountableSignatureSpec.
+       (SigSpec: CountableClosedSortSignatureSpec) <: FiniteVarsCountableSortSignatureSpec.
   Definition Sort: Set -> Type := SigSpec.Sort.
   Definition Var: Set := SigSpec.Var.
   Definition Operation: Type := SigSpec.Operation.
@@ -318,7 +318,7 @@ Module Type TreeSpec.
 End TreeSpec.
 
 
-Module Type TreeSignatureSpec(Import Trees: TreeSpec) <: FiniteCountableSignatureSpec.
+Module Type TreeSignatureSpec(Import Trees: TreeSpec) <: FiniteVarsCountableSortSignatureSpec.
   Definition Sort: Set -> Set := VLTree Label.
   Definition Var: Set := Trees.Var.
   Definition Operation: Set := Trees.Operation.
