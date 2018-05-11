@@ -137,7 +137,7 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
       unfold F_eq.
       split.
       - reflexivity.
-      - destruct x as [ op arity dom args tgt_le ].
+      - destruct x as [ op wf args tgt_le ].
         simpl.
         induction (domain op) as [ | ? ? ? IH ].
         + exact I.
@@ -346,7 +346,7 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
   Lemma FixF_alg_coalg: forall s f, FixF_coalg s (FixF_alg s f) = f.
   Proof.
     intros s f.
-    destruct f as [ op subst wf_subst args subsort ].
+    destruct f as [ op wf_subst args tgt_le ].
     simpl.
     assert (args_eq: forall s S n argSorts args,
                FixF_args_to_F_args s S n argSorts (F_args_to_FixF_args s S n argSorts args) = args).
@@ -367,7 +367,7 @@ Module Type Algebraic(Import SigSpec: SignatureSpec).
   Lemma FixF_coalg_alg: forall s c, FixF_alg s (FixF_coalg s c) = c.
   Proof.
     intros s c.
-    destruct c as [ op subst wf_subst args subsort ].
+    destruct c as [ op wf_subst args tgt_le ].
     unfold FixF_alg.
     simpl.
     assert (args_eq: forall s S n argSorts args,

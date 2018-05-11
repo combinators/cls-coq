@@ -874,7 +874,7 @@ Module Type CombinatoryLogicWithFiniteSubstitutionSpace
         rewrite (ST_organize_le tau) in devil'.
         apply not_omega_tau.
         eapply Omega_complete; [ eassumption | exact I ]. }
-      induction prf' as [ | n path paths path_prf paths_prfs IH n_eq [ path_eq paths_eq ] ].
+      induction prf' as [ | n path paths path_prf paths_prfs IH ].
       - contradiction (factors_not_empty eq_refl).
       - destruct n. 
         + destruct path_prf as [ S ex_prf ].

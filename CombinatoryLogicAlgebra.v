@@ -727,7 +727,7 @@ Module Type CombinatoryLogicAlgebra
   Proof.
     intros s f.
     unfold CL_Algebra.
-    destruct f as [ op subst wf args tgt_le ].
+    destruct f as [ op wf args tgt_le ].
     simpl.
     rewrite (applyAllRoot).
     reflexivity.
@@ -739,7 +739,7 @@ Module Type CombinatoryLogicAlgebra
   Proof.
     intros s f.
     unfold CL_Algebra.
-    destruct f as [ op subst wf args tgt_le ].
+    destruct f as [ op wf args tgt_le ].
     simpl.
     rewrite (applyAllArgumentCount).
     simpl.
@@ -752,7 +752,7 @@ Module Type CombinatoryLogicAlgebra
            rew <- (CL_Algebra_argCount s f) in ProjectTerms _ _ _ (args _ _ f).
   Proof.
     intros s f.
-    destruct f as [ op subst wf args tgt_le ].       
+    destruct f as [ op wf args tgt_le ].       
     simpl.
     rewrite (applyAllArguments).
     simpl.
@@ -830,7 +830,7 @@ Module Type CombinatoryLogicAlgebra
     assert (op_eq:
               op Carrier s f =
               op Carrier s (CL_CoAlgebra CL_dec s (CL_Algebra s f))).
-    { destruct f as [ op subst WF_subst args tgt_le ].
+    { destruct f as [ op WF_subst args tgt_le ].
       rewrite (CL_CoAlgebra_op CL_dec).
       rewrite <- CL_Algebra_op.
       reflexivity. }

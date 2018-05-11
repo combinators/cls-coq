@@ -2026,7 +2026,7 @@ Module Type IntersectionTypes(Import TySig: TypeSignature).
     - dependent rewrite <- args1_eq.
       clear CF_C args1_eq args'.
       intro CF_C'.
-      induction CF_C' as [ C2 args2 arity_eq2 C_tax2 args_le2 tau_eq2 | | ].
+      induction CF_C' as [ C2 args2 arity_eq2 C_tax2 args_le2 | | ].
       + apply (CF_Const _ _ _ _ (eq_trans arity_eq1 arity_eq2)).
         { transitivity C'; assumption. }
         { apply (nth_Forall2).
@@ -3453,7 +3453,7 @@ Module Type IntersectionTypes(Import TySig: TypeSignature).
     revert org_sigma_le.
     generalize (organized_path_factors _ (organize_organized tau)).
     induction (organize tau)
-      as [ | ? ? _ _ | ? ? _ _ | l r ] using IntersectionType_rect'.
+      as [ | ? ? _ | ? ? _ _ | l r ] using IntersectionType_rect'.
     - intros; apply Forall_nil.
     - intros path_C org_sigma_le.
       apply Forall_cons; [ | apply Forall_nil].
@@ -3942,7 +3942,7 @@ Module Type IntersectionTypes(Import TySig: TypeSignature).
         generalize (constructorArity C).
         intros n args.
         generalize 0.
-        induction args as [ | n arg args IH ? ].
+        induction args as [ | n arg args IH ].
         * reflexivity.
         * intro s.
           simpl.
