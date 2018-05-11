@@ -16,7 +16,6 @@ Require Import VectorQuantification.
 Require Import CombinatoryLogic.
 Require Import IntersectionTypes.
 Require Import CombinatoryTerm.
-Require Import ConstructiveExtensionalEpsilon.
 Require Import Cantor.
 
 Import EqNotations.
