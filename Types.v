@@ -1,6 +1,6 @@
 Require Import PeanoNat.
 Require Import Coq.Arith.Wf_nat.
-From mathcomp Require Import all_ssreflect ssreflect.div.
+From mathcomp Require Import all_ssreflect.
 
 Set Bullet Behavior "Strict Subproofs".
 
@@ -2691,6 +2691,32 @@ Section SubtypeMachineSpec.
         apply: subty__sound.
     Qed.
 
+    Definition checkSubtypes (A B: @IT Constructor): bool :=
+      if subtype_machine [ subty A of B] is exist (Return true) _ then true else false.
+
+    Lemma subtypeMachineP: forall A B, reflect [bcd A <= B] (checkSubtypes A B).
+    Proof.
+      move => A B.
+      rewrite /checkSubtypes.
+      move: (subtype_machine_correct A B).
+      case (subtype_machine [subty A of B]) => result prf.
+      move: (inv_subtyp_return prf) => result__eq.
+      move: prf.
+      rewrite result__eq.
+      move: result__eq => _.
+      case result => //=.
+      + case.
+        * move => /subty__sound prf _.
+            by apply: ReflectT.
+        * move => _ disprf.
+          apply: ReflectF.
+          move => /disprf prf.
+            by discriminate prf.
+      +  move => _ _ disprf.
+         apply: ReflectF.
+         move => /disprf prf.
+           by discriminate prf.
+    Qed.
   End BCDRules.
 
   Section Runtime.
@@ -3138,12 +3164,927 @@ Section SubtypeMachineSpec.
   End Runtime.
 End SubtypeMachineSpec.
 
+Section SubtypeMachineInversion.
+  Variable Constructor: ctor.
+
+  Definition SubtypeMachine_inv {p: @Instruction Constructor} {r: @Result Constructor} (prf: p ~~> r) :=
+    let diag p r : Prop :=
+        match p, r with
+        | [subty A of Omega], Return true =>
+          forall (X: @Instruction Constructor -> @Result Constructor -> Prop),
+            X [subty A of Omega] (Return true) ->
+            X [subty A of Omega] (Return true)
+
+        | [subty A of Ctor b B], Return r =>
+          forall (X: @Instruction Constructor -> @Result Constructor -> Prop),
+            (forall r', [subty (\bigcap_(A__i <- cast (Ctor b B) A) A__i) of B] ~~> Return r' ->
+                   X [subty A of Ctor b B] (Return (~~nilp (cast (Ctor b B) A) && r'))) ->
+            X [subty A of Ctor b B] (Return r)
+        | [subty A of B1 -> B2], Return r =>
+          forall (X: @Instruction Constructor -> @Result Constructor -> Prop),
+            (forall Delta r',
+                [tgt_for_srcs_gte B1 in cast (B1 -> B2) A] ~~> [check_tgt Delta] ->
+                [subty (\bigcap_(A__i <- Delta) A__i) of B2] ~~> Return r' ->
+                X [subty A of B1 -> B2] (Return (isOmega B2 || r'))) ->
+            X [subty A of B1 -> B2] (Return r)
+        | [tgt_for_srcs_gte B in [:: A & Delta ]], [check_tgt Delta'] =>
+          forall (X: @Instruction Constructor -> @Result Constructor -> Prop),
+            (forall Delta' r,
+                [subty B of A.1] ~~> Return r ->
+                [tgt_for_srcs_gte B in Delta] ~~> [check_tgt Delta'] ->
+                X [tgt_for_srcs_gte B in [:: A & Delta ]] [check_tgt if r then [:: A.2 & Delta'] else Delta' ]) ->
+            X [tgt_for_srcs_gte B in [:: A & Delta ]] [check_tgt Delta']
+        | [tgt_for_srcs_gte B in [::]], [check_tgt [::]] =>
+          forall (X: @Instruction Constructor -> @Result Constructor -> Prop),
+            X [tgt_for_srcs_gte B in [::]] [check_tgt [::]] ->
+            X [tgt_for_srcs_gte B in [::]] [check_tgt [::]]
+        | [subty A of B1 \times B2], Return r =>
+          forall (X: @Instruction Constructor -> @Result Constructor -> Prop),
+            (forall r1 r2,
+               [subty (\bigcap_(A__i <- cast (B1 \times B2) A) A__i.1) of B1] ~~> Return r1 ->
+               [subty (\bigcap_(A__i <- cast (B1 \times B2) A) A__i.2) of B2] ~~> Return r2 ->
+               X [subty A of B1 \times B2] (Return (~~nilp (cast (B1 \times B2) A) && r1 && r2))) ->
+            X [subty A of B1 \times B2] (Return r)
+        | [subty A of B1 \cap B2], Return r =>
+          forall (X: @Instruction Constructor -> @Result Constructor -> Prop),
+            (forall r1 r2,
+                [subty A of B1] ~~> Return r1 ->
+                [subty A of B2] ~~> Return r2 ->
+                X [subty A of B1 \cap B2] (Return (r1 && r2))) ->
+            X [subty A of B1 \cap B2] (Return r)
+        | _, _ => False
+        end in
+    match prf in p' ~~> r' return diag p' r' with
+    | step__Omega A => fun X k => k
+    | step__Ctor A b B r prf => fun X k => k r prf
+    | step__Arr A B1 B2 Delta r prf1 prf2 => fun X k => k Delta r prf1 prf2
+    | step__chooseTgt B A Delta Delta' r prf1 prf2 => fun X k => k Delta' r prf1 prf2
+    | step__doneTgt B => fun X k => k
+    | step__Prod A B1 B2 r1 r2 prf1 prf2 => fun X k => k r1 r2 prf1 prf2
+    | step__Inter A B1 B2 r1 r2 prf1 prf2 => fun X k => k r1 r2 prf1 prf2
+    end.
+
+End SubtypeMachineInversion.
+
+Section PrimalityDefinitions.
+  Variable Constructor: ctor.
+
+  Inductive PrimeComponent: @IT Constructor -> Prop :=
+  | PrimeComponent__omega: PrimeComponent Omega
+  | PrimeComponent__Ctor: forall c A, PrimeComponent A -> PrimeComponent (Ctor c A)
+  | PrimeComponent__ProductL: forall A, PrimeComponent A -> PrimeComponent (A \times Omega)
+  | PrimeComponent__ProductR: forall A, PrimeComponent A -> PrimeComponent (Omega \times A)
+  | PrimeComponent__Arr: forall A B, PrimeComponent B -> PrimeComponent (A -> B).
+
+  Fixpoint isPrimeComponent (A: @IT Constructor): bool :=
+    match A with
+    | Omega => true
+    | Ctor _ A => isPrimeComponent A
+    | Omega \times A => isPrimeComponent A
+    | A \times Omega => isPrimeComponent A
+    | _ -> B => isPrimeComponent B
+    | _ => false
+    end. 
+
+End PrimalityDefinitions.
+
+Arguments PrimeComponent [Constructor].
+Arguments PrimeComponent__omega [Constructor].
+Arguments PrimeComponent__Ctor [Constructor] c [A].
+Arguments PrimeComponent__ProductL [Constructor] [A].
+Arguments PrimeComponent__ProductR [Constructor] [A].
+Arguments PrimeComponent__Arr [Constructor] [A B].
+Arguments isPrimeComponent [Constructor].
+Hint Constructors PrimeComponent.
+Hint Resolve PrimeComponent__omega.
+
+Section PrimalityLemmas.
+  Variable Constructor: ctor.
+
+  Definition PrimeComponent_inv {A: @IT Constructor} (pc: PrimeComponent A) :=
+    let diag (A: @IT Constructor): Prop :=
+        match A return Prop with
+        | Omega => forall (X: @IT Constructor -> Prop), X Omega -> X Omega
+        | Ctor c A => forall (X: IT -> Prop), (PrimeComponent A -> X (Ctor c A)) -> X (Ctor c A)
+        | A \times B =>
+          forall (X: @IT Constructor -> Prop),
+            (PrimeComponent A -> X (A \times Omega)) ->
+            (PrimeComponent B -> X (Omega \times B)) ->
+            X (A \times B)
+        | A -> B => forall (X: IT -> Prop), (PrimeComponent B -> X (A -> B)) -> X (A -> B)
+        | _ => False
+        end in
+    match pc in PrimeComponent A' return diag A' with
+    | PrimeComponent__omega => fun X k => k
+    | PrimeComponent__Ctor c A prf => fun X k => k prf
+    | PrimeComponent__ProductL A prf => fun X k1 k2 => k1 prf
+    | PrimeComponent__ProductR A prf => fun X k1 k2 => k2 prf
+    | PrimeComponent__Arr A B prf => fun X k => k prf
+    end.
+
+  Lemma isPrimeComponentSound: forall (A: @IT Constructor), isPrimeComponent A -> PrimeComponent A.
+  Proof.
+    elim => //; last 1 [ idtac  ] || by auto.
+    move => A prime__A B prime__B.
+    move: prime__A prime__B.
+    case: A; case B => //; auto.
+  Qed.
+
+  Lemma isPrimeComponentComplete: forall (A: @IT Constructor), PrimeComponent A -> isPrimeComponent A.
+  Proof.
+    elim => //.
+    - move => c A IH /PrimeComponent_inv prime__A.
+      apply prime__A => //.
+    - move => ? _ B IH /PrimeComponent_inv prime__B.
+      eapply prime__B => //.
+    - move => A IH__A B IH__B /PrimeComponent_inv prf.
+      have: (A = Omega /\ isPrimeComponent B) \/
+            (B = Omega /\ isPrimeComponent A).
+      
+      { apply: (prf (fun C => match C with
+                           | (A \times B) =>
+                             (A = Omega /\ isPrimeComponent B) \/
+                             (B = Omega /\ isPrimeComponent A)
+                           | _ => True
+                           end)); by move => ?; tauto. }
+      case.
+      + by move => [] -> // ->.
+      + move => [] -> //= ->.
+          by move: A IH__A prf => [].
+    - by move => ? ? ? ? /PrimeComponent_inv.
+  Qed.    
+
+  Lemma isPrimeComponentP: forall (A: @IT Constructor), reflect (PrimeComponent A) (isPrimeComponent A).
+  Proof.
+    move => A.
+    apply: (equivP (P := isPrimeComponent A));
+      first by apply: idP.
+    split.
+    - by apply: isPrimeComponentSound.
+    - by apply: isPrimeComponentComplete.
+  Qed.
+
+  Lemma primeComponentPrimeSubty:
+    forall (A B C: @IT Constructor),
+      [subty (A \cap B) of C ] ~~> Return true ->
+      PrimeComponent C ->
+      [subty A of C ] ~~> Return true \/ [subty B of C ] ~~> Return true.
+  Proof.
+    move => A B C prf /isPrimeComponentP.
+    move: A B prf.
+    elim: C.
+    - by move => *; left; auto.
+    - move => c C IH A B /SubtypeMachine_inv prf /= prime__C.
+      apply: (prf (fun (p: @Instruction Constructor)  (r: @Result Constructor) =>
+                     match p, r return Prop with
+                     | [ subty A \cap B of Ctor c C], (Return true) =>
+                       [ subty A of Ctor c C] ~~> Return true \/ [ subty B of Ctor c C] ~~> Return true
+                     | _, _ => True
+                     end)).
+      move => []; last by rewrite andbF.
+      move canCast: (~~ nilp (cast (Ctor c C) (A \cap B))) => [] //=.
+      move: canCast.
+      rewrite (cast_inter _ A B (Ctor c C) isT).
+      rewrite /nilp size_cat -lt0n addn_gt0.
+      move /orP.
+      rewrite lt0n lt0n.
+      move => [] canCast
+                /subty__sound /(BCD__Trans _ (bcd_bigcap_cat _ _ _)) /subty_complete /IH /(fun f => f prime__C)
+                [].
+      + by move => /step__Ctor; rewrite canCast; move => *; left.
+      + move canCast__B: (nilp (cast (Ctor c C) B)) => [].
+        * rewrite (nilP canCast__B) /=.
+          move => omega__C.
+          left.
+          rewrite -(andbT true) -[X in X && _]canCast.
+          apply: step__Ctor.
+            by apply: (subty__trans _ _ Omega).
+        * by move => /step__Ctor; rewrite canCast__B; move => *; right.
+      + move canCast__A: (nilp (cast (Ctor c C) A)) => [].
+        * rewrite (nilP canCast__A) /=.
+          move => omega__C.
+          right.
+          rewrite -(andbT true) -[X in X && _]canCast.
+          apply: step__Ctor.
+            by apply: (subty__trans _ _ Omega).
+        * by move => /step__Ctor; rewrite canCast__A; move => *; left.
+      + by move => /step__Ctor; rewrite canCast; move => *; right.
+    - move => C1 IH__C1 C2 IH__C2 A B /SubtypeMachine_inv prf /= prime__C.
+      apply: (prf (fun (p: @Instruction Constructor)  (r: @Result Constructor) =>
+                     match p, r return Prop with
+                     | [ subty A \cap B of C1 -> C2], (Return true) =>
+                       [ subty A of C1 -> C2] ~~> Return true \/ [ subty B of C1 -> C2] ~~> Return true
+                     | _, _ => True
+                     end)).
+      move isOmega__C2: (isOmega C2) => [] //=; first by move => *; left; apply: subty__Omega.
+      move => Delta [] //.
+      move: (subtype_machine _ [ tgt_for_srcs_gte C1 in cast (C1 -> C2) A] ).
+      move => [] [ ? | Delta1 ];
+               first move => /SubtypeMachine_inv;
+               move castA__eq: (cast (C1 -> C2) A) => Delta__A; first by case Delta__A.
+      move: (subtype_machine _ [ tgt_for_srcs_gte C1 in cast (C1 -> C2) B] ).
+      move => [] [ ? | Delta2 ];
+               first move => /SubtypeMachine_inv;
+               move castB__eq: (cast (C1 -> C2) B) => Delta__B; first by case Delta__B.
+      move: (cast_inter _ A B (C1 -> C2)).
+      rewrite /isOmega -/(isOmega C2) isOmega__C2 /(~~ false).
+      move => /(fun f => f isT) -> prf__Delta2 prf__Delta1.
+      move: (split_tgts_for_srcs_gte _ _ _ _ _ _ prf__Delta1 prf__Delta2).
+      rewrite castA__eq castB__eq.
+      move => prf__Delta12 prf__Delta.
+      move: (Semantics_functional _ _ _ _ prf__Delta prf__Delta12) => [] Delta__eq.
+      rewrite Delta__eq.
+      move => /subty__sound /(BCD__Trans _ (bcd_bigcap_cat _ _ _)) /subty_complete.
+      move => /IH__C2 /(fun f => f prime__C) [].
+      + move: castA__eq prf__Delta1 => <-.
+        move => /step__Arr mkR /mkR.
+        rewrite isOmega__C2 //=.
+          by left.
+      + move: castB__eq prf__Delta2 => <-.
+        move => /step__Arr mkR /mkR.
+        rewrite isOmega__C2 //=.
+          by right.
+    - move => C1 IH__C1 C2 IH__C2 A B /SubtypeMachine_inv prf /isPrimeComponentP /PrimeComponent_inv prime__C.
+      move: prf (prf (fun (p: @Instruction Constructor)  (r: @Result Constructor) =>
+                        match p, r return Prop with
+                        | [ subty A \cap B of C1 \times C2], (Return true) =>
+                          [ subty A of C1 \times C2] ~~> Return true \/
+                          [ subty B of C1 \times C2] ~~> Return true
+                        | _, _ => True
+                        end)) => _.
+      apply: (prime__C
+                (fun ty =>
+                   match ty with
+                   | C1 \times C2 =>
+                     forall _ : (forall _ : (forall r1 r2 : bool,
+                          [ subty \bigcap_(A__i <- cast (C1 \times C2) (A \cap B)) A__i.1 of C1] ~~> Return r1 ->
+                          [ subty \bigcap_(A__i <- cast (C1 \times C2) (A \cap B)) A__i.2 of C2] ~~> Return r2 ->
+                          if ~~ nilp (cast (C1 \times C2) (A \cap B)) && r1 && r2
+                          then [ subty A of C1 \times C2] ~~> Return true \/ [ subty B of C1 \times C2] ~~> Return true
+                          else True),
+                      [ subty A of C1 \times C2] ~~> Return true \/
+                      [ subty B of C1 \times C2] ~~> Return true),
+                       ([ subty A of C1 \times C2] ~~> Return true \/
+                        [ subty B of C1 \times C2] ~~> Return true)%type
+                   | _ => True
+                   end)).
+      + move => prime__C1 k.
+        apply: k.
+        do 2 (move => []; last by rewrite andbF).
+        do 2 rewrite andbT.
+        rewrite (cast_inter _ _ _ (C1 \times Omega) isT).
+        case canCast: (~~ nilp (cast (C1 \times Omega) A ++ cast (C1 \times Omega) B)) => [] //.
+        move => /subty__sound /(BCD__Trans _ (bcd_bigcap_cat_f _ _ _ _ _)) /subty_complete /IH__C1
+                /(fun f => f (isPrimeComponentComplete _ prime__C1)) [] prf _.
+        * move: canCast.
+          rewrite /nilp size_cat -lt0n addn_gt0.
+           move /orP.
+           rewrite lt0n lt0n.
+           move => canCast.
+           move canCast__A: (~~(nilp (cast (C1 \times Omega) A))) => [].
+          ** left.
+             rewrite -(andbT true) -(andbT (true && true)).
+             rewrite -[X in X && _ && _ ]canCast__A.
+               by apply step__Prod.
+          ** right.
+             move: canCast.
+             rewrite -/(nilp (cast (C1 \times Omega) A)) canCast__A.
+             move => /orP //= canCast__B.
+             rewrite -(andbT true) -(andbT (true && true)).
+             rewrite -[X in X && _ && _ ]canCast__B.
+             apply step__Prod => //.
+             move: canCast__A prf.
+             rewrite /nilp.
+             move => /negbFE /eqP cannotCast__A.    
+             rewrite (size0nil cannotCast__A) /=.
+               by apply: subty__trans.
+        * move: canCast.
+          rewrite /nilp size_cat -lt0n addn_gt0.
+           move /orP.
+           rewrite lt0n lt0n.
+           move => canCast.
+           move canCast__B: (~~(nilp (cast (C1 \times Omega) B))) => [].
+          ** right.
+             rewrite -(andbT true) -(andbT (true && true)).
+             rewrite -[X in X && _ && _ ]canCast__B.
+               by apply step__Prod.
+          ** left.
+             move: canCast.
+             rewrite -/(nilp (cast (C1 \times Omega) B)) canCast__B.
+             move => /orP //= canCast__A.
+             rewrite -(andbT true) -(andbT (true && true)).
+             rewrite -[X in X && _ && _ ]canCast__A orbF.
+             apply step__Prod => //.
+             move: canCast__B prf.
+             rewrite /nilp.
+             move => /negbFE /eqP cannotCast__B.
+             rewrite (size0nil cannotCast__B) /=.
+               by apply: subty__trans.
+      + move => prime__C2 k.
+        apply: k.
+        do 2 (move => []; last by rewrite andbF).
+        do 2 rewrite andbT.
+        rewrite (cast_inter _ _ _ (Omega \times C2) isT).
+        case canCast: (~~ nilp (cast (Omega \times C2) A ++ cast (Omega \times C2) B)) => [] //.
+        move => _ /subty__sound /(BCD__Trans _ (bcd_bigcap_cat_f _ _ _ _ _)) /subty_complete /IH__C2
+                /(fun f => f (isPrimeComponentComplete _ prime__C2)) [] prf.
+        * move: canCast.
+          rewrite /nilp size_cat -lt0n addn_gt0.
+           move /orP.
+           rewrite lt0n lt0n.
+           move => canCast.
+           move canCast__A: (~~(nilp (cast (Omega \times C2) A))) => [].
+          ** left.
+             rewrite -(andbT true) -(andbT (true && true)).
+             rewrite -[X in X && _ && _ ]canCast__A.
+               by apply step__Prod.
+          ** right.
+             move: canCast.
+             rewrite -/(nilp (cast (Omega \times C2) A)) canCast__A.
+             move => /orP //= canCast__B.
+             rewrite -(andbT true) -(andbT (true && true)).
+             rewrite -[X in X && _ && _ ]canCast__B.
+             apply step__Prod => //.
+             move: canCast__A prf.
+             rewrite /nilp.
+             move => /negbFE /eqP cannotCast__A.    
+             rewrite (size0nil cannotCast__A) /=.
+               by apply: subty__trans.
+        * move: canCast.
+          rewrite /nilp size_cat -lt0n addn_gt0.
+           move /orP.
+           rewrite lt0n lt0n.
+           move => canCast.
+           move canCast__B: (~~(nilp (cast (Omega \times C2) B))) => [].
+          ** right.
+             rewrite -(andbT true) -(andbT (true && true)).
+             rewrite -[X in X && _ && _ ]canCast__B.
+               by apply step__Prod.
+          ** left.
+             move: canCast.
+             rewrite -/(nilp (cast (Omega \times C2) B)) canCast__B.
+             move => /orP //= canCast__A.
+             rewrite -(andbT true) -(andbT (true && true)).
+             rewrite -[X in X && _ && _ ]canCast__A orbF.
+             apply step__Prod => //.
+             move: canCast__B prf.
+             rewrite /nilp.
+             move => /negbFE /eqP cannotCast__B.
+             rewrite (size0nil cannotCast__B) /=.
+               by apply: subty__trans.
+    - done.
+  Qed.
+
+  Lemma primeComponentPrime:
+    forall (A B C: @IT Constructor),
+      [bcd (A \cap B) <= C] ->
+      PrimeComponent C ->
+      [bcd A <= C] \/ [bcd B <= C].
+  Proof.
+    move => A B C /subty_complete prf prime__C.
+    case: (primeComponentPrimeSubty A B C prf prime__C).
+    - by left; apply: subty__sound.
+    - by right; apply: subty__sound.
+  Qed.
+
+  Fixpoint addAndFilter
+           (Delta: seq (@IT Constructor))
+           (A: @IT Constructor) :=
+    match Delta with
+    | [::] => [:: A]
+    | [:: B & Delta] =>
+      if checkSubtypes _ B A
+      then [:: B & Delta]
+      else
+        if checkSubtypes _ A B
+        then addAndFilter Delta A
+        else [:: B & addAndFilter Delta A]
+    end.
+
+  Fixpoint primeFactors_rec
+           (A: @IT Constructor)
+           (contextualize: @IT Constructor -> @IT Constructor)
+           (Delta: seq (@IT Constructor)): seq (@IT Constructor) :=
+    match A with
+    | Omega =>
+      let P := contextualize Omega in
+      if isOmega P then Delta else addAndFilter Delta P
+    | Ctor a A => primeFactors_rec A (fun B => contextualize (Ctor a B)) Delta
+    | A1 -> A2 => primeFactors_rec A2 (fun B => contextualize (A1 -> B)) Delta
+    | A1 \times A2 =>
+      primeFactors_rec A2 (fun B => contextualize (Omega \times B))
+                       (primeFactors_rec A1 (fun B => contextualize (B \times Omega)) Delta)
+    | A1 \cap A2 =>
+      primeFactors_rec A2 contextualize
+                       (primeFactors_rec A1 contextualize Delta)
+    end.
+
+  Lemma addAndFilterLeq__A: forall A Delta, has (fun B => checkSubtypes _ B A) (addAndFilter Delta A).
+  Proof.
+    move => A.
+    elim => //=.
+    - rewrite orbF.
+        by apply /subtypeMachineP.
+    - move => B Delta IH.
+      move check__BA: (checkSubtypes _ B A) => [] //=.
+      + by rewrite check__BA.
+      + case: (checkSubtypes _ A B) => //=.
+          by rewrite IH orbT.
+  Qed.
+
+  Lemma addAndFilterLeq__DeltaA: forall C A Delta,
+      has (fun B => checkSubtypes _ B C) (addAndFilter Delta A) <->
+      has (fun B => checkSubtypes _ B C) Delta \/ checkSubtypes _ A C.
+  Proof.
+    move => C A.
+    elim => //=.
+    - rewrite orbF.
+      split; first by move => ->; right.
+        by move => [] //.
+    - move => B Delta IH.
+      move le__BA: (checkSubtypes _ B A) => [] //=.
+      + split; first by move => ?; left.
+        move => [] //.
+          by move: le__BA => /subtypeMachineP /(BCD__Trans) mkPrf /subtypeMachineP /mkPrf /subtypeMachineP ->.
+      + move le__AB: (checkSubtypes _ A B) => [] //=.
+        * split.
+          ** move => /IH [] ->; last by right.
+               by rewrite orbT; left.
+          ** move => [].
+             *** move => /orP [].
+                 **** move => /subtypeMachineP le__BC.
+                      apply: sub_has; last by apply: addAndFilterLeq__A.
+                      move: le__AB.
+                        by move => /subtypeMachineP le__AB D /subtypeMachineP /(BCD__Trans)
+                                   /(fun f => f le__AB) /(BCD__Trans) /(fun f => f le__BC) /subtypeMachineP.
+                 **** move => /(or_introl) prf.
+                        by move: ((proj2 IH) (prf _)).
+             *** move => /or_intror prf.
+                   by move: ((proj2 IH) (prf _)).
+        * split.
+          ** move => /orP []; first by move => ->; left.
+             move => /IH [] ->; last by right.
+               by rewrite orbT; left.
+          ** case.
+             *** move => /orP []; first by move => -> //=.
+                 move => /or_introl prf.
+                 move: ((proj2 IH) (prf _)) => ->.
+                   by rewrite orbT.
+             *** move => /or_intror prf.
+                 move: ((proj2 IH) (prf _)) => ->.
+                   by rewrite orbT.
+    Qed.
+  
+
+
+  Lemma has_subseq:
+    forall {a: eqType} P (Delta Delta': seq a),
+      subseq Delta Delta' -> has P Delta -> has P Delta'.
+  Proof.
+    move => a P Delta Delta' /mem_subseq shift_in /hasP [] x /shift_in inprf prf.
+    apply /hasP.
+      by exists x.
+  Qed.
+
+  Lemma addAndFilter_has_le_weaken:
+    forall A B Delta' Delta,
+      subseq Delta Delta' ->
+      has (fun D => checkSubtypes _ D B) (addAndFilter Delta A) ->
+      has (fun D => checkSubtypes _ D B) (addAndFilter Delta' A).
+  Proof.
+    move => A B.
+    elim.
+    - move => Delta.
+      rewrite subseq0.
+        by move => /eqP ->.
+    - move => C Delta' IH /=.
+      case => //=.
+      + move => _ le__AB.
+        move: (IH [::] (sub0seq Delta') le__AB) => prf.
+        move le__CA: (checkSubtypes _ C A) => [].
+        * apply /orP; left.
+          apply /subtypeMachineP.
+          apply: (BCD__Trans A); apply /subtypeMachineP => //.
+            by rewrite orbF in le__AB.
+        * case: (checkSubtypes _ A C) => //=.
+            by rewrite prf orbT.
+      + move => C'.
+        case eq__CC': (C' == C) => [].
+        * move => Delta subseq__DeltaDelta'.
+          rewrite (eqP eq__CC').
+          case: (checkSubtypes _ A C).
+          ** case: (checkSubtypes _ C A); last by apply: IH.
+             apply: has_subseq.
+               by apply: (cat_subseq (subseq_refl [:: C])).
+          ** case: (checkSubtypes _ C A).
+             *** apply: has_subseq.
+                   by apply: (cat_subseq (subseq_refl [:: C])).
+             *** move => //= /orP []; first by move => ->.
+                 move => /(IH _ subseq__DeltaDelta') ->.
+                   by rewrite orbT.
+        * move => Delta.
+          move => /IH mkPrf /mkPrf.
+          case le__CA: (checkSubtypes Constructor C A).
+          ** move => /addAndFilterLeq__DeltaA [] //=; first by move ->; rewrite orbT.
+               by move: le__CA => /subtypeMachineP /(BCD__Trans) mkPrf' /subtypeMachineP
+                                /mkPrf' /subtypeMachineP ->.
+          ** case (checkSubtypes _ A C) => //= ->.
+               by rewrite orbT.
+  Qed.
+
+  Lemma addAndFilterLeq__Delta:
+    forall A Delta, all (fun B => has (fun C => checkSubtypes _ C B) (addAndFilter Delta A)) Delta .
+  Proof.
+    move => A.
+    elim.
+    - done.
+    - move => B Delta IH.
+      rewrite /all -/(all _ Delta).
+      apply /andP.
+      split.
+      + apply /addAndFilterLeq__DeltaA.
+        left => //=.
+          by move: (@BCD__Refl _ B) => /subtypeMachineP ->.
+      + apply: sub_all; last by apply: IH.
+        move => C prf.
+        apply: addAndFilter_has_le_weaken; last by exact prf.
+          by apply: subseq_cons.
+  Qed.
+
+  Lemma addAndFilter_in:
+    forall B A Delta, B \in addAndFilter Delta A -> B = A \/ B \in Delta.
+  Proof.
+    move => B A.
+    elim.
+    - rewrite (mem_seq1 B A) => /eqP ?; by left.
+    - move => C Delta IH //=.
+      case (checkSubtypes _ C A); first by move => ?; right.
+      case (checkSubtypes _ A C).
+      + move => /IH.
+        rewrite in_cons.
+        move => [] ->; first by left.
+          by rewrite orbT; right.
+      + rewrite in_cons in_cons.
+        move => /orP []; first by move => ->; right.
+        move => /IH [] ->; first by left.
+          by rewrite orbT; right.
+  Qed.
+
+  Lemma bigcap_has_le: forall (A: @IT Constructor) Delta,
+      has (fun B => checkSubtypes _ B A) Delta ->
+      [bcd (\bigcap_(A__i <- Delta) A__i) <= A].
+  Proof.
+    move => A.
+    elim => //= B Delta IH /orP [].
+    - move: IH => _ /subtypeMachineP.
+      case: Delta => //=.
+      move => ? ? le__BA.
+        by apply: BCD__Trans; first by apply: BCD__Lub1.
+    - move => /IH.
+      move: IH => _.
+      case: Delta.
+      + by move => /(BCD__Trans _ (@BCD__omega _ B)).
+      + move => *.
+          by apply: BCD__Trans; first by apply: BCD__Lub2.
+  Qed.   
+
+  Lemma addAndFilter_monotonic: forall A Delta,
+      [bcd (\bigcap_(A__i <- addAndFilter Delta A) A__i) <= \bigcap_(A__i <- Delta) A__i].
+  Proof.
+    move => A Delta.
+    move: (addAndFilterLeq__Delta A Delta).
+    elim: Delta => //= B Delta IH /andP [].
+    move le__BA: (checkSubtypes _ B A) => [] //=.
+    move le__AB: (checkSubtypes _ A B) => [].
+    - move => prf__B /IH.
+      move: IH prf__B => _.
+      case: Delta.
+      + by move => /andP [] /subtypeMachineP prf__B _ _ //=.
+      + move => ? ? /bigcap_has_le *.
+          by apply: BCD__Glb.
+    - move => _ _.
+      move: (addAndFilterLeq__Delta A Delta) => /IH.
+      move: IH => _.
+      case: Delta; first by rewrite //=.
+      move => B2 Delta prf.
+      apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: B] _).
+      apply: BCD__Glb.
+      * apply: BCD__Lub1.
+      * by apply: BCD__Trans; first by apply: BCD__Lub2.
+  Qed.
+
+  Lemma primeFactors_prime:
+    forall A Delta contextualize,
+      all (fun B => isPrimeComponent B) Delta ->
+      (forall A, isPrimeComponent A -> isPrimeComponent (contextualize A)) ->
+      all (fun B => isPrimeComponent B) (primeFactors_rec A contextualize Delta).
+  Proof.
+    elim.
+    - move => Delta contextualize Delta__Ok contextualize__Ok //=.
+      case: (isOmega (contextualize Omega)) => //.
+      apply /allP => A /addAndFilter_in [].
+      + move => ->.
+          by apply contextualize__Ok.
+      + by move: (allP Delta__Ok) => prf /(fun x => prf x).
+    - move => c A IH Delta contextualize Delta__Ok contextualize__Ok //=.
+      apply: IH => //=.
+      move => B prf.
+        by apply: contextualize__Ok.
+    - move => A _ B IH Delta contextualize Delta__Ok contextualize__Ok //=.
+      apply: IH => //.
+      move => C prf.
+        by apply: contextualize__Ok.
+    - move => A IH__A B IH__B Delta contextualize Delta__Ok contextualize__Ok //=.
+      apply: IH__B.
+      + apply: IH__A => //.
+        move => C prf.
+        apply: contextualize__Ok => //=.
+        rewrite prf.
+          by case C.
+      + move => C prf.
+          by apply: contextualize__Ok => //=.
+    - move => A IH__A B IH__B Delta contextualize Delta__Ok contextualize__Ok //=.
+      apply: IH__B.
+      + by apply: IH__A.
+      + move => C prf.
+          by apply: contextualize__Ok.
+  Qed.
+
+  Lemma primeFactors_monotonic: forall A Delta contextualize,
+      [bcd (\bigcap_(P__i <- primeFactors_rec A contextualize Delta) P__i) <= \bigcap_(A__i <- Delta) A__i].
+  Proof.
+    elim.
+    - move => Delta contextualize //=.
+      case: (isOmega (contextualize Omega)) => //=.
+        by apply: addAndFilter_monotonic.
+    - move => ? ? IH ? ?.
+        by apply: IH.
+    - move => A _ B IH ? ?.
+        by apply: IH.
+    - move => A IH__A B IH__B ? ?.
+      apply: BCD__Trans; first by apply: IH__B.
+        by apply: IH__A.
+    - move => A IH__A B IH__B ? ?.
+      apply: BCD__Trans; first by apply: IH__B.
+        by apply: IH__A.
+  Qed.
+
+  Lemma primeFactors_leq: forall A Delta contextualize,
+      (forall B C, [bcd B <= C] -> [bcd (contextualize B) <= (contextualize C)]) ->
+      (forall B C, [bcd ((contextualize B) \cap (contextualize C)) <= (contextualize (B \cap C)) ]) ->
+      [bcd (\bigcap_(P__i <- primeFactors_rec A contextualize Delta) P__i) <= contextualize A].
+  Proof.
+    elim.
+    - move => Delta contextualize _ _ //=.
+      case isOmega__ctxt: (isOmega (contextualize Omega)).
+      + apply: subty__sound.
+          by apply: subty__Omega.
+      + move: (addAndFilterLeq__A (contextualize Omega) Delta).
+        elim: (addAndFilter Delta (contextualize Omega)) => //.
+        move => P Delta' IH /orP [].
+        * move => /subtypeMachineP prf //=.
+          move: IH => _.
+          case: Delta' => //= P2 Delta'.
+            by apply: BCD__Trans; first by apply BCD__Lub1.
+        * move => /IH.
+          move: IH => _.
+          case: Delta' => //=.
+          ** move => prf.
+              by apply: BCD__Trans; last by exact prf.
+          ** move => P1 Delta' prf.
+               by apply: BCD__Trans; first by apply BCD__Lub2.
+    - move => c A IH Delta contextualize prf dist //=.
+      apply: IH.
+      move => B C le__BC.
+      apply: prf.
+      + apply: BCD__CAx => //.
+        apply: preorder_reflexive.
+      + move => B C.
+        apply: BCD__Trans; first by apply dist.
+        apply: prf.
+          by apply: BCD__CDist.
+    - move => A _ B IH Delta contextualize prf dist.
+      apply: IH.
+      move => C D le__CD.
+      apply: prf;
+        first by apply: BCD__Sub.
+      move => C D.
+      apply: BCD__Trans; first by apply dist.
+      apply: prf.
+        by apply: BCD__Dist.
+    - move => A IH__A B IH__B Delta contextualize prf dist.
+      apply: (BCD__Trans
+                ((contextualize (Omega \times B))
+                   \cap (contextualize (A \times Omega)))); last first.
+      + apply: (BCD__Trans (contextualize ((Omega \cap A) \times (B \cap Omega)))); last first.
+        * apply: prf.
+          apply: BCD__ProdSub.
+          ** by apply: BCD__Lub2.
+          ** by apply: BCD__Lub1.
+        * apply: (BCD__Trans (contextualize ((Omega \times B) \cap (A \times Omega)))).
+          ** by apply: dist.
+          ** apply prf.
+              by apply: BCD__ProdDist.
+      + apply: BCD__Glb.
+        * apply: IH__B.
+          ** move => C D le__CD.
+             apply: prf.
+               by apply: BCD__ProdSub.
+          ** move => C D.
+             apply: BCD__Trans; first by apply: dist.
+             apply: prf.
+             apply: BCD__Trans; first by apply: BCD__ProdDist.
+               by apply: BCD__ProdSub.
+        * rewrite /=.
+          apply: BCD__Trans; first by apply: primeFactors_monotonic.
+          apply: IH__A.
+          ** move => C D le__CD.
+             apply: prf.
+               by apply: BCD__ProdSub.
+          ** move => C D.
+             apply: BCD__Trans; first by apply: dist.
+             apply: prf.
+             apply: BCD__Trans; first by apply: BCD__ProdDist.
+               by apply: BCD__ProdSub.
+    - move => A IH__A B IH__B Delta contextualize prf dist.
+      rewrite /=.
+      apply: BCD__Trans; last by apply: dist.
+      apply: BCD__Glb.
+      + apply: BCD__Trans; first by apply: primeFactors_monotonic.
+          by apply: IH__A.
+      + by apply: IH__B.
+  Qed.
+
+  Lemma addAndFilterGeq__Delta: forall A Delta,
+      all (fun B => has (fun C => checkSubtypes _ C B) [:: A & Delta]) (addAndFilter Delta A).
+  Proof.
+    move => A.
+    elim => //=.
+    - rewrite andbT orbF.
+        by apply /subtypeMachineP.
+    - move => B Delta IH.
+      move le__BA: (checkSubtypes _ B A) => [] //=.
+      + apply /andP.
+        split.
+        * apply /orP; right; apply /orP; left.
+            by apply /subtypeMachineP.
+        * apply: (sub_all (a1 := fun B => has (fun C => checkSubtypes _ C B) Delta)).
+          ** move => ? ->.
+               by do 2 rewrite orbT.
+          ** clear...
+             elim: Delta => //= A Delta IH.
+             apply /andP.
+             split.
+             *** by apply /orP; left; apply /subtypeMachineP.
+             *** apply: sub_all; last by exact IH.
+                 move => ? ->.
+                   by rewrite orbT.
+      + move leq__AB: (checkSubtypes _ A B) => [].
+        * apply: sub_all; last by exact IH.
+          move => ? /orP [] ->;
+            by repeat rewrite orbT.
+        * apply /andP.
+          split.
+          ** apply /orP; right; apply /orP; left.
+               by apply /subtypeMachineP.
+          ** apply: sub_all; last by exact IH.
+             move => ? /orP [] ->;
+               by repeat rewrite orbT.
+  Qed.
+
+  Lemma bcd_all_ge: forall (Delta1 Delta2 : seq (@IT Constructor)),
+      all (fun B => has (fun C => checkSubtypes _ C B) Delta1) Delta2 ->
+      [bcd (\bigcap_(A__i <- Delta1) A__i) <= \bigcap_(A__i <- Delta2) A__i].
+  Proof.
+    move => Delta1.
+    elim => //= A Delta2 IH /andP [] prf /IH prfs.
+    apply: BCD__Trans; last by apply: (bcd_bigcap_cat _ [:: A]).
+    apply: BCD__Glb => //=.
+      by apply: bigcap_has_le.
+  Qed.    
+
+  Lemma addAndFilterGeq: forall A Delta,
+      [bcd (\bigcap_(A__i <- [:: A & Delta]) A__i) <= \bigcap_(A__i <- addAndFilter Delta A) A__i].
+  Proof.
+    move => A Delta.
+    apply: bcd_all_ge.
+      by apply: addAndFilterGeq__Delta.
+  Qed.
+
+  Lemma primeFactors_geq: forall A Delta contextualize,
+      (forall B C, [bcd B <= C] -> [bcd (contextualize B) <= (contextualize C)]) ->
+      [bcd (\bigcap_(A__i <- [:: contextualize A & Delta]) A__i) <=
+       (\bigcap_(P__i <- primeFactors_rec A contextualize Delta) P__i) ].
+  Proof.
+    elim.
+    - move => Delta contextualize _ //=.
+      apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: contextualize Omega]).
+      case: (isOmega (contextualize Omega)) => //=.
+      apply: BCD__Trans; last by apply: addAndFilterGeq.
+        by apply: (bcd_bigcap_cat _ [:: contextualize Omega]).
+    - move => ? ? IH ? ? prf.
+      apply: IH.
+      move => B C le__BC.
+      apply: prf.
+      apply: BCD__CAx => //.
+        by apply: preorder_reflexive.
+    - move => A _ B IH Delta contextualize prf.
+      apply: IH.
+      move => C D le__CD.
+      apply: prf.
+        by apply: BCD__Sub.
+    - move => A IH__A B IH__B Delta contextualize prf.
+      rewrite [primeFactors_rec _ _]/=.
+      apply: (BCD__Trans (\bigcap_(A__i <- [:: contextualize (Omega \times B),
+                                        contextualize (A \times Omega) &
+                                        Delta ]) A__i)).
+      + apply: (BCD__Trans (\bigcap_(A__i <- [:: contextualize ((Omega \times B) \cap (A \times Omega)) &
+                                        Delta ]) A__i)).
+        * apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: contextualize (A \times B)]).
+          apply: BCD__Trans; last by apply: (bcd_bigcap_cat _ [:: contextualize _]).
+          apply: BCD__Glb => //.
+          apply: BCD__Trans; first by apply: BCD__Lub1.
+          apply: prf.
+          apply: (BCD__Trans ((A \cap Omega) \times (Omega \cap B))).
+          ** apply: BCD__ProdSub; by apply: BCD__Glb.
+          ** apply: BCD__Glb; by apply: BCD__ProdSub.
+        * apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: contextualize _]).
+          apply: BCD__Trans;
+            last by apply: (bcd_bigcap_cat _ [:: contextualize (Omega \times B);
+                                              contextualize (A \times Omega)]).
+          apply: BCD__Glb => //.
+          apply: BCD__Trans; first by apply: BCD__Lub1.
+          apply: BCD__Glb; by apply: prf.
+      + apply: BCD__Trans; last apply: IH__B.
+        * apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: contextualize _]).
+          apply: BCD__Trans; last by apply: (bcd_bigcap_cat _ [:: contextualize _]).
+          apply: BCD__Glb => //.
+          apply: BCD__Trans; first by apply: BCD__Lub2.
+          apply: IH__A.
+          move => C D le__CD.
+          apply: prf.
+            by apply: BCD__ProdSub.
+        * move => C D le__CD.
+          apply: prf.
+            by apply: BCD__ProdSub.
+    - move => A IH__A B IH__B Delta contextualize prf.
+      rewrite [primeFactors_rec _ _]/=.
+      apply: (BCD__Trans (\bigcap_(A__i <- [:: contextualize B,
+                                        contextualize A &
+                                        Delta ]) A__i)).
+      + apply: BCD__Trans; last by apply: (bcd_bigcap_cat _ [:: contextualize B; contextualize A]).
+        apply: BCD__Glb.
+        * apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: contextualize _]).
+          apply: BCD__Trans; first by apply: BCD__Lub1.
+          apply: BCD__Glb; by apply: prf.
+        * by apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: contextualize _]).
+      + apply: BCD__Trans; last by apply: IH__B.
+        apply: BCD__Trans; last by apply: (bcd_bigcap_cat _ [:: contextualize _]).
+        apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: contextualize _]).
+        apply: BCD__Glb => //.
+        apply: BCD__Trans; first by apply: BCD__Lub2.
+          by apply: IH__A.
+  Qed.
+
+
+
+
+
+  (**)
+End PrimalityLemmas.
+
+Section NatConstructors.
+  Lemma leq_transb: forall (m n p: nat), (m <= n) && (n <= p) ==> (m <= p).
+  Proof.
+    move => m n p.
+    move: (@leq_trans n m p).
+    case (m <= n) => //=.
+    case (n <= p) => //= prf.
+      by apply: prf.
+  Qed.
+
+  Definition nat_ctorMixin :=
+    Constructor.Mixin nat_countType
+                      leq leqnn leq_transb.
+  Canonical nat_ctorType := Eval hnf in CtorType nat_countType nat_ctorMixin.
+End NatConstructors.
+
+Section PrimeFactorTest.
+  Definition A := Ctor 1 Omega -> Ctor 1 Omega.
+  Definition B := Ctor 1 Omega.
+  Definition C := Ctor 2 Omega -> Ctor 0 Omega.
+  Definition D := Ctor 3 (A \times C).
+
+  Example test := primeFactors_rec _ (A \cap B \cap C \cap D) (fun ty => ty) [::].
+End PrimeFactorTest.
+
 Require Extraction.
 Extraction Language Ocaml.
 Recursive Extraction subtype_machine.
 
 Extraction Language Haskell.
 Recursive Extraction subtype_machine.
+Recursive Extraction test.
 
 (*
     Variable k1 k2 k3 k4 k5 k6 k7 k8 k9 : nat.
