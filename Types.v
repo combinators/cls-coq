@@ -4137,13 +4137,25 @@ Section PrimalityLemmas.
   Fixpoint desubdub (Delta: seq (@IT Constructor)): seq (@IT Constructor) :=
     match Delta with
     |[::] => [::]
-    |[:: A & Delta'] => addAndFilter (desubdub Delta') A
+    |[:: A & Delta'] => if ~~isOmega A then addAndFilter (desubdub Delta') A else desubdub Delta'
     end.
 
   Lemma desubdub_nosubdub: forall Delta, nosubdub (desubdub Delta).
   Proof.
-    elim => // A Delta IH.
+    elim => //= A Delta IH.
+    case: (isOmega A) => //=.
       by apply: addAndFilter_nosubdub.
+  Qed.
+
+  Lemma desubdub_all:
+    forall Delta p, all p Delta -> all p (desubdub Delta).
+  Proof.
+    elim => //= A Delta IH p /andP [] pA all__Delta.
+    case: (isOmega A) => //=.
+    - by apply: IH.
+    - apply /allP => B /addAndFilter_in [].
+      + by move ->.
+      + by move: (IH p all__Delta) => /allP prf /prf.
   Qed.
 
   Lemma desubdub_leq:
@@ -4153,9 +4165,12 @@ Section PrimalityLemmas.
     rewrite /desubdub -/desubdub.
     apply: BCD__Trans; last by apply: (bcd_bigcap_cat _ [:: A]).
     apply: BCD__Glb.
-    - apply: bigcap_has_le.
-        by apply: addAndFilterLeq__A.
-    - apply: BCD__Trans; last by exact IH.
+    - case omega__A: (isOmega A).
+      + by apply: bcd__omega.
+      + apply: bigcap_has_le.
+          by apply: addAndFilterLeq__A.
+    - case: (isOmega A) => //=.
+      apply: BCD__Trans; last by exact IH.
         by apply: addAndFilter_monotonic.
   Qed.
 
@@ -4164,11 +4179,14 @@ Section PrimalityLemmas.
   Proof.
     elim => // A Delta IH.
     rewrite /desubdub -/desubdub.
-    apply: BCD__Trans; last by apply: addAndFilterGeq.
-    apply: BCD__Trans; last by apply: (bcd_bigcap_cat _ [:: A]).
-    apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: A]).
-    apply: BCD__Glb => //.
+    case omega__A: (isOmega A).
+    - apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: A]).
       by apply: BCD__Trans; first by apply: BCD__Lub2.
+    - apply: BCD__Trans; last by apply: addAndFilterGeq.
+      apply: BCD__Trans; last by apply: (bcd_bigcap_cat _ [:: A]).
+      apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: A]).
+      apply: BCD__Glb => //.
+        by apply: BCD__Trans; first by apply: BCD__Lub2.
   Qed.
 
   Lemma addAndFilter_size: forall A Delta,
@@ -4179,12 +4197,25 @@ Section PrimalityLemmas.
     case: (checkSubtypes _ B A) => //=.
     case: (checkSubtypes _ A B) => //=.
       by apply: leq_trans; first by exact IH.
-  Qed.    
+  Qed.
 
   Lemma desubdub_size: forall Delta, seq.size (desubdub Delta) <= seq.size Delta.
   Proof.
-    elim => //= A Delta IH. 
-      by apply: leq_trans; first by apply: addAndFilter_size.
+    elim => //= A Delta IH.
+    case: (isOmega A).
+    - by apply: leq_trans.
+    - by apply: leq_trans; first by apply: addAndFilter_size.
+  Qed.
+
+  Lemma desubdubb_notOmega:
+    forall Delta, all (fun A => ~~isOmega A) (desubdub Delta).
+  Proof.
+    elim => //= A Delta IH.
+    case omega__A: (isOmega A) => //=.
+    apply /allP => B /addAndFilter_in [].
+    - move => ->.
+      by rewrite omega__A.
+    - by move: IH => /allP IH /IH.
   Qed.
 
   Lemma bcd_prime_ge_all:  forall Delta1 Delta2 : seq (@IT Constructor),
@@ -4495,81 +4526,45 @@ Section PrimalityLemmas.
                by apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: A]).
   Qed.
 
-
-          
-
-
-
-
-
-
-      
-
-      
-
-
-
-
-
-
-
-
-  Lemma nodubsub_count_smaller: forall Delta__min Delta,
-      nosubdub Delta__min ->
-      all (fun B => isPrimeComponent B) Delta__min ->
-      all (fun A => isPrimeComponent A) Delta ->
-      all (fun B => ~~isOmega B) Delta__min ->
-      all (fun A => ~~isOmega A) Delta ->
-
-      [bcd (\bigcap_(A__i <- Delta__min) A__i) <= (\bigcap_(A__i <- Delta) A__i)] ->
-      [bcd (\bigcap_(A__i <- Delta) A__i) <= (\bigcap_(A__i <- Delta__min) A__i)] ->
-      sumn (map (fun A => count (fun B => checkSubtypes _ B A) Delta__min) Delta) <= seq.size Delta.
+  Lemma PermUpToSubtyping_size: forall Delta1 Delta2,
+      PermUpToSubtyping Delta1 Delta2 -> seq.size Delta1 = seq.size Delta2.
   Proof.
-    move => Delta__min Delta nosubdub__min prime__min prime__Delta notOmega__min notOmega__Delta le__minDelta le__Deltamin.
-    have: all (fun A => count (fun B => checkSubtypes _ B A) Delta__min <= 1) Delta.
-    { apply /allP => A inprf.
-      apply: nosubdub_unique => //.
-      move: (bcd_prime_ge_all _ _ le__minDelta prime__Delta notOmega__Delta) => /allP /(fun prf => prf A inprf) /hasP [] B inprf__B le__BA.
-      move: (bcd_prime_ge_all _ _ le__Deltamin prime__min notOmega__min) => /allP /(fun prf => prf B inprf__B) /hasP [] A' inprf__A' le__A'B.
-      have: (A' = A).
-      { 
-      apply /hasP.
-      exists B.
-      
+    move => Delta1 Delta2.
+    elim => // A B Delta Delta21 Delta22 _ _ _ IH.
+    rewrite size_cat /= addnS -size_cat.
+      by apply: (f_equal (fun x => x.+1)).
+  Qed.
 
-      move: (prf 
+  Definition primeFactors (A: @IT Constructor): seq (@IT Constructor) :=
+    primeFactors_rec A id [::].
 
-
-      move: (prime_filter_le _ _ prime__min notOmega__min le__Deltamin).
-      move => /(fun le => bcd_prime_ge_all _ _ le prime__min notOmega__min) => /allP.
-      
-
-
-
-
-      
-
-  Lemma primeFactors_smaller: forall A Delta1 Delta2 contextualize,
-      
-
-      nosubdub Delta2 ->
-      all (fun B => ~~ checkSubtypes _ Omega B) Delta2 ->
-      seq.size Delta1 < seq.size (primeFactors_rec A contextualize Delta2) ->
-      [bcd (\bigcap_(A_i <- Delta1) A_i) <= \bigcap_(P_i <- primeFactors_rec A contextualize Delta2) P_i] ->
-      has (fun B => all (fun C => ~~checkSubtypes _ C B) (primeFactors_rec A contextualize Delta2)) Delta1.
+  Lemma primeFactors_minimal:
+    forall A Delta,
+      all (fun B => isPrimeComponent B) Delta ->
+      [bcd (\bigcap_(A_i <- Delta) A_i) <= A] ->
+      [bcd A <= (\bigcap_(A_i <- Delta) A_i)] ->
+      seq.size (primeFactors A) <= seq.size Delta.
   Proof.
-    move => A Delta1 Delta2 contextualize /(primeFactors_nosubdub A Delta2 contextualize).
-    move: A Delta2.
-    elim: Delta1.
-    - 
-      case => //= B Delta2 prf _.
-      + 
-    
-
-  
-
-
-  (**)
+    move => A Delta prime__Delta le__DeltaA le__ADelta.
+    apply: leq_trans; last by apply: desubdub_size.
+    apply: eq_leq.
+    apply: PermUpToSubtyping_size.
+    apply: nosubdub_prime_perm.
+    - by apply: primeFactors_nosubdub.
+    - by apply: desubdub_nosubdub.
+    - by apply: primeFactors_prime.
+    - by apply: desubdub_all.
+    - rewrite /primeFactors.
+      apply: sub_all; last by apply: (primeFactors__notOmega A [::] id isT).
+      move => B /negP notOmega.
+      apply /negP => omega__B.
+        by move: (bcd__omega _ Omega B omega__B) => /subtypeMachineP.
+    - by apply: desubdubb_notOmega.
+    - apply: BCD__Trans; first by apply: primeFactors_leq.
+        by apply: BCD__Trans; last by apply: desubdub_geq.
+    - apply: BCD__Trans; last by apply: primeFactors_geq.
+        by apply: BCD__Trans; first by apply: desubdub_leq.
+  Qed.
 End PrimalityLemmas.
 
 Section NatConstructors.
