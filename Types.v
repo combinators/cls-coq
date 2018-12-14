@@ -3547,6 +3547,25 @@ Section PrimalityLemmas.
     - by right; apply: subty__sound.
   Qed.
 
+  Lemma primeComponentPrime_seq:
+    forall (A: @IT Constructor) Delta,
+      ~~isOmega A ->
+      PrimeComponent A ->
+      [bcd (\bigcap_(A__i <- Delta) A__i) <= A] ->
+      has (fun B => checkSubtypes _ B A) Delta.
+  Proof.
+    move => A.
+    elim.
+    - move => //= notOmega__A _ /subty_complete /(fun prf => Omega__subty _ Omega _ prf isT).
+        by move: notOmega__A => /negP.
+    - move => B Delta IH notOmega__A prime__A.
+      move => /(BCD__Trans _ (bcd_bigcap_cat _ [:: B] Delta)).
+      move => /(fun prf => primeComponentPrime _ _ _ prf prime__A) [] //=.
+      + by move => /subtypeMachineP ->.
+      + move => /(IH notOmega__A prime__A) ->.
+          by rewrite orbT.
+  Qed.
+
   Fixpoint addAndFilter
            (Delta: seq (@IT Constructor))
            (A: @IT Constructor) :=
@@ -4046,8 +4065,508 @@ Section PrimalityLemmas.
           by apply: IH__A.
   Qed.
 
+  Fixpoint nosubdub (Delta: seq (@IT Constructor)): bool :=
+    match Delta with
+    | [::] => true
+    | [:: A & Delta'] =>
+      all (fun B => ~~ (checkSubtypes _ B A || checkSubtypes _ A B)) Delta' && nosubdub Delta'
+    end.
+
+  Lemma addAndFilter_nosubdub: forall A Delta,
+      nosubdub Delta ->
+      nosubdub (addAndFilter Delta A).
+  Proof.
+    move => A.
+    elim => //= B Delta IH prf.
+    move le__BA: (checkSubtypes _ B A) => [] //.
+    move: prf => /andP [] prfB prfDelta.
+    move le__AB: (checkSubtypes _ A B) => [] //=.
+    - by apply: IH.
+    - rewrite (IH prfDelta) andbT.
+      apply /allP => C /addAndFilter_in [].
+      + move => ->.
+          by rewrite le__AB le__BA.
+      + by move: prfB => /allP disprf /(disprf C).
+  Qed.
+
+  Lemma primeFactors_nosubdub: forall A Delta contextualize,
+      nosubdub Delta ->
+      nosubdub (primeFactors_rec A contextualize Delta).
+  Proof.
+    elim.
+    - move => Delta contextualize prf //=.
+      case: (isOmega (contextualize Omega)) => //.
+        by apply: addAndFilter_nosubdub.
+    - move => ? ? IH *; by apply: IH.
+    - move => A _ B IH *.
+        by apply: IH.
+    - move => A IH__A B IH__B Delta contextualize prf.
+      apply: IH__B.
+        by apply: IH__A.
+    - move => A IH__A B IH__B Delta contextualize prf.
+      apply: IH__B.
+        by apply: IH__A.
+  Qed.
+
+  Lemma primeFactors__notOmega: forall A Delta contextualize,
+      all (fun B => ~~ checkSubtypes _ Omega B) Delta ->
+      all (fun B => ~~ checkSubtypes _ Omega B) (primeFactors_rec A contextualize Delta).
+  Proof.
+    elim.
+    - move => Delta contextualize prf //=.
+      case isOmega__A: (isOmega (contextualize Omega)) => [] //=.
+      apply /allP => B /addAndFilter_in [].
+      + move => ->.
+        apply /subtypeMachineP => /subty_complete /Omega__subty devil.
+        move: (devil isT).
+          by rewrite isOmega__A.
+      + by move: prf => /allP prf /prf.
+    - move => ? ? IH ? ?.
+        by apply: IH.
+    - move => ? _ ? IH *.
+        by apply: IH.
+    - move => ? IH__A ? IH__B *.
+      apply: IH__B.
+        by apply: IH__A.
+    - move => ? IH__A ? IH__B *.
+      apply: IH__B.
+        by apply: IH__A.
+  Qed.
+
+  
+  Fixpoint desubdub (Delta: seq (@IT Constructor)): seq (@IT Constructor) :=
+    match Delta with
+    |[::] => [::]
+    |[:: A & Delta'] => addAndFilter (desubdub Delta') A
+    end.
+
+  Lemma desubdub_nosubdub: forall Delta, nosubdub (desubdub Delta).
+  Proof.
+    elim => // A Delta IH.
+      by apply: addAndFilter_nosubdub.
+  Qed.
+
+  Lemma desubdub_leq:
+    forall Delta, [bcd (\bigcap_(A__i <- desubdub Delta) A__i) <= \bigcap_(A__i <- Delta) A__i].
+  Proof.
+    elim => // A Delta IH.
+    rewrite /desubdub -/desubdub.
+    apply: BCD__Trans; last by apply: (bcd_bigcap_cat _ [:: A]).
+    apply: BCD__Glb.
+    - apply: bigcap_has_le.
+        by apply: addAndFilterLeq__A.
+    - apply: BCD__Trans; last by exact IH.
+        by apply: addAndFilter_monotonic.
+  Qed.
+
+  Lemma desubdub_geq:
+    forall Delta, [bcd (\bigcap_(A__i <- Delta) A__i) <= (\bigcap_(A__i <- desubdub Delta) A__i)].
+  Proof.
+    elim => // A Delta IH.
+    rewrite /desubdub -/desubdub.
+    apply: BCD__Trans; last by apply: addAndFilterGeq.
+    apply: BCD__Trans; last by apply: (bcd_bigcap_cat _ [:: A]).
+    apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: A]).
+    apply: BCD__Glb => //.
+      by apply: BCD__Trans; first by apply: BCD__Lub2.
+  Qed.
+
+  Lemma addAndFilter_size: forall A Delta,
+      seq.size (addAndFilter Delta A) <= seq.size [:: A & Delta].
+  Proof.
+    move => A.
+    elim => //= B Delta IH.
+    case: (checkSubtypes _ B A) => //=.
+    case: (checkSubtypes _ A B) => //=.
+      by apply: leq_trans; first by exact IH.
+  Qed.    
+
+  Lemma desubdub_size: forall Delta, seq.size (desubdub Delta) <= seq.size Delta.
+  Proof.
+    elim => //= A Delta IH. 
+      by apply: leq_trans; first by apply: addAndFilter_size.
+  Qed.
+
+  Lemma bcd_prime_ge_all:  forall Delta1 Delta2 : seq (@IT Constructor),
+      [ bcd (\bigcap_(A__i <- Delta1) A__i) <= \bigcap_(A__i <- Delta2) A__i] ->
+      all (fun A => isPrimeComponent A) Delta2 ->
+      all (fun A => ~~isOmega A) Delta2 ->
+      all (fun B  =>  has ((checkSubtypes Constructor)^~ B) Delta1) Delta2.
+  Proof.
+    move => Delta1.
+    elim => // A Delta2 IH.
+    move => /(fun prf => BCD__Trans _ prf (bcd_cat_bigcap _ [:: A] Delta2)) prf.
+    move: (BCD__Trans _ prf BCD__Lub1)(BCD__Trans _ prf BCD__Lub2) => lprf rprf.
+    move => /= /andP [] /isPrimeComponentP prime__A prime__Delta2.
+    move => /= /andP [] notOmega__A notOmega__Delta2.
+    rewrite (primeComponentPrime_seq _ _ notOmega__A prime__A lprf).
+      by rewrite (IH rprf prime__Delta2 notOmega__Delta2).
+  Qed.
+
+  Lemma prime_filter_le: forall Delta__prime Delta : seq (@IT Constructor),
+      all (fun B => isPrimeComponent B) Delta__prime ->
+      all (fun B => ~~isOmega B) Delta__prime ->
+      [bcd (\bigcap_(A__i <- Delta) A__i) <= \bigcap_(A__i <- Delta__prime) A__i] ->
+      [bcd (\bigcap_(A__i <- [seq A <- Delta | has (fun B => checkSubtypes _ A B) Delta__prime]) A__i) <= \bigcap_(A__i <- Delta__prime) A__i].
+  Proof.
+    move => Delta__prime Delta prime notOmega /(fun prf => bcd_prime_ge_all _ _ prf prime notOmega) prf.
+    apply: bcd_all_ge.
+    suff: {in Delta__prime,
+                (fun A => has (fun B => checkSubtypes _ B A) Delta)
+                =1 (fun A => has (fun B => checkSubtypes _ B A) [seq A <- Delta | has (fun B => checkSubtypes _ A B) Delta__prime] ) };
+      first by move => /eq_in_all <-.
+    move => B inprf__B.
+    do 2 rewrite has_filter.
+    rewrite -filter_predI.
+    do 2 rewrite -has_filter.
+    suff: {in Delta,
+                (fun A => checkSubtypes _ A B)
+                =1 (predI (fun A => checkSubtypes _ A B) (fun A : IT => has (fun B => checkSubtypes Constructor A B) Delta__prime)) };
+      first by move => /eq_in_has <-.
+    move => A inprf /=.
+    move le__AB: (checkSubtypes _ A B) => [] //=.
+    apply /sameP; last by exact hasP.
+    apply: introP => // _.
+      by exists B.
+  Qed.
+
+  Lemma nosubdub_unique: forall (Delta: seq (@IT Constructor)),
+      nosubdub Delta ->
+      forall A B, A \in Delta -> B \in Delta -> [bcd A <= B] -> A = B.
+  Proof.
+    elim => // C Delta IH /andP [] nodub__C nodubsub__Delta A B /orP [] prf__A /orP [] prf__B le__AB.
+    - by rewrite (eqP prf__A) (eqP prf__B).
+    - move: (allP nodub__C B prf__B).
+      rewrite -(eqP prf__A).
+      move: le__AB => /subtypeMachineP ->.
+        by rewrite orbT.
+    - move: (allP nodub__C A prf__A).
+      rewrite -(eqP prf__B).
+        by move: le__AB => /subtypeMachineP ->.
+    - by apply: IH.
+  Qed.
+
+  Lemma nosubdub_prime_injective:
+    forall Delta1 Delta2 : seq (@IT Constructor),
+      nosubdub Delta1 ->
+      nosubdub Delta2 ->
+      all (fun A => isPrimeComponent A) Delta1 ->
+      all (fun A => ~~isOmega A) Delta1 ->
+      [bcd (\bigcap_(A__i <- Delta2) A__i) <= (\bigcap_(A__i <- Delta1) A__i)] ->
+      forall A1 A2 B,
+        A1 \in Delta1 -> A2 \in Delta1 -> B \in Delta2 -> [bcd A1 <= B] -> [bcd A2 <= B] -> A1 = A2.
+  Proof.
+    move => Delta1 Delta2 nosubdub__Delta1 nosubdub__Delta2 prime__Delta1 notOmega__Delta1 le21.
+    move => A1 A2 B inprf__A1 inprf__A2 inprf__B le__AB le__BA.
+    have: [bcd B <= A2].
+    { move: (bcd_prime_ge_all _ _ le21 prime__Delta1 notOmega__Delta1) => /allP /(fun prf => prf A2 inprf__A2) /hasP [] B2 inprf__B2.
+      move => /subtypeMachineP le__B2A2.
+      move: (BCD__Trans _ le__B2A2 le__BA).
+        by move => /(nosubdub_unique _ nosubdub__Delta2 _ _ inprf__B2 inprf__B) <-. }
+    move => /(BCD__Trans _ le__AB).
+      by move => /(nosubdub_unique _ nosubdub__Delta1 _ _ inprf__A1 inprf__A2).
+  Qed.
+
+  Lemma nosubdub_prime_bijective:
+    forall Delta1 Delta2 : seq (@IT Constructor),
+      nosubdub Delta1 ->
+      nosubdub Delta2 ->
+      all (fun A => isPrimeComponent A) Delta2 ->
+      all (fun A => ~~isOmega A) Delta2 ->
+      [bcd (\bigcap_(A__i <- Delta2) A__i) <= (\bigcap_(A__i <- Delta1) A__i)] ->
+      [bcd (\bigcap_(A__i <- Delta1) A__i) <= (\bigcap_(A__i <- Delta2) A__i)] ->
+      forall A B,
+        A \in Delta1 -> B \in Delta2 -> [bcd B <= A] -> [bcd A <= B].
+  Proof.
+    move => Delta1 Delta2 nosubdub__Delta1 nosubdub__Delta2 prime__Delta2 notOmega__Delta2 le21 le12.
+    move => A B inprf__A inprf__B le__BA.
+    move: (bcd_prime_ge_all _ _ le12 prime__Delta2 notOmega__Delta2) => /allP /(fun prf => prf B inprf__B) /hasP [] A2 inprf__A2.
+    move => /subtypeMachineP le__A2B.
+    move: (BCD__Trans _ le__A2B le__BA).
+      by move => /(nosubdub_unique _ nosubdub__Delta1 _ _ inprf__A2 inprf__A) <-.
+  Qed.
+
+  Inductive PermUpToSubtyping: seq (@IT Constructor) -> seq (@IT Constructor) -> Prop :=
+  | PermNil : PermUpToSubtyping [::] [::]
+  | PermCons : forall A B Delta1 Delta21 Delta22,
+      [bcd A <= B] -> [bcd B <= A] -> PermUpToSubtyping Delta1 (Delta21 ++ Delta22) ->
+      PermUpToSubtyping [:: A & Delta1] (Delta21 ++ [:: B & Delta22]).
+
+  Fixpoint splitcat_rec (A: Type) (p: pred A) (xs: seq A) (prefix: seq A):
+    option (seq A * A * seq A) :=
+    if xs is [:: x & xs]
+    then if p x then some (prefix, x, xs) else splitcat_rec A p xs (rcons prefix x)
+    else None.
+
+  Definition splitcat {A: Type} p xs := splitcat_rec A p xs [::].
+
+  Lemma splitcat_rec_eq: forall {A} p (xs: seq A) prefix,
+      has p xs ->
+      omap (fun ys => ys.1.1 ++ [:: ys.1.2 & ys.2]) (splitcat_rec A p xs prefix)
+      = some (prefix ++ xs).
+  Proof.
+    move => A p.
+    elim => // x xs IH prefix /=.
+    case (p x) => //= /(IH (rcons prefix x)) ->.
+      by rewrite cat_rcons.
+  Qed.
+
+  Lemma splitcat_rec_p: forall {A} p (xs: seq A) (prefix: seq A),
+      if (splitcat_rec A p xs prefix) is Some (ys1, y, ys2) then p y else ~~ has p xs.
+  Proof.
+    move => A p.
+    elim => //= x xs IH prefix //=.
+      by move px: (p x) => [].
+  Qed.
+
+  Lemma splitcat_eq: forall {A} p (xs: seq A),
+      has p xs ->
+      omap (fun ys => ys.1.1 ++ [:: ys.1.2 & ys.2]) (splitcat p xs) = some xs.
+  Proof. by move => *; apply: splitcat_rec_eq. Qed.
+
+  Lemma splitcat_p: forall {A} p (xs: seq A),
+      has p xs ->
+      if (splitcat p xs) is Some (ys1, y, ys2) then p y else ~~ has p xs.
+  Proof. by move => *; apply: splitcat_rec_p. Qed.
+
+  Lemma nosubdub_weaken: forall Delta1 Delta2,
+      subseq Delta1 Delta2 ->
+      nosubdub Delta2 -> nosubdub Delta1.
+  Proof.
+    move => Delta1 Delta2.
+    move: Delta1.
+    elim: Delta2.
+    - move => Delta1.
+        by rewrite subseq0 => /eqP ->.
+    - move => // B Delta2 IH [] // A Delta1.
+      rewrite /subseq -/subseq.
+      case AB__eq: (A == B).
+      + move: AB__eq => /eqP -> subseq__12.
+        move: (IH _ subseq__12) => prf /andP [] notin__B /prf /= ->.
+        rewrite andbT.
+        apply /allP => x inprf.
+        move: (mem_subseq subseq__12 inprf).
+          by move: notin__B => /allP notin__B /notin__B.
+      + by move => /IH prf /andP [] _ /prf.
+  Qed.
+
+  Lemma bcd_prime_strengthen:
+    forall Delta11 (A: @IT Constructor) Delta12 Delta2,
+      all (fun B => isPrimeComponent B) Delta2 ->
+      all (fun B => ~~checkSubtypes _ A B) Delta2 ->
+      [bcd (\bigcap_(A_i <- Delta11 ++ [:: A & Delta12]) A_i) <= \bigcap_(A_i <- Delta2) A_i] ->
+      [bcd (\bigcap_(A_i <- Delta11 ++ Delta12) A_i) <= \bigcap_(A_i <- Delta2) A_i].
+  Proof.
+    move => Delta11 A Delta12 Delta2 prime__Delta2 notle__ADelta2 le12.
+    have: [bcd (A \cap \bigcap_(A_i <- Delta11 ++ Delta12) A_i) <= \bigcap_(A_i <- Delta2) A_i].
+    { apply: BCD__Trans; last by apply le12.
+      apply: BCD__Trans; last by apply bcd_bigcap_cat.
+      apply: BCD__Glb.
+      - apply: BCD__Trans; last by apply: (BCD__Lub2).
+        apply: BCD__Glb => //.
+        apply: BCD__Trans; first by apply: BCD__Lub2.
+          by apply: BCD__Trans; first by apply: bcd_cat_bigcap.
+      - apply: BCD__Trans; last by apply: (bcd_bigcap_cat _ [:: A]).
+        apply: BCD__Glb => //.
+        apply: BCD__Trans; first by apply: BCD__Lub2.
+          by apply: BCD__Trans; first by apply: bcd_cat_bigcap. }
+    move: le12 prime__Delta2 notle__ADelta2 => _.
+    elim: Delta2.
+    - rewrite //=.
+    - move => B Delta2 IH prime__BDelta2 notle__ABDelta2.
+      move => /(fun prf => BCD__Trans _ prf (bcd_cat_bigcap _ [:: B] Delta2)) le12.
+      apply: BCD__Trans; last by apply: (bcd_bigcap_cat _ [:: B]).
+      apply: BCD__Glb.
+      + move: prime__BDelta2 => /andP [] /isPrimeComponentP prime__B _.
+        move: le12 => /(fun prf => BCD__Trans _ prf BCD__Lub1).
+        move => /(fun prf => primeComponentPrime _ _ _ prf prime__B) [] //.
+          by move: notle__ABDelta2 => /andP [] /subtypeMachineP.
+      + apply: IH => //.
+        * by move: prime__BDelta2 => /andP [].
+        * by move: notle__ABDelta2 => /andP [].
+        * by apply: BCD__Trans; first by exact le12.
+  Qed.
+
+  Lemma nosubdub_everywhere:
+    forall Delta1 A Delta2,
+      nosubdub (Delta1 ++ [:: A & Delta2]) ->
+      all (fun B => ~~ ((checkSubtypes _ B A) || (checkSubtypes _ A B))) (Delta1 ++ Delta2).
+  Proof.
+    elim.
+    - by move => A Delta2 /andP [].
+    - move => B Delta1 IH A Delta2 /= /andP [] /allP prf /IH ->.
+      rewrite andbT.
+      move: (prf A).
+      rewrite mem_cat mem_head orbT.
+      move => /(fun prf => prf isT) /norP []  notAB notBA.
+      apply /norP.
+      rewrite notAB notBA.
+        by apply /andP.
+  Qed.
+      
+
+  Lemma nosubdub_prime_perm:
+    forall Delta1 Delta2 : seq (@IT Constructor),
+      nosubdub Delta1 ->
+      nosubdub Delta2 ->
+      all (fun A => isPrimeComponent A) Delta1 ->
+      all (fun A => isPrimeComponent A) Delta2 ->
+      all (fun A => ~~isOmega A) Delta1 ->
+      all (fun A => ~~isOmega A) Delta2 ->
+      [bcd (\bigcap_(A__i <- Delta1) A__i) <= (\bigcap_(A__i <- Delta2) A__i)] ->
+      [bcd (\bigcap_(A__i <- Delta2) A__i) <= (\bigcap_(A__i <- Delta1) A__i)] ->
+      PermUpToSubtyping Delta1 Delta2.
+  Proof.
+    elim.
+    - move => Delta2 _ nosubdub__Delta2 _ prime__Delta2 _ notOmega__Delta2.
+      move => /(fun prf => bcd_prime_ge_all _ _ prf prime__Delta2 notOmega__Delta2).
+      clear ...
+      case Delta2 => // *.
+      apply: PermNil.
+    - move => A Delta1 IH Delta2.
+      move => nosubdub__Delta1 nosubdub__Delta2 prime__Delta1 prime__Delta2
+                            notOmega__Delta1 notOmega__Delta2.
+      move => le__A12 le__2A1.
+      move: (bcd_prime_ge_all _ _ le__2A1 prime__Delta1  notOmega__Delta1) => /andP [] has__ADelta2.
+      move: (splitcat_p _ Delta2 has__ADelta2).
+      move: (splitcat_eq _ Delta2 has__ADelta2).
+      case: (splitcat (fun B => checkSubtypes _ B A) Delta2) => // [] [] [] Delta21 B Delta22 [] eq__Delta2.
+      rewrite -eq__Delta2.
+      move => /subtypeMachineP le__BA all__Delta1.
+      apply: PermCons => //.
+      + apply: (nosubdub_prime_bijective [:: A & Delta1] Delta2) => //.
+        * by rewrite in_cons eq_refl.
+        * by rewrite -eq__Delta2 mem_cat in_cons eq_refl orbT.
+      + apply: IH.
+        * by move: nosubdub__Delta1 => /andP [].
+        * move: nosubdub__Delta2.
+          rewrite -eq__Delta2.
+          move => /(nosubdub_weaken (Delta21 ++ Delta22)) prf.
+          apply: prf.
+          apply: cat_subseq => //.
+            by apply subseq_cons.
+        * by move: prime__Delta1 => /andP [].
+        * move: prime__Delta2.
+          rewrite -eq__Delta2  all_cat all_cat.
+          move => /andP [] -> /andP [] _.
+          rewrite /all.
+            by move => ->.
+        * by move: notOmega__Delta1 => /andP [].
+        * move: notOmega__Delta2.
+          rewrite -eq__Delta2  all_cat all_cat.
+          move => /andP [] -> /andP [] _.
+          rewrite /all.
+            by move => ->.
+        * apply: (bcd_prime_strengthen [::] A Delta1).
+          ** move: prime__Delta2.
+             rewrite -eq__Delta2  all_cat all_cat.
+             move => /andP [] -> /andP [] _.
+             rewrite /all.
+               by move => ->.
+          ** move: nosubdub__Delta2.
+             rewrite -eq__Delta2.
+             move => /(nosubdub_everywhere) /sub_all prf.
+             apply: prf => C /norP [] _ /negP disprf.
+             apply /negP => /subtypeMachineP prf.
+             apply disprf.
+               by move: (BCD__Trans _ le__BA prf) => /subtypeMachineP.
+          ** apply: BCD__Trans; first by exact le__A12.
+             rewrite -eq__Delta2.
+             apply: BCD__Trans; last by apply: bcd_bigcap_cat.
+             apply: BCD__Trans; first by apply: bcd_cat_bigcap.
+             apply: BCD__Glb => //.
+             apply: BCD__Trans; first by apply: BCD__Lub2.
+               by apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: B]).
+        * apply: (bcd_prime_strengthen Delta21 B Delta22).
+          ** by move: prime__Delta1 => /andP [].
+          ** have: [bcd A <= B].
+             { apply: (nosubdub_prime_bijective [:: A & Delta1] Delta2) => //.
+               - by apply: mem_head.
+               - by rewrite -eq__Delta2 mem_cat mem_head orbT. }
+             move: nosubdub__Delta1 => /andP [] prf _ le__AB.
+             apply: sub_all; last by exact prf.
+             move => C /norP [] nle__CA /negP nle__AC.
+             apply /negP => /subtypeMachineP le__BC.
+             apply nle__AC.
+             apply /subtypeMachineP.
+               by apply: BCD__Trans; first by exact le__AB.
+          ** rewrite eq__Delta2.
+             apply: BCD__Trans; first by exact le__2A1.
+               by apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: A]).
+  Qed.
 
 
+          
+
+
+
+
+
+
+      
+
+      
+
+
+
+
+
+
+
+
+  Lemma nodubsub_count_smaller: forall Delta__min Delta,
+      nosubdub Delta__min ->
+      all (fun B => isPrimeComponent B) Delta__min ->
+      all (fun A => isPrimeComponent A) Delta ->
+      all (fun B => ~~isOmega B) Delta__min ->
+      all (fun A => ~~isOmega A) Delta ->
+
+      [bcd (\bigcap_(A__i <- Delta__min) A__i) <= (\bigcap_(A__i <- Delta) A__i)] ->
+      [bcd (\bigcap_(A__i <- Delta) A__i) <= (\bigcap_(A__i <- Delta__min) A__i)] ->
+      sumn (map (fun A => count (fun B => checkSubtypes _ B A) Delta__min) Delta) <= seq.size Delta.
+  Proof.
+    move => Delta__min Delta nosubdub__min prime__min prime__Delta notOmega__min notOmega__Delta le__minDelta le__Deltamin.
+    have: all (fun A => count (fun B => checkSubtypes _ B A) Delta__min <= 1) Delta.
+    { apply /allP => A inprf.
+      apply: nosubdub_unique => //.
+      move: (bcd_prime_ge_all _ _ le__minDelta prime__Delta notOmega__Delta) => /allP /(fun prf => prf A inprf) /hasP [] B inprf__B le__BA.
+      move: (bcd_prime_ge_all _ _ le__Deltamin prime__min notOmega__min) => /allP /(fun prf => prf B inprf__B) /hasP [] A' inprf__A' le__A'B.
+      have: (A' = A).
+      { 
+      apply /hasP.
+      exists B.
+      
+
+      move: (prf 
+
+
+      move: (prime_filter_le _ _ prime__min notOmega__min le__Deltamin).
+      move => /(fun le => bcd_prime_ge_all _ _ le prime__min notOmega__min) => /allP.
+      
+
+
+
+
+      
+
+  Lemma primeFactors_smaller: forall A Delta1 Delta2 contextualize,
+      
+
+      nosubdub Delta2 ->
+      all (fun B => ~~ checkSubtypes _ Omega B) Delta2 ->
+      seq.size Delta1 < seq.size (primeFactors_rec A contextualize Delta2) ->
+      [bcd (\bigcap_(A_i <- Delta1) A_i) <= \bigcap_(P_i <- primeFactors_rec A contextualize Delta2) P_i] ->
+      has (fun B => all (fun C => ~~checkSubtypes _ C B) (primeFactors_rec A contextualize Delta2)) Delta1.
+  Proof.
+    move => A Delta1 Delta2 contextualize /(primeFactors_nosubdub A Delta2 contextualize).
+    move: A Delta2.
+    elim: Delta1.
+    - 
+      case => //= B Delta2 prf _.
+      + 
+    
+
+  
 
 
   (**)
