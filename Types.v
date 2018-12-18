@@ -4567,6 +4567,92 @@ Section PrimalityLemmas.
   Qed.
 End PrimalityLemmas.
 
+Section Split.
+  Variable Constructor: ctor.
+
+  Definition safeSplit (Delta: seq (seq (seq (@IT Constructor) * @IT Constructor))): seq (seq (@IT Constructor) * @IT Constructor) * seq (seq (seq (@IT Constructor) * @IT Constructor)) :=
+    match Delta with
+    | [::] => ([::], [:: [::]])
+    | [:: Delta ] => (Delta, [::[::]])
+    | [:: Delta1 & Delta2 ] => (Delta1, Delta2)
+    end.
+
+  Fixpoint splitRec
+           (A: @IT Constructor)
+           (srcs: seq (@IT Constructor))
+           (Delta: seq (seq (seq (@IT Constructor) * @IT Constructor))):
+    seq (seq (seq (@IT Constructor) * @IT Constructor)) :=
+    if isOmega A
+    then Delta
+    else match A with
+         | Arrow A B =>
+           let (Delta1, Delta2) := safeSplit Delta in
+           [:: [:: ([:: A & srcs], B) & Delta1] & splitRec A [:: A & srcs] Delta2]
+         | A \cap B =>
+           splitRec A srcs (splitRec B srcs Delta)
+         | _ => Delta
+         end.
+
+  Definition splitTy (A: @IT Constructor): seq (seq (seq (@IT Constructor) * @IT Constructor)) :=
+    if isOmega A
+    then [::]
+    else splitRec A [::] [:: [:: ([::], A)]].
+
+  Inductive Cover : Type :=
+  | SplitCover 
+      (splits : seq (seq (seq (@IT Constructor) * @IT Constructor)))
+      (toCover : seq (@IT Constructor))
+      (currentResult : option (seq (@IT Constructor) * (@IT Constructor)))
+      (delta: seq (seq (@IT Constructor) * (@IT Constructor))) : Cover
+  | ContinueToCover (task: Cover)
+                    (continue: seq (seq (@IT Constructor) * (@IT Constructor)) -> Cover): Cover
+  | CoverResult (delta: seq (seq (@IT Constructor) * (@IT Constructor))): Cover.
+
+  Definition changedCover
+             (covered: seq (@IT Constructor))
+             (toCover: seq (@IT Constructor)): option (seq (@IT Constructor)) :=
+
+
+  Definition step
+             (splits : seq (seq (seq (@IT Constructor) * @IT Constructor)))
+             (toCover : seq (@IT Constructor))
+             (currentResult : option (seq (@IT Constructor) * (@IT Constructor)))
+             (delta: seq (seq (@IT Constructor) * (@IT Constructor))) : Cover :=
+    if splits is (srcs, tgt, covered)
+    then
+
+
+
+    else CoverResult delta
+
+  Definition coverStep (cover: Cover): Cover :=
+    match cover with
+    | CoverResult delta => CoverResult delta
+    | ContinueToCover task continue =>
+      match task with
+      | CoverResult delta => continue delta
+      | ContinueToCover nextTask nextContinue =>
+        ContinueToCover nextTask (fun delta => ContinueToCover (nextContinue delta) continue)
+      | 
+                    
+
+
+
+  Definition mkArrow (B: @IT Constructor) (srcs: seq (@IT Constructor)): @IT Constructor :=
+    foldr (fun A B => A -> B) B srcs.
+
+
+  Lemma splitTy_le: forall A B srcs Delta,
+      subseq Delta (nth [::] (splitTy A) (length srcs)) ->
+      [bcd A <= mkArrow B srcs] ->
+      [bcd (\bigcap_(A_i <- Delta) (mkArrow A_i.2 A_i.1)) <= mkArrow B srcs].
+  Proof.
+
+
+
+  (**)
+End Split.
+
 Section NatConstructors.
   Lemma leq_transb: forall (m n p: nat), (m <= n) && (n <= p) ==> (m <= p).
   Proof.
