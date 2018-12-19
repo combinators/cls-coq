@@ -4611,15 +4611,30 @@ Section Split.
   Definition changedCover
              (covered: seq (@IT Constructor))
              (toCover: seq (@IT Constructor)): option (seq (@IT Constructor)) :=
-
+    let (coveredFresh, uncovered) :=
+        foldl (fun s A =>
+                 if A \in covered
+                 then ([:: A & s.1], s.2)
+                 else (s.1, [:: A & s.2])) ([::], [::]) toCover in
+    if coveredFresh is [::] then None else Some uncovered.
 
   Definition step
              (splits : seq (seq (seq (@IT Constructor) * @IT Constructor)))
              (toCover : seq (@IT Constructor))
              (currentResult : option (seq (@IT Constructor) * (@IT Constructor)))
              (delta: seq (seq (@IT Constructor) * (@IT Constructor))) : Cover :=
-    if splits is (srcs, tgt, covered)
+    if splits is [:: (srcs, tgt, covered) & splits]
     then
+      match changedCover covered toCover, currentResult with
+      | Some [::], None =>
+        ContinueToCover (SplitCover splits toCover currentResult delta)
+                        (fun delta => CoverResult [:: (srcs, tgt) & delta])
+      | Some [::], Some result =>
+        ContinueToCover (SplitCover splits toCover currentResult delta)
+                        (fun delta => CoverResult [:: (addToSplit result src tgt) & delta])
+      | 
+
+    else delta
 
 
 
