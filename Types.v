@@ -4570,7 +4570,9 @@ End PrimalityLemmas.
 Section Split.
   Variable Constructor: ctor.
 
-  Definition safeSplit (Delta: seq (seq (seq (@IT Constructor) * @IT Constructor))): seq (seq (@IT Constructor) * @IT Constructor) * seq (seq (seq (@IT Constructor) * @IT Constructor)) :=
+  Definition MultiArrow: Type := seq (@IT Constructor) * (@IT Constructor).
+
+  Definition safeSplit (Delta: seq (seq MultiArrow)): seq MultiArrow * seq (seq MultiArrow) :=
     match Delta with
     | [::] => ([::], [:: [::]])
     | [:: Delta ] => (Delta, [::[::]])
@@ -4580,8 +4582,8 @@ Section Split.
   Fixpoint splitRec
            (A: @IT Constructor)
            (srcs: seq (@IT Constructor))
-           (Delta: seq (seq (seq (@IT Constructor) * @IT Constructor))):
-    seq (seq (seq (@IT Constructor) * @IT Constructor)) :=
+           (Delta: seq (seq MultiArrow)):
+    seq (seq MultiArrow) :=
     if isOmega A
     then Delta
     else match A with
@@ -4593,20 +4595,20 @@ Section Split.
          | _ => Delta
          end.
 
-  Definition splitTy (A: @IT Constructor): seq (seq (seq (@IT Constructor) * @IT Constructor)) :=
+  Definition splitTy (A: @IT Constructor): seq (seq MultiArrow) :=
     if isOmega A
     then [::]
     else splitRec A [::] [:: [:: ([::], A)]].
 
   Inductive Cover : Type :=
   | SplitCover 
-      (splits : seq (seq (seq (@IT Constructor) * @IT Constructor)))
+      (splits : seq (MultiArrow * seq (@IT Constructor)))
       (toCover : seq (@IT Constructor))
-      (currentResult : option (seq (@IT Constructor) * (@IT Constructor)))
-      (delta: seq (seq (@IT Constructor) * (@IT Constructor))) : Cover
+      (currentResult : option MultiArrow)
+      (delta: seq MultiArrow) : Cover
   | ContinueToCover (task: Cover)
-                    (continue: seq (seq (@IT Constructor) * (@IT Constructor)) -> Cover): Cover
-  | CoverResult (delta: seq (seq (@IT Constructor) * (@IT Constructor))): Cover.
+                    (continue: seq MultiArrow -> Cover): Cover
+  | CoverResult (delta: seq MultiArrow): Cover.
 
   Definition changedCover
              (covered: seq (@IT Constructor))
@@ -4618,44 +4620,85 @@ Section Split.
                  else (s.1, [:: A & s.2])) ([::], [::]) toCover in
     if coveredFresh is [::] then None else Some uncovered.
 
-  Definition step
-             (splits : seq (seq (seq (@IT Constructor) * @IT Constructor)))
-             (toCover : seq (@IT Constructor))
-             (currentResult : option (seq (@IT Constructor) * (@IT Constructor)))
-             (delta: seq (seq (@IT Constructor) * (@IT Constructor))) : Cover :=
+  
+
+  Definition mergeMultiArrow
+             (arrow: MultiArrow)
+             (srcs: seq (@IT Constructor))
+             (tgt: @IT Constructor): MultiArrow :=
+    (map (fun src => src.1 \cap src.2) (zip srcs arrow.1), tgt \cap arrow.2).
+
+  Fixpoint cover (splits : seq (MultiArrow * seq (@IT Constructor)))
+           (toCover : seq (@IT Constructor))
+           (currentResult : option MultiArrow)
+           (Delta: seq MultiArrow): seq MultiArrow :=
     if splits is [:: (srcs, tgt, covered) & splits]
     then
       match changedCover covered toCover, currentResult with
       | Some [::], None =>
-        ContinueToCover (SplitCover splits toCover currentResult delta)
-                        (fun delta => CoverResult [:: (srcs, tgt) & delta])
+        [:: (srcs, tgt) & cover splits toCover currentResult Delta]
       | Some [::], Some result =>
-        ContinueToCover (SplitCover splits toCover currentResult delta)
-                        (fun delta => CoverResult [:: (addToSplit result src tgt) & delta])
-      | 
+        [:: (mergeMultiArrow result srcs tgt) & cover splits toCover currentResult Delta]
+      | Some remaining, Some (currentSources, currentTarget) =>
+        if all (fun AB => checkSubtypes _ AB.1 AB.2) (zip currentSources srcs)
+        then cover splits remaining (Some (currentSources, tgt \cap currentTarget)) Delta
+        else
+          cover splits remaining
+                       (Some (mergeMultiArrow (currentSources, currentTarget) srcs tgt))
+                       (cover splits toCover currentResult Delta)
+      | Some remaining, None =>
+        cover splits remaining (Some (srcs, tgt))
+              (cover splits toCover currentResult Delta)
+      | None, _ =>
+        cover splits toCover currentResult Delta
+      end
+    else Delta.
 
-    else delta
-
-
-
-    else CoverResult delta
-
-  Definition coverStep (cover: Cover): Cover :=
-    match cover with
-    | CoverResult delta => CoverResult delta
-    | ContinueToCover task continue =>
-      match task with
-      | CoverResult delta => continue delta
-      | ContinueToCover nextTask nextContinue =>
-        ContinueToCover nextTask (fun delta => ContinueToCover (nextContinue delta) continue)
-      | 
-                    
-
-
+  Fixpoint rightAssocIntersectionOf (A: @IT Constructor) (Delta: seq (@IT Constructor)): bool :=
+    match A with
+    | A \cap B => (A \in Delta) && rightAssocIntersectionOf B Delta
+    | A => A \in Delta
+    end.
 
   Definition mkArrow (B: @IT Constructor) (srcs: seq (@IT Constructor)): @IT Constructor :=
     foldr (fun A B => A -> B) B srcs.
 
+  Definition joinedArrowOf (A: MultiArrow) (Delta: seq MultiArrow) :=
+    rightAssocIntersectionOf (mkArrow A.2 A.1) (map (fun A => mkArrow A.2 A.1) Delta).
+
+  Definition SoundArrow
+             (splits: seq MultiArrow)
+             (toCover: seq (@IT Constructor))
+             (A: MultiArrow): bool :=
+    (checkSubtypes _ A.2 (\bigcap_(A_i <- toCover) A_i))
+      && joinedArrowOf A splits.
+
+  Lemma joinedArrowOf_nil: forall A, joinedArrowOf A [::] = false.
+  Proof.
+    case => srcs tgt.
+    rewrite /joinedArrowOf /=.
+    elim: srcs => //=.
+      by elim: tgt.
+  Qed.
+
+
+  Lemma cover_sound:
+    forall splits toCover currentResult Delta,
+      all (fun split => subseq split.2 toCover) splits ->
+      all (SoundArrow (map (fun x => x.1) splits) toCover) Delta ->
+      if currentResult is Some A
+      then
+        joinedArrowOf A (map (fun x => x.1) splits)
+        -> all (SoundArrow [:: A & map (fun x => x.1) splits] toCover) (cover splits toCover (Some A) Delta)
+      else all (SoundArrow (map (fun x => x.1) splits) toCover) (cover splits toCover None Delta).
+  Proof.
+    elim.
+    - move => toCover [] A //.
+      case => //= [] [] srcs tgt Delta.
+        by rewrite joinedArrowOf_nil.
+    - move => [] [] srcs tgt covered splits IH toCover [].
+      + 
+      
 
   Lemma splitTy_le: forall A B srcs Delta,
       subseq Delta (nth [::] (splitTy A) (length srcs)) ->
