@@ -4610,14 +4610,18 @@ Section Split.
                     (continue: seq MultiArrow -> Cover): Cover
   | CoverResult (delta: seq MultiArrow): Cover.
 
+  Definition paritionCover
+             (covered: seq (@IT Constructor))
+             (toCover: seq (@IT Constructor)): seq (@IT Constructor) * seq (@IT Constructor) :=
+    foldr (fun A s =>
+                 if A \in covered
+                 then ([:: A & s.1], s.2)
+                 else (s.1, [:: A & s.2])) ([::], [::]) toCover.
+
   Definition changedCover
              (covered: seq (@IT Constructor))
              (toCover: seq (@IT Constructor)): option (seq (@IT Constructor)) :=
-    let (coveredFresh, uncovered) :=
-        foldl (fun s A =>
-                 if A \in covered
-                 then ([:: A & s.1], s.2)
-                 else (s.1, [:: A & s.2])) ([::], [::]) toCover in
+    let (coveredFresh, uncovered) := paritionCover covered toCover in
     if coveredFresh is [::] then None else Some uncovered.
 
   
@@ -4626,7 +4630,7 @@ Section Split.
              (arrow: MultiArrow)
              (srcs: seq (@IT Constructor))
              (tgt: @IT Constructor): MultiArrow :=
-    (map (fun src => src.1 \cap src.2) (zip srcs arrow.1), tgt \cap arrow.2).
+      (map (fun src => src.1 \cap src.2) (zip srcs arrow.1), tgt \cap arrow.2).
 
   Fixpoint cover (splits : seq (MultiArrow * seq (@IT Constructor)))
            (toCover : seq (@IT Constructor))
@@ -4653,6 +4657,222 @@ Section Split.
         cover splits toCover currentResult Delta
       end
     else Delta.
+
+  Lemma partitionCover_filter:
+    forall covered toCover,
+      paritionCover covered toCover = (filter (fun A => A \in covered) toCover,
+                                       filter (fun A => A \notin covered) toCover).
+  Proof.
+    move => covered toCover.
+    rewrite /paritionCover.
+    rewrite -[X in _ = (X, _)](cats0) -[X in _ = (_, X)](cats0).
+    set l := (X in foldr _ (X, _) _ = (_ ++ X, _)).
+    set r := (X in foldr _ (_, X) _ = (_, _ ++ X)).
+    move: l r.
+    elim: toCover => //= A toCover IH l r.
+    rewrite (IH l r).
+      by case: (A \in covered).
+  Qed.        
+
+  Lemma changedCover_le:
+    forall covered toCover A B,
+      [bcd A <= \bigcap_(A_i <- covered) A_i] ->
+      [bcd B <= \bigcap_(A_i <- if changedCover covered toCover is Some remaining then remaining else toCover) A_i] ->
+      [bcd (if changedCover covered toCover is Some _ then (A \cap B) else B) <= \bigcap_(A_i <- toCover) A_i].
+  Proof.
+    move => covered toCover.
+    rewrite /changedCover partitionCover_filter.
+    move => A B le__Acovered le__Brest.
+    apply: BCD__Trans;
+      last apply: (bcd_all_ge _ (filter (fun A => A \in covered) toCover ++ filter (fun A => A \notin covered) toCover)).
+    - apply: BCD__Trans; last by apply: bcd_bigcap_cat.
+      apply: BCD__Glb.
+      + move: le__Acovered le__Brest.
+        case filter_eq: (filter (fun A => A \in covered) toCover); first by rewrite /=.
+        rewrite -filter_eq.
+        move => le__Acovered _.
+        apply: BCD__Trans; first by apply: BCD__Lub1.
+        apply: BCD__Trans; first by exact le__Acovered.
+        apply: bcd_all_ge.
+        apply /allP => C inprf.
+          apply /hasP.
+          exists C.
+          ** move: inprf.
+               by rewrite mem_filter => /andP [].
+          ** by apply /subtypeMachineP.
+      + move: le__Brest.
+        case: (filter (fun A => A \in covered) toCover).
+        * move => le__Brest.
+          apply: BCD__Trans; first by exact le__Brest.
+          apply: bcd_all_ge.
+          apply /allP => C inprf.
+          apply /hasP.
+          exists C.
+          ** move: inprf.
+               by rewrite mem_filter => /andP [].
+          ** by apply /subtypeMachineP.
+        * move => *.
+            by apply: BCD__Trans; first by apply: BCD__Lub2.
+    - apply /allP => C inprf.
+      apply /hasP.
+      exists C; last by apply /subtypeMachineP.
+        by rewrite mem_cat mem_filter mem_filter inprf andbT andbT orbN.
+  Qed.
+
+
+  Lemma cover_current_le_tgt_or_inDelta:
+    forall splits toCover currentResult Delta,
+      all (fun A => checkSubtypes _ A.2 currentResult.2 || (A \in Delta))
+          (cover splits toCover (Some currentResult) Delta).
+  Proof.
+    elim.
+    - move => /= _ ? Delta.
+      apply: sub_all; last by (apply /allP => x inprf; exact inprf).
+      move => ? ->.
+        by rewrite orbT.
+    - move => [] [] srcs tgt covered splits IH toCover.
+      case;
+        rewrite /=; case (changedCover covered toCover).
+      + case.
+        * move => ? currentTgt Delta.
+          rewrite /=.
+          move: (@BCD__Lub2 _ tgt currentTgt) => /subtypeMachineP -> /=.
+            by apply: IH.
+        * move => A remaining currentSrcs currentTgt Delta.
+          case: (all (fun AB => checkSubtypes Constructor AB.1 AB.2) (zip currentSrcs srcs)).
+          ** apply: sub_all; last by apply: IH.
+             move => B /orP [].
+             *** by move => /subtypeMachineP /(fun prf => BCD__Trans _ prf BCD__Lub2) /subtypeMachineP ->.
+             *** by move => ->; rewrite orbT.
+          ** apply: sub_all; last by apply: IH.
+             move => B /orP [].
+             *** by move => /subtypeMachineP /(fun prf => BCD__Trans _ prf BCD__Lub2) /subtypeMachineP ->.
+             *** move: B.
+                 apply: allP.
+                   by apply: IH.
+      + move => *.
+          by apply: IH.
+  Qed.
+
+  Lemma cover_le:
+    forall splits toCover currentResult Delta,
+      all (fun split => checkSubtypes _ split.1.2 (\bigcap_(A_i <- split.2) A_i)) splits ->
+      all (fun A => checkSubtypes _ A.2 (\bigcap_(A_i <- toCover) A_i)) Delta ->
+      all (fun A => checkSubtypes _ A.2 (\bigcap_(A_i <- toCover) A_i))
+          (cover splits toCover currentResult Delta).
+  Proof.
+    elim => // [] [] [] srcs tgt covered splits IH toCover.
+    have le__toCoverRemaining:
+      (if changedCover covered toCover is Some remaining
+       then [bcd (\bigcap_(A_i <- toCover) A_i) <= (\bigcap_(A_i <- remaining) A_i)]
+       else true).
+    { rewrite /changedCover partitionCover_filter.
+      case filter_eq: (filter (fun A => A \in covered) toCover) => //.
+      apply: bcd_all_ge.
+      apply /allP => C inprf.
+      apply /hasP.
+      exists C; last by apply /subtypeMachineP.
+      move: inprf.
+        by rewrite mem_filter => /andP [] _ ->. }
+    move => currentResult Delta /andP [] /subtypeMachineP le__Acovered le__splits le__Delta.
+    have:
+      (if changedCover covered toCover is Some remaining
+       then all (fun A => checkSubtypes Constructor A.2 (\bigcap_(A_i <- remaining) A_i))
+                Delta
+       else true).
+    { move: le__toCoverRemaining.
+      rewrite /changedCover partitionCover_filter.
+      case filter_eq: (filter (fun A => A \in covered) toCover) => //.
+      move => le__toCoverRemaining.
+      apply: sub_all; last by exact le__Delta.
+      move => AB /subtypeMachineP prf.
+      apply /subtypeMachineP.
+        by apply: BCD__Trans; first by exact prf. }
+    case: currentResult.
+    - move => A.
+      move: (fun B => changedCover_le covered toCover tgt B  le__Acovered).
+      rewrite /cover -/cover.
+      move: le__toCoverRemaining.
+      case: (changedCover covered toCover).
+      + case.
+        * move => _ /(fun prf => prf A.2 BCD__omega) /subtypeMachineP /= -> /= _.
+            by apply: IH.
+        * move: A le__Acovered => [] srcs__A tgt__A le__Acovered.
+          case: (all (fun AB => checkSubtypes Constructor AB.1 AB.2) (zip srcs__A srcs)).
+          ** move => B remaining _ prf le__Deltaremaining.
+             apply /allP => AB inprf.
+             move: (IH [:: B & remaining] (Some (srcs__A, tgt \cap tgt__A)) Delta le__splits le__Deltaremaining).
+             move => /allP /(fun prf => prf AB inprf) /subtypeMachineP /(prf _) le__tgtB.
+             move: (cover_current_le_tgt_or_inDelta splits [:: B & remaining] (srcs__A, tgt \cap tgt__A) Delta).
+             move => /allP /(fun prf => prf AB inprf) /orP [].
+             *** move => /subtypeMachineP /= le__ABtgt.
+                 apply /subtypeMachineP.
+                 apply: BCD__Trans; last by exact le__tgtB.
+                 apply: BCD__Glb => //.
+                   by apply: BCD__Trans; first by exact le__ABtgt.
+             *** by move: le__Delta => /allP /(fun prf => prf AB).
+          ** move => B remaining le__toCoverRemaining prf le__Deltaremaining.
+             apply /allP => AB inprf.
+             move: (cover_current_le_tgt_or_inDelta splits
+                                                    [:: B & remaining]
+                                                    (mergeMultiArrow (srcs__A, tgt__A) srcs tgt)
+                                                    (cover splits toCover (Some (srcs__A, tgt__A)) Delta)).
+             move: (IH toCover (Some (srcs__A, tgt__A)) Delta le__splits le__Delta).
+             move => le__Delta2.
+             move => /allP /(fun prf => prf AB inprf) /orP [].
+             *** move => /subtypeMachineP /= le__ABtgt.
+                 apply /subtypeMachineP.
+                 have: all (fun AB => checkSubtypes _ AB.2 (\bigcap_(A_i <- [:: B & remaining]) A_i))
+                           (cover splits toCover (Some (srcs__A, tgt__A)) Delta).
+                 { apply: sub_all; last by exact le__Delta2.
+                   move => CD /subtypeMachineP prf2.
+                   apply /subtypeMachineP.
+                     by apply: BCD__Trans; first by exact prf2. }
+                 move => /(IH [:: B & remaining]
+                             (Some (mergeMultiArrow (srcs__A, tgt__A) srcs tgt))
+                             (cover splits toCover (Some (srcs__A, tgt__A)) Delta)
+                             le__splits).
+                 move => /allP /(fun prf => prf AB inprf) /subtypeMachineP /(prf _) le__tgtB.
+                 apply: BCD__Trans; last by exact le__tgtB.
+                 apply: BCD__Glb => //.
+                   by apply: BCD__Trans; first by exact le__ABtgt.
+             *** by move => /(allP le__Delta2 AB).
+      + move => *; by apply IH.
+    - move: (fun B => changedCover_le covered toCover tgt B  le__Acovered).
+      rewrite /cover -/cover.
+      move: le__toCoverRemaining.
+      case: (changedCover covered toCover).
+      + case.
+        * move => _ /(fun prf => prf Omega BCD__Refl) /(BCD__Trans _ (BCD__Glb BCD__Refl BCD__omega)) /subtypeMachineP /= -> /= _.
+            by apply: IH.
+        * move => B remaining le__toCoverRemaining prf le__Deltareamaining.
+          apply /allP => AB inprf.
+          move: (cover_current_le_tgt_or_inDelta splits
+                                                 [:: B & remaining]
+                                                 (srcs, tgt)
+                                                 (cover splits toCover None Delta)).
+          move: (IH toCover None Delta le__splits le__Delta).
+          move => le__Delta2.
+          move => /allP /(fun prf => prf AB inprf) /orP [].
+          ** move => /subtypeMachineP /= le__ABtgt.
+             apply /subtypeMachineP.
+             have: all (fun AB => checkSubtypes _ AB.2 (\bigcap_(A_i <- [:: B & remaining]) A_i))
+                       (cover splits toCover None Delta).
+             { apply: sub_all; last by exact le__Delta2.
+               move => CD /subtypeMachineP prf2.
+               apply /subtypeMachineP.
+                 by apply: BCD__Trans; first by exact prf2. }
+             move => /(IH [:: B & remaining]
+                         (Some (srcs, tgt))
+                         (cover splits toCover None Delta)
+                         le__splits).
+             move => /allP /(fun prf => prf AB inprf) /subtypeMachineP /(prf _) le__tgtB.
+             apply: BCD__Trans; last by exact le__tgtB.
+               by apply: BCD__Glb.
+          ** by move => /(allP le__Delta2 AB).
+      + move => *; by apply /IH .
+  Qed.
+
 
   Fixpoint rightAssocIntersectionOf (A: @IT Constructor) (Delta: seq (@IT Constructor)): bool :=
     match A with
@@ -4684,7 +4904,6 @@ Section Split.
 
   Lemma cover_sound:
     forall splits toCover currentResult Delta,
-      all (fun split => subseq split.2 toCover) splits ->
       all (SoundArrow (map (fun x => x.1) splits) toCover) Delta ->
       if currentResult is Some A
       then
