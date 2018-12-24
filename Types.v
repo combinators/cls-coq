@@ -4874,6 +4874,21 @@ Section Split.
   Qed.
 
 
+
+
+  Definition cover_naive
+           (splits : seq (MultiArrow * seq (@IT Constructor)))
+           (toCover : seq (@IT Constructor)) :=
+    [set selection in powerset [set: seq_sub splits] |  [set: seq_sub toCover] \subset (imset (fun B => [set: seq_sub B.2])
+                                                                                              selection)].
+
+
+  Lemma cover_complete:
+    forall splits toCover currentResult Delta selection,
+      subseq selection splits ->
+
+      has (fun AB => checkSubtypes (mkArrow AB.2 AB.1) () ) (cover splits toCover currentResult Delta)
+
   Fixpoint rightAssocIntersectionOf (A: @IT Constructor) (Delta: seq (@IT Constructor)): bool :=
     match A with
     | A \cap B => (A \in Delta) && rightAssocIntersectionOf B Delta
