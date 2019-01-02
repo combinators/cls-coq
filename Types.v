@@ -3164,6 +3164,8 @@ Section SubtypeMachineSpec.
   End Runtime.
 End SubtypeMachineSpec.
 
+Arguments checkSubtypes [Constructor].
+
 Section SubtypeMachineInversion.
   Variable Constructor: ctor.
 
@@ -3225,6 +3227,8 @@ Section SubtypeMachineInversion.
     end.
 
 End SubtypeMachineInversion.
+
+Arguments SubtypeMachine_inv [Constructor] [p] [r].
 
 Section PrimalityDefinitions.
   Variable Constructor: ctor.
@@ -3552,7 +3556,7 @@ Section PrimalityLemmas.
       ~~isOmega A ->
       PrimeComponent A ->
       [bcd (\bigcap_(A__i <- Delta) A__i) <= A] ->
-      has (fun B => checkSubtypes _ B A) Delta.
+      has (fun B => checkSubtypes B A) Delta.
   Proof.
     move => A.
     elim.
@@ -3572,10 +3576,10 @@ Section PrimalityLemmas.
     match Delta with
     | [::] => [:: A]
     | [:: B & Delta] =>
-      if checkSubtypes _ B A
+      if checkSubtypes B A
       then [:: B & Delta]
       else
-        if checkSubtypes _ A B
+        if checkSubtypes A B
         then addAndFilter Delta A
         else [:: B & addAndFilter Delta A]
     end.
@@ -3598,22 +3602,22 @@ Section PrimalityLemmas.
                        (primeFactors_rec A1 contextualize Delta)
     end.
 
-  Lemma addAndFilterLeq__A: forall A Delta, has (fun B => checkSubtypes _ B A) (addAndFilter Delta A).
+  Lemma addAndFilterLeq__A: forall A Delta, has (fun B => checkSubtypes B A) (addAndFilter Delta A).
   Proof.
     move => A.
     elim => //=.
     - rewrite orbF.
         by apply /subtypeMachineP.
     - move => B Delta IH.
-      move check__BA: (checkSubtypes _ B A) => [] //=.
+      move check__BA: (checkSubtypes B A) => [] //=.
       + by rewrite check__BA.
-      + case: (checkSubtypes _ A B) => //=.
+      + case: (checkSubtypes A B) => //=.
           by rewrite IH orbT.
   Qed.
 
   Lemma addAndFilterLeq__DeltaA: forall C A Delta,
-      has (fun B => checkSubtypes _ B C) (addAndFilter Delta A) <->
-      has (fun B => checkSubtypes _ B C) Delta \/ checkSubtypes _ A C.
+      has (fun B => checkSubtypes B C) (addAndFilter Delta A) <->
+      has (fun B => checkSubtypes B C) Delta \/ checkSubtypes A C.
   Proof.
     move => C A.
     elim => //=.
@@ -3621,11 +3625,11 @@ Section PrimalityLemmas.
       split; first by move => ->; right.
         by move => [] //.
     - move => B Delta IH.
-      move le__BA: (checkSubtypes _ B A) => [] //=.
+      move le__BA: (checkSubtypes B A) => [] //=.
       + split; first by move => ?; left.
         move => [] //.
           by move: le__BA => /subtypeMachineP /(BCD__Trans) mkPrf /subtypeMachineP /mkPrf /subtypeMachineP ->.
-      + move le__AB: (checkSubtypes _ A B) => [] //=.
+      + move le__AB: (checkSubtypes A B) => [] //=.
         * split.
           ** move => /IH [] ->; last by right.
                by rewrite orbT; left.
@@ -3652,9 +3656,8 @@ Section PrimalityLemmas.
              *** move => /or_intror prf.
                  move: ((proj2 IH) (prf _)) => ->.
                    by rewrite orbT.
-    Qed.
+  Qed.
   
-
 
   Lemma has_subseq:
     forall {a: eqType} P (Delta Delta': seq a),
@@ -3668,8 +3671,8 @@ Section PrimalityLemmas.
   Lemma addAndFilter_has_le_weaken:
     forall A B Delta' Delta,
       subseq Delta Delta' ->
-      has (fun D => checkSubtypes _ D B) (addAndFilter Delta A) ->
-      has (fun D => checkSubtypes _ D B) (addAndFilter Delta' A).
+      has (fun D => checkSubtypes D B) (addAndFilter Delta A) ->
+      has (fun D => checkSubtypes D B) (addAndFilter Delta' A).
   Proof.
     move => A B.
     elim.
@@ -3680,22 +3683,22 @@ Section PrimalityLemmas.
       case => //=.
       + move => _ le__AB.
         move: (IH [::] (sub0seq Delta') le__AB) => prf.
-        move le__CA: (checkSubtypes _ C A) => [].
+        move le__CA: (checkSubtypes C A) => [].
         * apply /orP; left.
           apply /subtypeMachineP.
           apply: (BCD__Trans A); apply /subtypeMachineP => //.
             by rewrite orbF in le__AB.
-        * case: (checkSubtypes _ A C) => //=.
+        * case: (checkSubtypes A C) => //=.
             by rewrite prf orbT.
       + move => C'.
         case eq__CC': (C' == C) => [].
         * move => Delta subseq__DeltaDelta'.
           rewrite (eqP eq__CC').
-          case: (checkSubtypes _ A C).
-          ** case: (checkSubtypes _ C A); last by apply: IH.
+          case: (checkSubtypes A C).
+          ** case: (checkSubtypes C A); last by apply: IH.
              apply: has_subseq.
                by apply: (cat_subseq (subseq_refl [:: C])).
-          ** case: (checkSubtypes _ C A).
+          ** case: (checkSubtypes C A).
              *** apply: has_subseq.
                    by apply: (cat_subseq (subseq_refl [:: C])).
              *** move => //= /orP []; first by move => ->.
@@ -3703,16 +3706,16 @@ Section PrimalityLemmas.
                    by rewrite orbT.
         * move => Delta.
           move => /IH mkPrf /mkPrf.
-          case le__CA: (checkSubtypes Constructor C A).
+          case le__CA: (checkSubtypes C A).
           ** move => /addAndFilterLeq__DeltaA [] //=; first by move ->; rewrite orbT.
                by move: le__CA => /subtypeMachineP /(BCD__Trans) mkPrf' /subtypeMachineP
                                 /mkPrf' /subtypeMachineP ->.
-          ** case (checkSubtypes _ A C) => //= ->.
+          ** case (checkSubtypes A C) => //= ->.
                by rewrite orbT.
   Qed.
 
   Lemma addAndFilterLeq__Delta:
-    forall A Delta, all (fun B => has (fun C => checkSubtypes _ C B) (addAndFilter Delta A)) Delta .
+    forall A Delta, all (fun B => has (fun C => checkSubtypes C B) (addAndFilter Delta A)) Delta .
   Proof.
     move => A.
     elim.
@@ -3737,8 +3740,8 @@ Section PrimalityLemmas.
     elim.
     - rewrite (mem_seq1 B A) => /eqP ?; by left.
     - move => C Delta IH //=.
-      case (checkSubtypes _ C A); first by move => ?; right.
-      case (checkSubtypes _ A C).
+      case (checkSubtypes C A); first by move => ?; right.
+      case (checkSubtypes A C).
       + move => /IH.
         rewrite in_cons.
         move => [] ->; first by left.
@@ -3750,7 +3753,7 @@ Section PrimalityLemmas.
   Qed.
 
   Lemma bigcap_has_le: forall (A: @IT Constructor) Delta,
-      has (fun B => checkSubtypes _ B A) Delta ->
+      has (fun B => checkSubtypes B A) Delta ->
       [bcd (\bigcap_(A__i <- Delta) A__i) <= A].
   Proof.
     move => A.
@@ -3765,7 +3768,7 @@ Section PrimalityLemmas.
       + by move => /(BCD__Trans _ (@BCD__omega _ B)).
       + move => *.
           by apply: BCD__Trans; first by apply: BCD__Lub2.
-  Qed.   
+  Qed.
 
   Lemma addAndFilter_monotonic: forall A Delta,
       [bcd (\bigcap_(A__i <- addAndFilter Delta A) A__i) <= \bigcap_(A__i <- Delta) A__i].
@@ -3773,8 +3776,8 @@ Section PrimalityLemmas.
     move => A Delta.
     move: (addAndFilterLeq__Delta A Delta).
     elim: Delta => //= B Delta IH /andP [].
-    move le__BA: (checkSubtypes _ B A) => [] //=.
-    move le__AB: (checkSubtypes _ A B) => [].
+    move le__BA: (checkSubtypes B A) => [] //=.
+    move le__AB: (checkSubtypes A B) => [].
     - move => prf__B /IH.
       move: IH prf__B => _.
       case: Delta.
@@ -3792,7 +3795,7 @@ Section PrimalityLemmas.
       * by apply: BCD__Trans; first by apply: BCD__Lub2.
   Qed.
 
-  Lemma primeFactors_prime:
+  Lemma primeFactors_rec_prime:
     forall A Delta contextualize,
       all (fun B => isPrimeComponent B) Delta ->
       (forall A, isPrimeComponent A -> isPrimeComponent (contextualize A)) ->
@@ -3848,7 +3851,7 @@ Section PrimalityLemmas.
         by apply: IH__A.
   Qed.
 
-  Lemma primeFactors_leq: forall A Delta contextualize,
+  Lemma primeFactors_rec_leq: forall A Delta contextualize,
       (forall B C, [bcd B <= C] -> [bcd (contextualize B) <= (contextualize C)]) ->
       (forall B C, [bcd ((contextualize B) \cap (contextualize C)) <= (contextualize (B \cap C)) ]) ->
       [bcd (\bigcap_(P__i <- primeFactors_rec A contextualize Delta) P__i) <= contextualize A].
@@ -3935,19 +3938,19 @@ Section PrimalityLemmas.
   Qed.
 
   Lemma addAndFilterGeq__Delta: forall A Delta,
-      all (fun B => has (fun C => checkSubtypes _ C B) [:: A & Delta]) (addAndFilter Delta A).
+      all (fun B => has (fun C => checkSubtypes C B) [:: A & Delta]) (addAndFilter Delta A).
   Proof.
     move => A.
     elim => //=.
     - rewrite andbT orbF.
         by apply /subtypeMachineP.
     - move => B Delta IH.
-      move le__BA: (checkSubtypes _ B A) => [] //=.
+      move le__BA: (checkSubtypes B A) => [] //=.
       + apply /andP.
         split.
         * apply /orP; right; apply /orP; left.
             by apply /subtypeMachineP.
-        * apply: (sub_all (a1 := fun B => has (fun C => checkSubtypes _ C B) Delta)).
+        * apply: (sub_all (a1 := fun B => has (fun C => checkSubtypes C B) Delta)).
           ** move => ? ->.
                by do 2 rewrite orbT.
           ** clear...
@@ -3958,7 +3961,7 @@ Section PrimalityLemmas.
              *** apply: sub_all; last by exact IH.
                  move => ? ->.
                    by rewrite orbT.
-      + move leq__AB: (checkSubtypes _ A B) => [].
+      + move leq__AB: (checkSubtypes A B) => [].
         * apply: sub_all; last by exact IH.
           move => ? /orP [] ->;
             by repeat rewrite orbT.
@@ -3972,7 +3975,7 @@ Section PrimalityLemmas.
   Qed.
 
   Lemma bcd_all_ge: forall (Delta1 Delta2 : seq (@IT Constructor)),
-      all (fun B => has (fun C => checkSubtypes _ C B) Delta1) Delta2 ->
+      all (fun B => has (fun C => checkSubtypes C B) Delta1) Delta2 ->
       [bcd (\bigcap_(A__i <- Delta1) A__i) <= \bigcap_(A__i <- Delta2) A__i].
   Proof.
     move => Delta1.
@@ -3980,7 +3983,7 @@ Section PrimalityLemmas.
     apply: BCD__Trans; last by apply: (bcd_bigcap_cat _ [:: A]).
     apply: BCD__Glb => //=.
       by apply: bigcap_has_le.
-  Qed.    
+  Qed.
 
   Lemma addAndFilterGeq: forall A Delta,
       [bcd (\bigcap_(A__i <- [:: A & Delta]) A__i) <= \bigcap_(A__i <- addAndFilter Delta A) A__i].
@@ -3990,7 +3993,7 @@ Section PrimalityLemmas.
       by apply: addAndFilterGeq__Delta.
   Qed.
 
-  Lemma primeFactors_geq: forall A Delta contextualize,
+  Lemma primeFactors_rec_geq: forall A Delta contextualize,
       (forall B C, [bcd B <= C] -> [bcd (contextualize B) <= (contextualize C)]) ->
       [bcd (\bigcap_(A__i <- [:: contextualize A & Delta]) A__i) <=
        (\bigcap_(P__i <- primeFactors_rec A contextualize Delta) P__i) ].
@@ -4069,7 +4072,7 @@ Section PrimalityLemmas.
     match Delta with
     | [::] => true
     | [:: A & Delta'] =>
-      all (fun B => ~~ (checkSubtypes _ B A || checkSubtypes _ A B)) Delta' && nosubdub Delta'
+      all (fun B => ~~ (checkSubtypes B A || checkSubtypes A B)) Delta' && nosubdub Delta'
     end.
 
   Lemma addAndFilter_nosubdub: forall A Delta,
@@ -4078,9 +4081,9 @@ Section PrimalityLemmas.
   Proof.
     move => A.
     elim => //= B Delta IH prf.
-    move le__BA: (checkSubtypes _ B A) => [] //.
+    move le__BA: (checkSubtypes B A) => [] //.
     move: prf => /andP [] prfB prfDelta.
-    move le__AB: (checkSubtypes _ A B) => [] //=.
+    move le__AB: (checkSubtypes A B) => [] //=.
     - by apply: IH.
     - rewrite (IH prfDelta) andbT.
       apply /allP => C /addAndFilter_in [].
@@ -4109,8 +4112,8 @@ Section PrimalityLemmas.
   Qed.
 
   Lemma primeFactors__notOmega: forall A Delta contextualize,
-      all (fun B => ~~ checkSubtypes _ Omega B) Delta ->
-      all (fun B => ~~ checkSubtypes _ Omega B) (primeFactors_rec A contextualize Delta).
+      all (fun B => ~~ checkSubtypes Omega B) Delta ->
+      all (fun B => ~~ checkSubtypes Omega B) (primeFactors_rec A contextualize Delta).
   Proof.
     elim.
     - move => Delta contextualize prf //=.
@@ -4132,7 +4135,6 @@ Section PrimalityLemmas.
       apply: IH__B.
         by apply: IH__A.
   Qed.
-
   
   Fixpoint desubdub (Delta: seq (@IT Constructor)): seq (@IT Constructor) :=
     match Delta with
@@ -4194,8 +4196,8 @@ Section PrimalityLemmas.
   Proof.
     move => A.
     elim => //= B Delta IH.
-    case: (checkSubtypes _ B A) => //=.
-    case: (checkSubtypes _ A B) => //=.
+    case: (checkSubtypes B A) => //=.
+    case: (checkSubtypes A B) => //=.
       by apply: leq_trans; first by exact IH.
   Qed.
 
@@ -4222,7 +4224,7 @@ Section PrimalityLemmas.
       [ bcd (\bigcap_(A__i <- Delta1) A__i) <= \bigcap_(A__i <- Delta2) A__i] ->
       all (fun A => isPrimeComponent A) Delta2 ->
       all (fun A => ~~isOmega A) Delta2 ->
-      all (fun B  =>  has ((checkSubtypes Constructor)^~ B) Delta1) Delta2.
+      all (fun B  =>  has (fun A => checkSubtypes A B) Delta1) Delta2.
   Proof.
     move => Delta1.
     elim => // A Delta2 IH.
@@ -4238,24 +4240,24 @@ Section PrimalityLemmas.
       all (fun B => isPrimeComponent B) Delta__prime ->
       all (fun B => ~~isOmega B) Delta__prime ->
       [bcd (\bigcap_(A__i <- Delta) A__i) <= \bigcap_(A__i <- Delta__prime) A__i] ->
-      [bcd (\bigcap_(A__i <- [seq A <- Delta | has (fun B => checkSubtypes _ A B) Delta__prime]) A__i) <= \bigcap_(A__i <- Delta__prime) A__i].
+      [bcd (\bigcap_(A__i <- [seq A <- Delta | has (fun B => checkSubtypes A B) Delta__prime]) A__i) <= \bigcap_(A__i <- Delta__prime) A__i].
   Proof.
     move => Delta__prime Delta prime notOmega /(fun prf => bcd_prime_ge_all _ _ prf prime notOmega) prf.
     apply: bcd_all_ge.
     suff: {in Delta__prime,
-                (fun A => has (fun B => checkSubtypes _ B A) Delta)
-                =1 (fun A => has (fun B => checkSubtypes _ B A) [seq A <- Delta | has (fun B => checkSubtypes _ A B) Delta__prime] ) };
+                (fun A => has (fun B => checkSubtypes B A) Delta)
+                =1 (fun A => has (fun B => checkSubtypes B A) [seq A <- Delta | has (fun B => checkSubtypes A B) Delta__prime] ) };
       first by move => /eq_in_all <-.
     move => B inprf__B.
     do 2 rewrite has_filter.
     rewrite -filter_predI.
     do 2 rewrite -has_filter.
     suff: {in Delta,
-                (fun A => checkSubtypes _ A B)
-                =1 (predI (fun A => checkSubtypes _ A B) (fun A : IT => has (fun B => checkSubtypes Constructor A B) Delta__prime)) };
+                (fun A => checkSubtypes A B)
+                =1 (predI (fun A => checkSubtypes A B) (fun A : IT => has (fun B => checkSubtypes A B) Delta__prime)) };
       first by move => /eq_in_has <-.
     move => A inprf /=.
-    move le__AB: (checkSubtypes _ A B) => [] //=.
+    move le__AB: (checkSubtypes A B) => [] //=.
     apply /sameP; last by exact hasP.
     apply: introP => // _.
       by exists B.
@@ -4384,7 +4386,7 @@ Section PrimalityLemmas.
   Lemma bcd_prime_strengthen:
     forall Delta11 (A: @IT Constructor) Delta12 Delta2,
       all (fun B => isPrimeComponent B) Delta2 ->
-      all (fun B => ~~checkSubtypes _ A B) Delta2 ->
+      all (fun B => ~~checkSubtypes A B) Delta2 ->
       [bcd (\bigcap_(A_i <- Delta11 ++ [:: A & Delta12]) A_i) <= \bigcap_(A_i <- Delta2) A_i] ->
       [bcd (\bigcap_(A_i <- Delta11 ++ Delta12) A_i) <= \bigcap_(A_i <- Delta2) A_i].
   Proof.
@@ -4421,7 +4423,7 @@ Section PrimalityLemmas.
   Lemma nosubdub_everywhere:
     forall Delta1 A Delta2,
       nosubdub (Delta1 ++ [:: A & Delta2]) ->
-      all (fun B => ~~ ((checkSubtypes _ B A) || (checkSubtypes _ A B))) (Delta1 ++ Delta2).
+      all (fun B => ~~ ((checkSubtypes B A) || (checkSubtypes A B))) (Delta1 ++ Delta2).
   Proof.
     elim.
     - by move => A Delta2 /andP [].
@@ -4434,7 +4436,6 @@ Section PrimalityLemmas.
       rewrite notAB notBA.
         by apply /andP.
   Qed.
-      
 
   Lemma nosubdub_prime_perm:
     forall Delta1 Delta2 : seq (@IT Constructor),
@@ -4461,7 +4462,7 @@ Section PrimalityLemmas.
       move: (bcd_prime_ge_all _ _ le__2A1 prime__Delta1  notOmega__Delta1) => /andP [] has__ADelta2.
       move: (splitcat_p _ Delta2 has__ADelta2).
       move: (splitcat_eq _ Delta2 has__ADelta2).
-      case: (splitcat (fun B => checkSubtypes _ B A) Delta2) => // [] [] [] Delta21 B Delta22 [] eq__Delta2.
+      case: (splitcat (fun B => checkSubtypes B A) Delta2) => // [] [] [] Delta21 B Delta22 [] eq__Delta2.
       rewrite -eq__Delta2.
       move => /subtypeMachineP le__BA all__Delta1.
       apply: PermCons => //.
@@ -4538,6 +4539,28 @@ Section PrimalityLemmas.
   Definition primeFactors (A: @IT Constructor): seq (@IT Constructor) :=
     primeFactors_rec A id [::].
 
+  Lemma primeFactors_geq: forall A, [bcd A <= \bigcap_(P__i <- primeFactors A) P__i ].
+  Proof.
+    move => A.
+    rewrite /primeFactors.
+      by apply: (primeFactors_rec_geq A [::]).
+  Qed.
+
+  Lemma primeFactors_leq: forall A, [bcd (\bigcap_(P__i <- primeFactors A) P__i) <= A ].
+  Proof.
+    move => A.
+    rewrite /primeFactors.
+      by apply: (primeFactors_rec_leq A [::]).
+  Qed.
+
+  Lemma primeFactors_prime:
+    forall A, all (fun B => isPrimeComponent B) (primeFactors A).
+  Proof.
+    move => A.
+    rewrite /primeFactors.
+      by apply: (primeFactors_rec_prime A [::]).
+  Qed.
+
   Lemma primeFactors_minimal:
     forall A Delta,
       all (fun B => isPrimeComponent B) Delta ->
@@ -4567,38 +4590,20 @@ Section PrimalityLemmas.
   Qed.
 End PrimalityLemmas.
 
-Section Split.
-  Variable Constructor: ctor.
+Arguments PrimeComponent [Constructor].
+Arguments isPrimeComponent [Constructor].
+Arguments isPrimeComponentP [Constructor] [A].
+Arguments primeFactors [Constructor].
+Arguments primeFactors_leq [Constructor].
+Arguments primeFactors_geq [Constructor].
+Arguments primeFactors_prime [Constructor].
+Arguments primeFactors_minimal [Constructor].
 
-  Definition MultiArrow: Type := seq (@IT Constructor) * (@IT Constructor).
 
-  Definition safeSplit (Delta: seq (seq MultiArrow)): seq MultiArrow * seq (seq MultiArrow) :=
-    match Delta with
-    | [::] => ([::], [:: [::]])
-    | [:: Delta ] => (Delta, [::[::]])
-    | [:: Delta1 & Delta2 ] => (Delta1, Delta2)
-    end.
+(*
 
-  Fixpoint splitRec
-           (A: @IT Constructor)
-           (srcs: seq (@IT Constructor))
-           (Delta: seq (seq MultiArrow)):
-    seq (seq MultiArrow) :=
-    if isOmega A
-    then Delta
-    else match A with
-         | Arrow A B =>
-           let (Delta1, Delta2) := safeSplit Delta in
-           [:: [:: ([:: A & srcs], B) & Delta1] & splitRec A [:: A & srcs] Delta2]
-         | A \cap B =>
-           splitRec A srcs (splitRec B srcs Delta)
-         | _ => Delta
-         end.
 
-  Definition splitTy (A: @IT Constructor): seq (seq MultiArrow) :=
-    if isOmega A
-    then [::]
-    else splitRec A [::] [:: [:: ([::], A)]].
+
 
   Inductive Cover : Type :=
   | SplitCover 
@@ -4873,8 +4878,37 @@ Section Split.
       + move => *; by apply /IH .
   Qed.
 
+  Definition splitMultiArrow (arr: MultiArrow): option (MultiArrow * MultiArrow) :=
+    foldr (fun src res =>
+             match src with
+             | A \cap B => omap (fun r => (([:: A & r.1.1], r.1.2), ([:: B & r.2.1], r.2.2))) res
+             | _ => None
+             end)
+          (match arr.2 with
+           | A \cap B => Some (([::], A), ([::], B))
+           | _ => None
+           end)
+          arr.1.
 
+  Fixpoint isMultiArrowSelection (splits: seq MultiArrow) (arr: MultiArrow): bool :=
+    match splits with
+    | [::] => false
+    | [:: (srcs, tgt) & splits] =>
+      ((srcs, tgt) == arr)
+      || if splitMultiArrow arr is Some (arr1, arr2)
+        then
+          (arr1.2 == tgt)
+            && ((arr1.1 == srcs) && isMultiArrowSelection splits arr2)
+                || ((all (fun AB => checkSubtypes _ AB.1 AB.2) (zip srcs arr1.1)) && isMultiArrowSelection splits (arr.1, arr2.2))
+        else false
+    end.
 
+  Definition mkArrow (B: @IT Constructor) (srcs: seq (@IT Constructor)): @IT Constructor :=
+    foldr (fun A B => A -> B) B srcs.
+
+  Lemma isMultiArrowSelection_ge:
+    forall splits arr,
+      \bigcap_(A_i <- splits) (mkArrow 
 
   Definition cover_naive
            (splits : seq (MultiArrow * seq (@IT Constructor)))
@@ -4943,7 +4977,7 @@ Section Split.
 
 
   (**)
-End Split.
+End Split. *)
 
 Section NatConstructors.
   Lemma leq_transb: forall (m n p: nat), (m <= n) && (n <= p) ==> (m <= p).
@@ -4967,7 +5001,7 @@ Section PrimeFactorTest.
   Definition C := Ctor 2 Omega -> Ctor 0 Omega.
   Definition D := Ctor 3 (A \times C).
 
-  Example test := primeFactors_rec _ (A \cap B \cap C \cap D) (fun ty => ty) [::].
+  Example test := primeFactors (A \cap B \cap C \cap D).
 End PrimeFactorTest.
 
 Require Extraction.
