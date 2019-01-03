@@ -199,7 +199,7 @@ Section CoverMachine.
                 & p])
   where "p1 ~~> p2" := (StepSemantics p1 p2).
 
-  Definition Semantics := clos_trans_1n _ StepSemantics.
+  Definition Semantics := clos_refl_trans_1n _ StepSemantics.
 End CoverMachine.
 
 
@@ -221,7 +221,7 @@ Hint Constructors StepSemantics.
 Arguments Semantics [Constructor].
 
 Notation "p1 ~~> p2" := (StepSemantics p1 p2).
-Notation "p1 '~~>[+]' p2" := (Semantics p1 p2) (at level 70, no associativity) : it_scope.
+Notation "p1 '~~>[*]' p2" := (Semantics p1 p2) (at level 70, no associativity) : it_scope.
 
 (** Small step inversion for the cover machine **)
 Section CoverMachineInversion.
@@ -400,48 +400,38 @@ Section CoverMachineProperties.
     nat -> 
     @State Constructor * seq (@Instruction Constructor) ->
     @State Constructor * seq (@Instruction Constructor) -> Prop :=
-  | LastStep: forall sp1 sp2,
-      sp1 ~~> sp2 ->
-      sp1 ~~>[1] sp2
+  | Done: forall sp, sp ~~>[0] sp
   | MoreSteps: forall n sp1 sp2 sp3,
       sp1 ~~> sp2 ->
-      sp2 ~~>[n.+1] sp3 ->
-      sp1 ~~>[n.+2] sp3
+      sp2 ~~>[n] sp3 ->
+      sp1 ~~>[n.+1] sp3
   where "sp1 '~~>[' n ']' sp2" := (nStepSemantics n sp1 sp2).
   Hint Constructors nStepSemantics.
 
   Lemma nStepSemantics_sound: forall n s1 p1 s2 p2,
       (s1, p1) ~~>[n] (s2, p2) ->
-      (s1, p1) ~~>[+] (s2, p2).
+      (s1, p1) ~~>[*] (s2, p2).
   Proof.
     move => n s1 p1 s2 p2.
     elim.
     - move => *.
-        by apply: t1n_step.
+        by apply: rt1n_refl.
     - move => ? ? ? ? prf *.
-        by apply: t1n_trans; first by exact prf.
+        by apply: rt1n_trans; first by exact prf.
   Qed.
 
   Lemma nStepSemantics_complete:
     forall sp1 sp2,
-      sp1 ~~>[+] sp2 ->
+      sp1 ~~>[*] sp2 ->
       exists n, sp1 ~~>[n] sp2.
   Proof.
     move => sp1 sp2 prf.
     elim: sp1 sp2 / prf.
-    - move => sp1 sp2 prf.
-      exists 1.
-        by apply LastStep.
+    - move => sp.
+      exists 0. by apply Done.
     - move => sp1 sp2 sp3 prf _ [] n prfs.
       exists (n.+1).
-      move: prf.
-      case: n sp2 sp3 / prfs.
-      + move => ? ? ? prf.
-        apply: MoreSteps; first by exact prf.
-          by apply: LastStep.
-      + move => ? ? ? ? prf1 ? prf2.
-        apply: MoreSteps; first by exact prf2.
-          by apply: MoreSteps; first by exact prf1.
+        by apply: MoreSteps; first by exact prf.
   Qed.
 
   Definition nStepSemantics_inv n sp1 sp2 (prf: sp1 ~~>[n] sp2)
@@ -450,15 +440,13 @@ Section CoverMachineProperties.
                  @State Constructor * seq (@Instruction Constructor) -> Prop) :=
     let diag n sp1 sp2 :=
         match n return Prop with
-        | 0 => False
-        | 1 =>
-          ((sp1 ~~> sp2 -> X 1 sp1 sp2) -> X 1 sp1 sp2)%type
-        | n.+2 =>
-          (((forall sp3, sp1 ~~> sp3 -> sp3 ~~>[n.+1] sp2 -> X (n.+2) sp1 sp2)%type) ->
-           X (n.+2) sp1 sp2)%type
+        | 0 => (X 0 sp1 sp1 -> X 0 sp1 sp2)%type
+        | n.+1 =>
+          (((forall sp3, sp1 ~~> sp3 -> sp3 ~~>[n] sp2 -> X (n.+1) sp1 sp2)%type) ->
+           X (n.+1) sp1 sp2)%type
         end in
     match prf in sp1 ~~>[n] sp2 return diag n sp1 sp2 with
-    | LastStep _ _ prf => fun k => k prf
+    | Done _ => fun k => k
     | MoreSteps _ _ _ _ prf1 prf2 =>
       fun k => k _ prf1 prf2
     end.
@@ -469,9 +457,8 @@ Section CoverMachineProperties.
     move => n sp sp1 sp2 prf1.
     move: sp2.
     elim: n sp sp1 / prf1.
-    - move => sp1 sp2 prf1 sp3 /nStepSemantics_inv res.
-      apply: (res (fun _ _ sp3 => sp2 = sp3)) => prf2.
-        by apply: coverMachineFunctional_step; first by exact prf1.
+    - move => sp1 sp2 /nStepSemantics_inv res.
+        by apply: (res (fun _ sp1 sp2 => sp1 = sp2)).
     - move => n sp1 sp2 sp3 prf prfs IH sp4 /nStepSemantics_inv res.
       apply: (res (fun _ _ sp4 => sp3 = sp4)).
         by move => sp2' /(coverMachineFunctional_step _ _ _ prf) <- /IH.
@@ -523,13 +510,7 @@ Section CoverMachineProperties.
     move => n sp1 sp2 prf.
     elim: n sp1 sp2 / prf.
     - case => s p /=.
-      case p.
-      + move => [] ? ? /CoverMachine_inv res.
-          by move: (res (fun _ _ => True)).
-      + move => *.
-        rewrite unlock /=.
-        apply: ltn_addr.
-          by apply: expn_gt0.
+        by case p.
     - move => n sp1 sp2 sp3 prf1 prf2 IH.
       apply: leq_ltn_trans; first by exact IH.
         by apply: stepSize.
