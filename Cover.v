@@ -516,139 +516,136 @@ Section CoverMachineProperties.
         by apply: stepSize.
   Qed.
 
-
-  (** The set of instructions from the domain of the cover machine relation,
-       i.e. { (s, p) | exists s', (s, p) ~~>[+] (s', [::]) } **)
-  Inductive Domain: @State Constructor * seq (@Instruction Constructor) -> Prop :=
-  | dom__doneEmpty: forall s toCover,
-      Domain (s, [:: Cover [::] toCover])
-  | dom__done: forall s toCover p,
-      Domain (s, p) ->
-      Domain (s, [:: Cover [::] toCover & p])
-  | dom__doneContinueEmpty: forall s toCover currentResult,
-      Domain (s, [:: ContinueCover [::] toCover currentResult ])
-  | dom__doneContinue: forall s toCover currentResult p,
-      Domain (s, p) ->
-      Domain (s, [:: ContinueCover [::] toCover currentResult & p])
-  | dom__skip: forall s srcs tgt covered splits toCover p,
-      ((partitionCover covered toCover).1 == [::]) ->
-      Domain (s, [:: Cover splits toCover & p]) ->
-      Domain (s, [:: Cover [:: (srcs, tgt, covered) & splits] toCover & p])
-  | dom__skipContinue: forall s srcs tgt covered splits toCover currentResult p,
-      ((partitionCover covered toCover).1 == [::]) ->
-      Domain (s, [:: ContinueCover splits toCover currentResult & p]) ->
-      Domain (s, [:: ContinueCover [:: (srcs, tgt, covered) & splits] toCover currentResult & p])
-  | dom__addDone: forall s srcs tgt covered splits toCover p,
-      ((partitionCover covered toCover).1 != [::]) ->
-      ((partitionCover covered toCover).2 == [::]) ->
-      Domain ([:: (srcs, tgt) & s], [:: Cover splits toCover & p]) ->
-      Domain (s, [:: Cover [:: (srcs, tgt, covered) & splits] toCover & p])
-  | dom__mergeDone:
-      forall s srcs tgt covered splits toCover currentResult p,
-      ((partitionCover covered toCover).1 != [::]) ->
-      ((partitionCover covered toCover).2 == [::]) ->
-      Domain ([:: mergeMultiArrow currentResult srcs tgt & s]
-              , [:: ContinueCover splits toCover currentResult & p]) ->
-      Domain (s, [:: ContinueCover [:: (srcs, tgt, covered) & splits] toCover currentResult & p])
-  | dom__continue:
-      forall s srcs tgt covered splits toCover p,
-        ((partitionCover covered toCover).1 != [::]) ->
-        ((partitionCover covered toCover).2 != [::]) ->
-        Domain ( s
-                 , [:: ContinueCover splits (partitionCover covered toCover).2 (srcs, tgt)
-                    , Cover splits toCover 
-                      & p]) ->
-        Domain (s, [:: Cover [:: (srcs, tgt, covered) & splits] toCover & p])
-  | dom__continueMergeAlways:
-      forall s srcs tgt covered splits toCover currentResult p,
-        ((partitionCover covered toCover).1 != [::]) ->
-        ((partitionCover covered toCover).2 != [::]) ->
-        ((mergeMultiArrow currentResult srcs tgt).1 == currentResult.1) ->
-        Domain (s
-                , [:: ContinueCover
-                      splits (partitionCover covered toCover).2
-                      (mergeMultiArrow currentResult srcs tgt)
-                   & p]) ->
-        Domain (s, [:: ContinueCover [:: (srcs, tgt, covered) & splits] toCover currentResult & p])
-  | dom__continueMergeOptions:
-      forall s srcs tgt covered splits toCover currentResult p,
-        ((partitionCover covered toCover).1 != [::]) ->
-        ((partitionCover covered toCover).2 != [::]) ->
-        ((mergeMultiArrow currentResult srcs tgt).1 != currentResult.1) ->
-        Domain (s
-                , [:: ContinueCover
-                      splits (partitionCover covered toCover).2
-                      (mergeMultiArrow currentResult srcs tgt)
-                   , ContinueCover splits toCover currentResult
-                     & p]) ->
-        Domain (s, [:: ContinueCover [:: (srcs, tgt, covered) & splits] toCover currentResult & p]).
-
-  Arguments dom__doneEmpty [s toCover].
-  Arguments dom__done [s toCover p].
-  Arguments dom__doneContinueEmpty [s toCover currentResult].
-  Arguments dom__doneContinue [s toCover currentResult p].
-  Arguments dom__skip [s srcs tgt covered splits toCover p].
-  Arguments dom__skipContinue [s srcs tgt covered splits toCover currentResult p].
-  Arguments dom__addDone [s srcs tgt covered splits toCover p].
-  Arguments dom__mergeDone [s srcs tgt covered splits toCover currentResult p].
-  Arguments dom__continue [s srcs tgt covered splits toCover p].
-  Arguments dom__continueMergeAlways [s srcs tgt covered splits toCover currentResult p].
-  Arguments dom__continueMergeOptions [s srcs tgt covered splits toCover currentResult p].
-  Hint Constructors Domain.
-
-  Definition splitsOf (i: @Instruction Constructor) :=
-    match i with
-    | Cover splits _ => splits
-    | ContinueCover splits _ _ => splits
+  Definition step s1 p1: (p1 = [::]) + { sp2 | (s1, p1) ~~> sp2 } :=
+    match p1 as p1 return (p1 = [::]) + { sp2 | (s1, p1) ~~> sp2 } with
+    | [::] => inl (Logic.eq_refl _)
+    | [:: Cover [::] toCover  & p1 ] => inr (exist _ (s1, p1) step__done)
+    | [:: ContinueCover [::] toCover currentResult  & p1 ] => inr (exist _ (s1, p1) step__doneContinue)
+    | [:: Cover [:: (srcs, tgt, covered) & splits ] toCover  & p1 ] =>
+      inr (let pc := partitionCover covered toCover in
+           match boolP (pc.1 == [::]) with
+           | AltTrue noFresh =>
+             exist _ (s1, [:: Cover splits toCover & p1]) (step__skip noFresh)
+           | AltFalse fresh =>
+             match boolP (pc.2 == [::]) with
+             | AltTrue noLeft =>
+               exist _ ([:: (srcs, tgt) & s1],
+                        [:: Cover splits toCover & p1]) (step__addDone fresh noLeft)
+             | AltFalse someLeft =>
+               exist _ (s1, [:: ContinueCover splits pc.2 (srcs, tgt), Cover splits toCover & p1])
+                     (step__continue fresh someLeft)
+             end
+           end)
+    | [:: ContinueCover [:: (srcs, tgt, covered) & splits ] toCover currentResult  & p1 ] =>
+      inr (let pc := partitionCover covered toCover in
+           match boolP (pc.1 == [::]) with
+           | AltTrue noFresh =>
+             exist _ (s1, [:: ContinueCover splits toCover currentResult & p1]) (step__skipContinue noFresh)
+           | AltFalse fresh =>
+             match boolP (pc.2 == [::]) with
+             | AltTrue noLeft =>
+               exist _ ([:: mergeMultiArrow currentResult srcs tgt & s1],
+                        [:: ContinueCover splits toCover currentResult & p1]) (step__mergeDone fresh noLeft)
+             | AltFalse someLeft =>
+               let ma := (mergeMultiArrow currentResult srcs tgt) in
+               match boolP (ma.1 == currentResult.1) with
+               | AltTrue redundant =>
+                 exist _ (s1, [:: ContinueCover splits pc.2 ma & p1])
+                       (step__continueMergeAlways fresh someLeft redundant)
+               | AltFalse notRedundant =>
+                 exist _ (s1, [:: ContinueCover splits pc.2 ma, ContinueCover splits toCover currentResult & p1])
+                       (step__continueMergeOptions fresh someLeft notRedundant)
+               end
+             end
+           end)
     end.
 
-  Fixpoint maxSplitSeq (splitss: seq (seq (@MultiArrow Constructor * seq (@IT Constructor)))) :
-    seq (seq (seq (@MultiArrow Constructor * seq (@IT Constructor)))) :=
-    match splitss with
-    | [::] => [:: splitss]
-    | [:: [::] & splitss] => [:: splitss & maxSplitSeq splitss]
-    | [:: [:: s & splits] & splitss] =>
-      [:: splitss & (maxSplitSeq splits) 
-  
+  (** The set of instructions from the domain of the cover machine relation,
+       i.e. { (s1, p1) | exists s2, (s1, p1) ~~>[*] (s2, [::]) } **)
+  Inductive Domain: @State Constructor * seq (@Instruction Constructor) -> Prop :=
+  | Dom__done: forall s, Domain (s, [::])
+  | Dom__step: forall sp1 sp2, sp1 ~~> sp2 -> Domain sp2 -> Domain sp1.
+  Arguments Dom__done [s].
+  Arguments Dom__step [sp1 sp2].
+  Hint Constructors Domain.
 
-
-  Definition sumOfSplits p : nat :=
-    \sum_(i <- p) ((seq.size (splitsOf i)).+1).
-
-  Lemma coverMachine_total: forall s i p, Domain (s, [:: i & p]).
+  Lemma Domain_total: forall sp, Domain sp.
   Proof.
-    move => s i p.
-    move: s.
-    apply: (fun res => induction_ltof1 _
-                                    (fun ip => sumOfSplits [:: ip.1 & ip.2])
-                                    (fun ip => forall s, Domain (s, [:: ip.1 & ip.2]))
-                                    res (i, p)).
-    move: i p => _ _ [] [] [].
-    - move => toCover [] //= i p IH s.
-      apply: dom__done.
-      apply: (IH (i, p)).
-        by rewrite /ltof /sumOfSplits unlock //=.
-    - move => [] [] srcs tgt covered splits toCover p IH s.
-      case fresh: (partitionCover covered toCover).1.
-      + apply: dom__skip; first by rewrite fresh.
-        apply: (IH (_, p)).
-          by rewrite /ltof /sumOfSplits unlock //=.
-      + case left: (partitionCover covered toCover).2.
-        * apply: dom__addDone.
-          ** by rewrite fresh.
-          ** by rewrite left.
-          ** apply: (IH (_, p)).
-               by rewrite /ltof /sumOfSplits unlock //=.
-        * apply: dom__continue.
-          ** by rewrite fresh.
-          ** by rewrite left.
-          ** rewrite /=.
-             apply: (IH (_, p)).
-               by rewrite /ltof /sumOfSplits unlock //=.
+    move => sp1.
+    suff: exists n s2, sp1 ~~>[n] (s2, [::]).
+    { case: sp1 => s1 p1.
+      move => [] n [].
+      move: s1 p1.
+      elim: n.
+      - by move => s1 p1 s2 /(nStepSemantics_inv) /(fun res => res (fun _ sp1 sp2 => sp1 = sp2)) ->.
+      - move => n IH s1 p1 s3 /(nStepSemantics_inv).
+        move => /(fun res => res (fun k sp1 sp2 => exists sp3, sp1 ~~> sp3 /\ sp3 ~~>[k.-1] sp2)).
+        move => /(fun res => res (fun sp3 prf prfs => ex_intro _ sp3 (conj prf prfs))).
+        move => [] [] s4 p4 [] prf prfs.
+        apply: Dom__step; first by exact prf.
+        apply: IH.
+        exact prfs. }
+    move: (fun n => maxSteps n sp1).
+    move: (\sum_(i <- sp1.2) 3 ^ seq.size (splitsOf i)) => k.
+    move: sp1.
+    apply: (fun start step => nat_rect
+                             (fun k =>
+                                (forall sp1,
+                                    (forall n sp2, (sp1 ~~>[ n] sp2 -> n <= k)%type) ->
+                                    exists (n : nat) (s2 : State), sp1 ~~>[ n] (s2, [::]))%type)
+                             start step k).
+    - move => [] s1 p1 limit.
+      exists 0, s1.
+      case: (step s1 p1).
+      + by move => ->.
+      + by move => [] sp2 /(fun prf => MoreSteps 0 _ _ _ prf (Done _)) /limit.
+    - move: k => _ k IH [] s1 p1 limit.
+      case: (step s1 p1).
+      + move => ->.
+          by exists 0, s1.
+      + move => [] sp2 prf.
+        suff: (exists n s2, sp2 ~~>[n] (s2, [::])).
+        { move => [] n [] s2 prfs.
+          exists n.+1, s2.
+            by apply: MoreSteps; first by exact prf. }
+        apply: IH.
+          by move => n sp3 /(MoreSteps _ _ _ _ prf) /limit.
+  Qed.
 
+  Lemma step_last: forall s p, p = [::] -> (s, p) ~~>[*] (s, [::]).
+  Proof.
+    move => s p <-.
+      by apply: rt1n_refl.
+  Qed.
 
+  Lemma Domain_continue: forall sp1 sp2, Domain sp1 -> sp1 ~~> sp2 -> Domain sp2.
+  Proof.
+    move => sp1 [] s2 p2.
+    case.
+    - by move => s /CoverMachine_inv /(fun res => res (fun _ _ => True)).
+    - move => [] s3 p3 [] s4 p4 prf1 res prf2.
+        by rewrite -(coverMachineFunctional_step _ _ _ prf1 prf2).
+  Defined.
 
-  
-    
+  Lemma step_next: forall s1 p1 s2 p2 s3, (s1, p1) ~~> (s2, p2) -> (s2, p2) ~~>[*] (s3, [::]) -> (s1, p1) ~~>[*] (s3, [::]).
+  Proof.
+    move => s1 p1 s2 p2 s3 prf prfs.
+      by apply: rt1n_trans; first by exact prf.
+  Qed.
 
+  Fixpoint coverMachine_rec s1 p1 (dom: Domain (s1, p1)) {struct dom}: { s | (s1, p1) ~~>[*] (s, [::])} :=
+    match step s1 p1 return { s | (s1, p1) ~~>[*] (s, [::])} with
+    | inl prf => exist _ s1 (step_last _ _ prf)
+    | inr (exist (s2, p2) prf) =>
+      let (s, prfs) := coverMachine_rec s2 p2 (Domain_continue _ _ dom prf) in
+      exist _ s (step_next _ _ _ _ _ prf prfs)
+    end.
+
+  Definition coverMachine sp : { s | sp ~~>[*] (s, [::])} :=
+    match sp with | (s, p) => coverMachine_rec s p (Domain_total (s, p)) end.
+End CoverMachineProperties.
+
+Recursive Extraction coverMachine.
+ 
+Arguments coverMachine [Constructor].
 
