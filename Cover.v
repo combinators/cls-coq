@@ -477,6 +477,65 @@ Section CoverMachineProperties.
         by move => sp2' /(coverMachineFunctional_step _ _ _ prf) <- /IH.
   Qed.
 
+  Definition splitsOf (i: @Instruction Constructor) :=
+    match i with
+    | Cover splits _ => splits
+    | ContinueCover splits _ _ => splits
+    end.
+
+  Lemma stepSize:
+    forall sp1 sp2,
+      sp1 ~~> sp2 ->
+      (\sum_(i <- sp2.2) (3 ^ (seq.size (splitsOf i)))) < \sum_(i <- sp1.2) (3 ^ (seq.size (splitsOf i))).
+  Proof.
+    move => sp1 sp2 /CoverMachine_inv.
+    move => /(fun res => res (fun sp1 sp2 => (\sum_(i <- sp2.2) (3 ^ (seq.size (splitsOf i))))
+                                      < \sum_(i <- sp1.2) (3 ^ (seq.size (splitsOf i))))).
+    case: sp1 => s1 p1.
+    case: sp2 => s2 p2.
+    case: p1 => // i p1.
+    case: i.
+    - case.
+      + move => toCover res.
+        apply: res.
+        rewrite unlock /=.
+          by rewrite -[X in X < _]add0n ltn_add2r.
+      + move => [] [] srcs tgt covered splits toCover res.
+        apply: res.
+        * by rewrite unlock /= ltn_add2r ltn_exp2l.
+        * by rewrite unlock /= ltn_add2r ltn_exp2l.
+        * by rewrite unlock /= addnA ltn_add2r expnS addnn -mul2n ltn_pmul2r //= expn_gt0.
+    - case.
+      + move => toCover currentResult res.
+        apply: res.
+        by rewrite unlock /= -[X in X < _]add0n ltn_add2r.
+      + move => [] [] srcs tgt covered splits toCover currentResult res.
+        apply: res.
+        * by rewrite unlock /= ltn_add2r ltn_exp2l.
+        * by rewrite unlock /= ltn_add2r ltn_exp2l.
+        * by rewrite unlock /= ltn_add2r ltn_exp2l.
+        * by rewrite unlock /= addnA ltn_add2r expnS addnn -mul2n ltn_pmul2r //= expn_gt0.
+  Qed.
+
+  Lemma maxSteps:
+    forall n sp1 sp2, sp1 ~~>[n] sp2 -> n <= \sum_(i <- sp1.2) (3 ^ (seq.size (splitsOf i))).
+  Proof.
+    move => n sp1 sp2 prf.
+    elim: n sp1 sp2 / prf.
+    - case => s p /=.
+      case p.
+      + move => [] ? ? /CoverMachine_inv res.
+          by move: (res (fun _ _ => True)).
+      + move => *.
+        rewrite unlock /=.
+        apply: ltn_addr.
+          by apply: expn_gt0.
+    - move => n sp1 sp2 sp3 prf1 prf2 IH.
+      apply: leq_ltn_trans; first by exact IH.
+        by apply: stepSize.
+  Qed.
+
+
   (** The set of instructions from the domain of the cover machine relation,
        i.e. { (s, p) | exists s', (s, p) ~~>[+] (s', [::]) } **)
   Inductive Domain: @State Constructor * seq (@Instruction Constructor) -> Prop :=
@@ -561,6 +620,16 @@ Section CoverMachineProperties.
     | Cover splits _ => splits
     | ContinueCover splits _ _ => splits
     end.
+
+  Fixpoint maxSplitSeq (splitss: seq (seq (@MultiArrow Constructor * seq (@IT Constructor)))) :
+    seq (seq (seq (@MultiArrow Constructor * seq (@IT Constructor)))) :=
+    match splitss with
+    | [::] => [:: splitss]
+    | [:: [::] & splitss] => [:: splitss & maxSplitSeq splitss]
+    | [:: [:: s & splits] & splitss] =>
+      [:: splitss & (maxSplitSeq splits) 
+  
+
 
   Definition sumOfSplits p : nat :=
     \sum_(i <- p) ((seq.size (splitsOf i)).+1).
