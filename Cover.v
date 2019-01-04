@@ -115,6 +115,17 @@ Definition dcap {Constructor: ctor} (A B: @IT Constructor): @IT Constructor :=
        else A \cap B.
 Notation "A \dcap B" := (Inter A B) (at level 80, right associativity) : it_scope.
 
+Fixpoint dintersect {Constructor: ctor} (xs: seq (@IT Constructor)) : IT :=
+    match xs with
+    | [::] => Omega
+    | [:: A] => A
+    | [:: A & Delta] => A \dcap (dintersect Delta)
+    end.
+
+Notation "\bigdcap_ ( i <- xs ) F" :=
+  (dintersect (map (fun i => F) xs)) (at level 41, F at level 41, i, xs at level 50,
+                          format "'[' \bigdcap_ ( i <- xs ) '/ ' F ']'") : it_scope.
+
 (** A machine a machine covering paths with multi arrows **)
 Section CoverMachine.
   Variable Constructor: ctor.
@@ -643,6 +654,88 @@ Section CoverMachineProperties.
 
   Definition coverMachine sp : { s | sp ~~>[*] (s, [::])} :=
     match sp with | (s, p) => coverMachine_rec s p (Domain_total (s, p)) end.
+
+  Section StepInvariants.
+    Fixpoint subseqs {A: Type} (xs: seq A): seq (seq A) :=
+      if xs is [:: x & xs]
+      then
+        let rest := subseqs xs in
+        (map (cons x) rest) ++ rest
+      else [:: [::]].
+
+    Lemma subseqs_subseq: forall {A: eqType} (xs ys: seq A), (ys \in subseqs xs) -> (subseq ys xs).
+    Proof.
+      move => A.
+      elim.
+      - by case.
+      - move => x xs IH ys.
+        rewrite /subseqs -/subseqs mem_cat.
+        move => /orP [].
+        + move: IH.
+          elim: (subseqs xs) => // z zs IH1 IH2 /orP [].
+          * move: IH1 => _.
+            case: ys => // y ys /eqP [] -> ->.
+            apply: (@cat_subseq _ [:: x] _ [:: x]) => //.
+            apply: IH2.
+              by rewrite in_cons eq_refl.
+          * move => /IH1 IH.
+            apply: IH.
+            move => ? prf.
+            apply: IH2.
+              by rewrite in_cons prf orbT.
+        + move => /IH prf.
+          apply: subseq_trans; first by exact prf.
+            by apply: subseq_cons.
+    Qed.
+
+    Lemma subseqs_empty: forall {A: eqType} (xs: seq A), [::] \in subseqs xs.
+    Proof.
+      move => A.
+      elim => // x xs IH.
+        by rewrite /= mem_cat IH orbT.
+    Qed.
+
+    Lemma subseq_subseqs: forall {A: eqType} (xs ys: seq A), subseq ys xs -> (ys \in subseqs xs).
+    Proof.
+      move => A.
+      elim.
+      - by case.
+      - move => x xs IH.
+        case.
+        + move => _.
+            by apply: subseqs_empty.
+        + move => y ys.
+          rewrite /=.
+          case y__eq: (y == x).
+          * move: y__eq => /eqP -> prf.
+            rewrite mem_cat (introT orP) //=.
+            left.
+            move: (IH _ prf).
+            move: IH => _ res.
+              by rewrite mem_map => // xs1 xs2 [].
+          * move => /IH prf.
+              by rewrite mem_cat prf orbT.
+    Qed.
+
+    Fixpoint mergedMultiArrows (ms: seq (seq (@MultiArrow Constructor))): seq (@MultiArrow Constructor) :=
+      match ms with
+      | [::] => [::]
+      | [:: [::] & mss ] => mergedMultiArrows mss
+      | [:: [:: m & ms] & mss ] => [:: foldl (fun m1 m2 => mergeMultiArrow m1 m2.1 m2.2) m ms & mergedMultiArrows mss]
+      end.
+
+    Definition soundProgram p: bool :=
+      
+
+      
+
+    Lemma ContinueCover_merged:
+      forall s s' p splits toCover currentResult,
+        all (fun m => m \in mergedMultiArrows (subseqs (map fst splits))) s ->
+        currentResult \in mergedMultiArrows (subseqs (map fst splits)) ->
+        (s, ContinueCover splits toCover currentResult) ~~> (
+   
+  End StepInvariants.
 End CoverMachineProperties.
 
 Recursive Extraction coverMachine.
