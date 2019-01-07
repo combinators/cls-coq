@@ -428,7 +428,7 @@ Section CoverMachineProperties.
     - move => *.
         by apply: rt1n_refl.
     - move => ? ? ? ? prf *.
-        by apply: rt1n_trans; first by exact prf.
+      by apply: rt1n_trans; first by exact prf.
   Qed.
 
   Lemma nStepSemantics_complete:
@@ -697,9 +697,37 @@ Section CoverMachineProperties.
     Lemma suffix_empty {A: eqType}: forall (s: seq A), suffix [::] s.
     Proof. by elim. Qed.
 
+    Lemma empty_suffix {A: eqType}: forall (s: seq A), suffix s [::] -> s = [::].
+    Proof. by case. Qed.
+
     Lemma suffix_refl {A: eqType}: forall (s: seq A), suffix s s.
     Proof. by move => [] //= *; rewrite eq_refl. Qed.
 
+    Lemma suffix_behead {A: eqType}: forall (s1 s2: seq A), suffix s1 s2 -> suffix (behead s1) s2.
+    Proof.
+      move => s1 s2.
+      move: s1.
+      elim: s2.
+      - by move => _ /empty_suffix ->.
+      - move => y s2 IH s1 /orP [].
+        + move => /eqP -> /=.
+            by rewrite suffix_refl orbT.
+        + move => /IH /= ->.
+            by rewrite orbT.
+    Qed.
+
+    Lemma suffix_trans {A: eqType}: forall (s1 s2 s3: seq A),
+        suffix s1 s2 -> suffix s2 s3 -> suffix s1 s3.
+    Proof.
+      move => s1 s2.
+      move: s1.
+      elim: s2.
+      - by move => s1 s3 /empty_suffix -> _; apply suffix_empty.
+      - move => y s2 IH s1 s3 /orP [].
+        + by move => /eqP ->.
+        + rewrite -/suffix.
+            by move => /IH prf /suffix_behead /prf.
+    Qed.
     
     Lemma step_programStack:
       forall s1 p1 s2 p2, (s1, p1) ~~> (s2, p2) -> suffix (behead p1) p2.
@@ -739,6 +767,15 @@ Section CoverMachineProperties.
             by apply: suffix_refl.
         + move => [] [] srcs tgt covered splits toCover currentResult prf.
           apply: prf; by move => *; rewrite /= suffix_refl; repeat rewrite orbT.
+    Qed.
+
+    Lemma steps_stateMonotonic:
+      forall sp1 sp2,  sp1 ~~>[*] sp2 -> suffix sp1.1 sp2.1.
+    Proof.
+      move => sp1 sp2 prf.
+      elim: sp1 sp2 / prf.
+      - by move => ?; apply: suffix_refl.
+      - by move => [] s1 p1 [] s2 p2 sp3 /step_stateMonotonic /suffix_trans prf _ /prf.
     Qed.
 
     Fixpoint subseqs {A: Type} (xs: seq A): seq (seq A) :=
@@ -951,12 +988,107 @@ Section CoverMachineProperties.
     Definition sound s p :=
       all (fun x => x \in flatten (map  (fun i => mergedMultiArrows (subseqs (mergeComponentsOf i))) p)) s.
 
-    Lemma semantics_mergeComponents:
-      forall sp1 sp2, sp1 ~~>[*] sp2 -> sound sp2.
+    Lemma step_sound:
+      forall sp1 sp2, sp1 ~~> sp2 -> sound (take (seq.size sp2.1 - seq.size sp1.1) sp2.1) sp1.2.
     Proof.
-      move => sp1 sp2 prf.
-      elim: sp1 sp2 / prf => // [] [] s1 p1 sp2 sp3 step steps IH sound__sp1.
-      apply: IH.
+      move => [] s1 p1 [] s2 p2.
+      rewrite /= /sound.
+      case: p1.
+      - by move => /CoverMachine_inv  /(fun x => x (fun _ _ => true)).
+      - move => i p1 prf.
+        rewrite map_cons /=.
+        apply: (introT allP).
+        move => x inprf.
+        rewrite mem_cat.
+          by move: (step_mergeComponents _ _ _ _ _ prf) => /allP ->.
+    Qed.
+
+    Lemma inverse_semantic_ind:
+      forall (P: (@State Constructor * seq (@Instruction Constructor)) ->
+            (@State Constructor * seq (@Instruction Constructor)) ->
+            Prop),
+        (forall sp, P sp sp) ->
+        (forall sp1 sp2 sp3, sp1 ~~>[*] sp2 -> sp2 ~~> sp3 -> P sp1 sp2 -> P sp1 sp3) ->
+        forall sp1 sp2, sp1 ~~>[*] sp2 -> P sp1 sp2.
+    Proof.
+      move => P IH0 IH1 sp1 sp2 prf.
+      elim: sp1 sp2 /prf.
+      - by apply: IH0.
+      - move => sp1 sp2 sp3 step steps IH.
+        apply: IH1.
+
+
+
+    Lemma semantics_mergeComponents:
+      forall sp1 sp2, sp1 ~~>[*] sp2 -> sound (take (seq.size sp2.1 - seq.size sp1.1) sp2.1) sp1.2.
+    Proof.
+      move => sp1 sp2. /(clos_rt1n_rt _ _ sp1 sp2) /(clos_rt_rtn1 _ _ sp1 sp2) prf.
+
+      elim: prf.
+
+      elim: sp1 sp2 /prf. => // [] [] s1 p1.
+      - by move => sp2 /step_sound.
+      - by rewrite subnn take0.
+      - 
+
+
+
+      elim: sp1 sp2 /prf => // [] [] s1 p1.
+      - by rewrite subnn take0.
+      - move => [] s2 p2 [] s3 p3.
+        case: p1; first by move => /CoverMachine_inv  /(fun x => x (fun _ _ => true)).
+        move => i p1 step.
+        rewrite -/(Semantics (s2, p2) (s3, p3)) /=.
+        move => steps IH.
+        move: IH (step_sound _ _ step) => /=.
+        move: (step_stateMonotonic _ _ _ _ step) (steps_stateMonotonic _ _ steps) (step_programStack _ _ _ _ step).
+        move => /suffixP [] prefix1 /eqP ->.
+        move => /suffixP [] prefix2 /eqP /= ->.
+        (*move => /suffixP [] p2' /eqP ->.*)
+        do 2 rewrite size_cat addnK take_cat ltnn subnn take0 cats0.
+        rewrite addnA addnK take_cat ltnNge leq_addr /=.
+        rewrite addnC addnK take_cat ltnn subnn take0 cats0.
+        rewrite {3}/sound all_cat.
+        rewrite -/(sound prefix2 [:: i & p1]) -/(sound prefix1 [:: i & p1]).
+        
+
+
+
+        
+
+        rewrite size_cat addnK take_cat ltnn subnn take0 cats0.
+        move: (step_stateMonotonic _ _ _ _ step) (steps_stateMonotonic _ _ steps) => /suffixP [] prefix1 /eqP ->.
+        move: (step_programStack _ _ _ _ step) => /= /suffixP [] p2' /eqP ->.
+        move: (step_stateMonotonic _ _ _ _ step) => /suffixP [] prefix /eqP ->.
+       
+
+        
+        
+
+        move: step steps IH.
+        case: p1.
+        + move => /CoverMachine_inv.
+            by case: sp2 => ? ? /(fun x => x (fun _ _ => true)).
+        + rewrite -/(Semantics sp2 sp3).
+          case: sp2 => s2 p2.
+          move => i p1 step.
+          move: (step_mergeComponents _ _ _ _ _ step).
+          move: (step_programStack _ _ _ _ step) => /= /suffixP [] p2' /eqP ->.
+          move: (step_stateMonotonic _ _ _ _ step) => /suffixP [] prefix /eqP ->.
+          rewrite size_cat addnK take_size_cat; last by reflexivity.
+
+          move => mergeComponents_prefix steps.
+          rewrite /sound map_cat flatten_cat /=.
+          move => /allP prf.
+          apply: (introT allP) => x inprf.
+          rewrite mem_cat.
+
+
+
+
+
+
+        apply: IH.
       move: step steps sound__sp1.
       case: p1.
       - move => /CoverMachine_inv.
