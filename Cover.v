@@ -656,6 +656,41 @@ Section CoverMachineProperties.
     match sp with | (s, p) => coverMachine_rec s p (Domain_total (s, p)) end.
 
   Section StepInvariants.
+    Fixpoint suffix {A: eqType} (s1 s2: seq A) {struct s2}: bool :=
+      (s1 == s2)
+      || if s2 is [:: _ & s2'] then suffix s1 s2' else false.
+
+    Lemma suffixP {A: eqType} (s1 s2: seq A): reflect (exists (s: seq A), s2 == s ++ s1) (suffix s1 s2).
+    Proof.
+      elim: s2.
+      - rewrite /= orbF.
+        case: s1.
+        + rewrite eq_refl.
+          constructor.
+            by (exists [::]).
+        + move => x s1.
+          rewrite /(_ == _) /=.
+          constructor.
+            by move => [] [].
+      - move => y s2 /=.
+        case (s1 == y:: s2).
+        + case: (suffix s1 s2).
+          * case.
+            ** move => prf.
+               constructor.
+               case: prf => s /eqP prf.
+               exists [:: y & s].
+                 by rewrite /= -prf.
+            ** move => disprf.
+               constructor.
+               move => [] [].
+
+
+
+    Lemma step_ProgramStack:
+      forall s1 p1 s2 p2, (s1, p1) ~~> (s2, p2) -> Suffix (tl p1) p2.
+
+
     Fixpoint subseqs {A: Type} (xs: seq A): seq (seq A) :=
       if xs is [:: x & xs]
       then
