@@ -477,7 +477,7 @@ Section CoverMachineProperties.
         by apply: MoreSteps; first by exact step.
   Qed.
 
-  Lemma nStepSemantinc_inv_ind:
+  Lemma nStepSemantincs_inv_ind:
     forall (P: nat ->
           @State Constructor * seq (@Instruction Constructor) ->
           @State Constructor * seq (@Instruction Constructor) -> Prop),
@@ -1035,11 +1035,40 @@ Section CoverMachineProperties.
           by move: (step_mergeComponents _ _ _ _ _ prf) => /allP ->.
     Qed.
 
+    Lemma 
 
     Lemma semantics_mergeComponents:
       forall sp1 sp2, sp1 ~~>[*] sp2 -> sound (take (seq.size sp2.1 - seq.size sp1.1) sp2.1) sp1.2.
     Proof.
-      move => sp1 sp2 /
+      move => sp1 sp2 /nStepSemantics_complete [] n.
+      move => /nStepSemantincs_inv_ind.
+      move => /(fun ind => ind (fun n sp1 sp2 =>
+                              sound (take (seq.size sp2.1 - seq.size sp1.1) sp2.1) sp1.2)) ind.
+      apply: ind; move: n sp1 sp2 => _ _ _.
+      - by move => *; rewrite subnn take0.
+      - move => n [] sp1 p1 [] s2 p2 [] s3 p3.
+        case: p2; first by move => ? /CoverMachine_inv  /(fun x => x (fun _ _ => true)).
+        move => i p2 /nStepSemantics_sound steps step.
+        move: (step_sound _ _ step) => /=.
+        move: (step_stateMonotonic _ _ _ _ step)
+                (steps_stateMonotonic _ _ steps)
+                (step_programStack _ _ _ _ step).
+        move => /suffixP [] prefix2 /eqP ->.
+        move => /suffixP [] prefix1 /eqP /= ->.
+        (*move => /suffixP [] p2' /eqP ->.*)
+        do 2 rewrite size_cat addnK take_cat ltnn subnn take0 cats0.
+        rewrite addnA addnK take_cat ltnNge leq_addr /=.
+        rewrite addnC addnK take_cat ltnn subnn take0 cats0.
+        rewrite {3}/sound all_cat.
+        rewrite -/(sound prefix2 p1) -/(sound prefix1 p1).
+
+
+
+
+
+      apply: nStepSemantinc_inv_ind
+
+      
 
 
       . /(clos_rt1n_rt _ _ sp1 sp2) /(clos_rt_rtn1 _ _ sp1 sp2) prf.
