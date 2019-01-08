@@ -461,7 +461,39 @@ Section CoverMachineProperties.
     | MoreSteps _ _ _ _ prf1 prf2 =>
       fun k => k _ prf1 prf2
     end.
-  
+
+  Lemma nStepSemantics_split_last: forall n sp1 sp2, sp1 ~~>[n.+1] sp2 -> exists sp3, sp1 ~~>[n] sp3 /\ sp3 ~~> sp2.
+  Proof.
+    elim.
+    - move => sp1 sp2 prf.
+      exists sp1. split; first by done.
+      move: (nStepSemantics_inv _ _ _ prf) => /(fun prf => prf (fun n sp1 sp2 => sp1 ~~> sp2)) res.
+      apply: res.
+        by move => sp3 res /nStepSemantics_inv /(fun prf => prf (fun n sp1 sp2 => sp1 = sp2)) /(fun prf => prf Logic.eq_refl) <-.
+    - move => n IH sp1 sp2 /nStepSemantics_inv /(fun prf => prf (fun n sp1 sp2 => exists sp3, sp1 ~~> sp3 /\ sp3 ~~>[n.-1] sp2)) /=.
+      move => /(fun prf => prf (fun sp3 step steps => ex_intro (fun x => sp1 ~~> x /\ x ~~>[n.+1] sp2) sp3 (conj step steps))).
+      case => sp3 [] step /IH [] sp4 [] steps step'.
+      exists sp4; split; last by exact step'.
+        by apply: MoreSteps; first by exact step.
+  Qed.
+
+  Lemma nStepSemantinc_inv_ind:
+    forall (P: nat ->
+          @State Constructor * seq (@Instruction Constructor) ->
+          @State Constructor * seq (@Instruction Constructor) -> Prop),
+      (forall sp, P 0 sp sp) ->
+      (forall n sp1 sp2 sp3, sp1 ~~>[n] sp2 -> sp2 ~~> sp3 -> P n sp1 sp2 -> P (n.+1) sp1 sp3) ->
+      forall n sp1 sp2, sp1 ~~>[n] sp2 -> P n sp1 sp2.
+  Proof.
+    move => P case__done case__step.
+    elim.
+    - move => sp1 sp2 /(nStepSemantics_inv) /(fun prf => prf (fun n sp1 sp2 => P n sp1 sp2)) res.
+        by apply: res.
+    - move => n IH sp1 sp2 /nStepSemantics_split_last [] sp3 [] steps step.
+      apply: (case__step _ _ _ _ steps step).
+        by apply: IH.
+  Qed.
+
   Lemma coverMachineFunctional:
     forall n sp sp1 sp2, sp ~~>[n] sp1 -> sp ~~>[n] sp2 -> sp1 = sp2.
   Proof.
@@ -1003,26 +1035,14 @@ Section CoverMachineProperties.
           by move: (step_mergeComponents _ _ _ _ _ prf) => /allP ->.
     Qed.
 
-    Lemma inverse_semantic_ind:
-      forall (P: (@State Constructor * seq (@Instruction Constructor)) ->
-            (@State Constructor * seq (@Instruction Constructor)) ->
-            Prop),
-        (forall sp, P sp sp) ->
-        (forall sp1 sp2 sp3, sp1 ~~>[*] sp2 -> sp2 ~~> sp3 -> P sp1 sp2 -> P sp1 sp3) ->
-        forall sp1 sp2, sp1 ~~>[*] sp2 -> P sp1 sp2.
-    Proof.
-      move => P IH0 IH1 sp1 sp2 prf.
-      elim: sp1 sp2 /prf.
-      - by apply: IH0.
-      - move => sp1 sp2 sp3 step steps IH.
-        apply: IH1.
-
-
 
     Lemma semantics_mergeComponents:
       forall sp1 sp2, sp1 ~~>[*] sp2 -> sound (take (seq.size sp2.1 - seq.size sp1.1) sp2.1) sp1.2.
     Proof.
-      move => sp1 sp2. /(clos_rt1n_rt _ _ sp1 sp2) /(clos_rt_rtn1 _ _ sp1 sp2) prf.
+      move => sp1 sp2 /
+
+
+      . /(clos_rt1n_rt _ _ sp1 sp2) /(clos_rt_rtn1 _ _ sp1 sp2) prf.
 
       elim: prf.
 
