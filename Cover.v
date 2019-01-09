@@ -1035,7 +1035,44 @@ Section CoverMachineProperties.
           by move: (step_mergeComponents _ _ _ _ _ prf) => /allP ->.
     Qed.
 
-    Lemma 
+    Lemma step_splitsSuffix:
+      forall s1 i1 p1 s2 p2,
+        (s1, [:: i1 & p1]) ~~> (s2, p2) ->
+        all (fun i2 => splitsOf i2 == behead (splitsOf i1)) (take (seq.size p2 - seq.size p1) p2).
+    Proof.
+      move => s1 i1 p1 s2 p2 /CoverMachine_inv.
+      move => /(fun prf => prf (fun sp1 sp2 =>
+                              if sp1.2 is [:: i1 & p1]
+                              then all (fun i2 => splitsOf i2 == behead (splitsOf i1))
+                                       (take (seq.size sp2.2 - seq.size p1) sp2.2)
+                              else true)).
+      case: i1.
+      - case.
+        + move => toCover /= prf.
+          apply: prf.
+            by rewrite subnn take0.
+        + move => [] [] srcs tgt covered splits toCover /= prf.
+          apply: prf;
+            move => *.
+          * by rewrite -addn1 addnC addnK take0 /= andbT.
+          * by rewrite -addn1 addnC addnK take0 /= andbT.
+          * by rewrite -addn2 addnC addnK take0 /= andbT eq_refl.
+      - case.
+        + move => toCover currentResult /= prf.
+          apply: prf.
+            by rewrite subnn take0.
+        + move => [] [] srcs tgt covered splits toCover currentResult /= prf.
+          apply: prf; move => *.
+          * by rewrite -addn1 addnC addnK take0 /= andbT.
+          * by rewrite -addn1 addnC addnK take0 /= andbT.
+          * by rewrite -addn1 addnC addnK take0 /= andbT.
+          * by rewrite -addn2 addnC addnK take0 /= andbT eq_refl.
+    Qed.
+
+    (*Lemma step_currentResult_sound:
+      forall s1 i1 p1 s2 p2,*)
+        
+
 
     Lemma semantics_mergeComponents:
       forall sp1 sp2, sp1 ~~>[*] sp2 -> sound (take (seq.size sp2.1 - seq.size sp1.1) sp2.1) sp1.2.
