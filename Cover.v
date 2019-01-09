@@ -1035,7 +1035,7 @@ Section CoverMachineProperties.
           by move: (step_mergeComponents _ _ _ _ _ prf) => /allP ->.
     Qed.
 
-    Lemma step_splitsSuffix:
+    Lemma step_splitsTail:
       forall s1 i1 p1 s2 p2,
         (s1, [:: i1 & p1]) ~~> (s2, p2) ->
         all (fun i2 => splitsOf i2 == behead (splitsOf i1)) (take (seq.size p2 - seq.size p1) p2).
@@ -1069,15 +1069,202 @@ Section CoverMachineProperties.
           * by rewrite -addn2 addnC addnK take0 /= andbT eq_refl.
     Qed.
 
-    (*Lemma step_currentResult_sound:
-      forall s1 i1 p1 s2 p2,*)
-        
+    Lemma step_mergeComponents_in:
+      forall s1 i1 p1 s2 p2,
+        (s1, [:: i1 & p1]) ~~> (s2, p2) ->
+        all (fun i2 => if i2 is ContinueCover _ _ currentResult
+                    then currentResult \in mergedMultiArrows (subseqs (mergeComponentsOf i1))
+                    else true) (take (seq.size p2 - seq.size p1) p2).
+    Proof.
+      move => s1 i1 p1 s2 p2 /CoverMachine_inv.
+      move => /(fun prf => prf (fun sp1 sp2 =>
+                              if sp1.2 is [:: i1 & p1]
+                              then all (fun i2 =>  if i2 is ContinueCover _ _ currentResult
+                                                then currentResult \in mergedMultiArrows (subseqs (mergeComponentsOf i1))
+                                                else true)
+                                       (take (seq.size sp2.2 - seq.size p1) sp2.2)
+                              else true)).
+      case: i1.
+      - case.
+        + move => toCover /= prf.
+          apply: prf.
+            by rewrite subnn take0.
+        + move => [] [] srcs tgt covered splits toCover /= prf.
+          apply: prf;
+            move => *.
+          * by rewrite -addn1 addnC addnK take0.
+          * by rewrite -addn1 addnC addnK take0.
+          * rewrite -addn2 addnC addnK take0 /= andbT mergedMultiArrows_cat mem_cat.
+            apply: (introT orP).
+            left.
+            apply: (@mem_subseq _ (mergedMultiArrows [:: [:: (srcs, tgt)]])).
+            ** apply: mergedMultiArrows_subseq.
+               have: ([:: [:: (srcs, tgt)]] = map (fun ms => [:: (srcs, tgt) & ms]) [:: [::]]) => // ->.
+               apply: map_subseq.
+               rewrite sub1seq.
+                 by apply: subseqs_empty.
+            ** by rewrite //= mem_seq1 eq_refl.
+      - case.
+        + move => toCover currentResult /= prf.
+          apply: prf.
+            by rewrite subnn take0.
+        + move => [] [] srcs tgt covered splits toCover currentResult /= prf.
+          apply: prf; move => *.
+          * rewrite -addn1 addnC addnK take0 /= andbT mergedMultiArrows_cat mem_cat.
+            apply: (introT orP).
+            left.
+            apply: (@mem_subseq _ (mergedMultiArrows [:: [:: currentResult]])).
+            ** apply: mergedMultiArrows_subseq.
+               have: ([:: [:: currentResult]] = map (fun ms => [:: currentResult & ms]) [:: [::]]) => // ->.
+               apply: map_subseq.
+                 by rewrite sub1seq mem_cat subseqs_empty orbT.
+            ** by rewrite //= mem_seq1 eq_refl.
+          * rewrite -addn1 addnC addnK take0 /= andbT mergedMultiArrows_cat mem_cat.
+            apply: (introT orP).
+            left.
+            apply: (@mem_subseq _ (mergedMultiArrows [:: [:: currentResult]])).
+            ** apply: mergedMultiArrows_subseq.
+               have: ([:: [:: currentResult]] = map (fun ms => [:: currentResult & ms]) [:: [::]]) => // ->.
+               apply: map_subseq.
+                 by rewrite sub1seq mem_cat subseqs_empty orbT.
+            ** by rewrite //= mem_seq1 eq_refl.
+          * rewrite -addn1 addnC addnK take0 /= andbT mergedMultiArrows_cat mem_cat.
+            apply: (introT orP).
+            left.
+            apply: (@mem_subseq _ (mergedMultiArrows [:: [:: currentResult; (srcs, tgt)]])).
+            ** apply: mergedMultiArrows_subseq.
+               have: ([:: [:: currentResult; (srcs, tgt)]] =
+                      map (cons currentResult \o cons (srcs, tgt)) [:: [::]]) => // ->.
+               rewrite map_cat.
+               apply: subseq_trans; last by apply: prefix_subseq.
+               rewrite -(map_comp (cons currentResult) (cons (srcs, tgt))).
+               apply: map_subseq.
+               rewrite sub1seq.
+                 by apply: subseqs_empty.
+            ** by rewrite //= mem_seq1 eq_refl.
+          * rewrite -addn2 addnC addnK take0 /= andbT mergedMultiArrows_cat.
+            apply: (introT andP).
+            split; rewrite mem_cat map_cat mergedMultiArrows_cat mem_cat; apply (introT orP); left.
+            ** apply: (introT orP).
+               left.
+               apply: (@mem_subseq _ (mergedMultiArrows [:: [:: currentResult; (srcs, tgt)]])).
+               *** apply: mergedMultiArrows_subseq.
+                   have: ([:: [:: currentResult; (srcs, tgt)]] =
+                          map (cons currentResult \o cons (srcs, tgt)) [:: [::]]) => // ->.
+                   rewrite -(map_comp (cons currentResult) (cons (srcs, tgt))).
+                   apply: map_subseq.
+                   rewrite sub1seq.
+                     by apply: subseqs_empty.
+               *** by rewrite //= mem_seq1 eq_refl.
+            ** apply: (introT orP).
+               right.
+               apply: (@mem_subseq _ (mergedMultiArrows [:: [:: currentResult]])).
+               *** apply: mergedMultiArrows_subseq.
+                   have: ([:: [:: currentResult]] = map (fun ms => [:: currentResult & ms]) [:: [::]]) => // ->.
+                   apply: map_subseq.
+                     by rewrite sub1seq subseqs_empty.
+               *** by rewrite //= mem_seq1 eq_refl.
+    Qed.
+
+    Lemma sound_reverse:
+      forall s1 i p1 s2 p2 splits,
+        (s1, [:: i & p1]) ~~> (s2, p2) ->
+        sound splits p2 ->
+        sound splits [:: i & p1].
+    Proof.
+      move => s1 i p1 s2 p2 splits prf.
+      move: (step_splitsTail _ _ _ _ _ prf).
+      move: (step_mergeComponents_in _ _ _ _ _ prf).
+      move: (step_programStack _ _ _ _ prf) => /suffixP [] prefix /eqP ->.
+      rewrite /= size_cat addnK take_cat subnn take0 cats0 ltnn /sound.
+      move => currentResult__prfs splits__prfs /allP soundness.
+      apply: (introT allP).
+      move => s inprf.
+      rewrite map_cons /= mem_cat.
+      move: (soundness s inprf).
+      rewrite map_cat flatten_cat /= mem_cat.
+      move => /orP.
+      case.
+      - move => inPrefix.
+        apply: (introT orP).
+        left.
+        rewrite /mergeComponentsOf.
+        move: soundness prf currentResult__prfs splits__prfs => _ _.
+        case: i.
+        + move: inPrefix.
+          elim: prefix => //= i2 prefix IH.
+          rewrite mem_cat.
+          move => /orP [].
+          * case: i2 => /=.
+            ** move => splits1 _ inprf1 splits2 _ _ /andP [].
+               case: splits2.
+               *** move => /= /eqP splits1__eq _.
+                     by rewrite splits1__eq /= in inprf1.
+               *** move => split2 splits2 /= /eqP splits1__eq _.
+                   move: inprf1.
+                   rewrite splits1__eq mergedMultiArrows_cat mem_cat.
+                   move => ->.
+                     by rewrite orbT.
+            ** move => splits1 toCover currentResult inprf1 splits2 _ /andP [].
+               case: splits2 => //.
+               move => split2 splits2 currentResult__in _ /andP [] /eqP splits1__eq _.
+               rewrite /= in splits1__eq.
+               move: inprf1.
+               rewrite splits1__eq mergedMultiArrows_cat mem_cat.
+               move => /orP [].
+               *** admit.
+               *** move => result.
+                     by rewrite /= mergedMultiArrows_cat mem_cat result orbT.
+          * move => inprf2 ? ? /andP [] ? ? /andP [] ? ?.
+              by apply: IH.
+        + move: inPrefix.
+          elim: prefix => //= i2 prefix IH.
+          rewrite mem_cat.
+          move => /orP [].
+          * case: i2 => /=.
+            ** move => splits1 _ inprf1 splits2 _ currentResult _ /andP [].
+               case: splits2.
+               *** move => /= /eqP splits1__eq _.
+                     by rewrite splits1__eq /= in inprf1.
+               *** move => split2 splits2 /= /eqP splits1__eq _.
+                   move: inprf1.
+                   rewrite splits1__eq.
+                   do 2 rewrite mergedMultiArrows_cat mem_cat.
+                   move => ->.
+                     by do 2 rewrite orbT.
+            ** move => splits1 toCover currentResult2 inprf1 splits2 _ currentResult /andP [].
+               case: splits2.
+               *** move => /= currentResult2__in _ /andP [] /eqP splits1__eq _.
+                   move: currentResult2__in inprf1.
+                   rewrite splits1__eq /= mem_seq1.
+                     by move => /eqP ->.
+               *** move => split2 splits2 currentResult2__in _ /andP [] /eqP splits1__eq _.
+                   rewrite /= in splits1__eq.
+                   move: inprf1.
+                   rewrite splits1__eq mergedMultiArrows_cat mem_cat.
+                   move => /orP [].
+                   **** admit.
+                   **** move => result.
+                          by rewrite mergedMultiArrows_cat mem_cat mergedMultiArrows_cat mem_cat result orbT orbT.
+          * move => inprf2 ? ? ? /andP [] ? ? /andP [] ? ?.
+              by apply: IH.
+      - by move => ->; rewrite orbT.
+    Qed.
+
+          
+
+      
+
+
+
+
+
 
 
     Lemma semantics_mergeComponents:
       forall sp1 sp2, sp1 ~~>[*] sp2 -> sound (take (seq.size sp2.1 - seq.size sp1.1) sp2.1) sp1.2.
     Proof.
-      move => sp1 sp2 /nStepSemantics_complete [] n.
+      (*move => sp1 sp2 /nStepSemantics_complete [] n.
       move => /nStepSemantincs_inv_ind.
       move => /(fun ind => ind (fun n sp1 sp2 =>
                               sound (take (seq.size sp2.1 - seq.size sp1.1) sp2.1) sp1.2)) ind.
@@ -1098,7 +1285,7 @@ Section CoverMachineProperties.
         rewrite addnC addnK take_cat ltnn subnn take0 cats0.
         rewrite {3}/sound all_cat.
         rewrite -/(sound prefix2 p1) -/(sound prefix1 p1).
-
+        
 
 
 
@@ -1115,10 +1302,10 @@ Section CoverMachineProperties.
       elim: sp1 sp2 /prf. => // [] [] s1 p1.
       - by move => sp2 /step_sound.
       - by rewrite subnn take0.
-      - 
+      - *)
 
 
-
+      move => sp1 sp2 prf.
       elim: sp1 sp2 /prf => // [] [] s1 p1.
       - by rewrite subnn take0.
       - move => [] s2 p2 [] s3 p3.
@@ -1127,7 +1314,7 @@ Section CoverMachineProperties.
         rewrite -/(Semantics (s2, p2) (s3, p3)) /=.
         move => steps IH.
         move: IH (step_sound _ _ step) => /=.
-        move: (step_stateMonotonic _ _ _ _ step) (steps_stateMonotonic _ _ steps) (step_programStack _ _ _ _ step).
+        move: (step_stateMonotonic _ _ _ _ step) (steps_stateMonotonic _ _ steps).
         move => /suffixP [] prefix1 /eqP ->.
         move => /suffixP [] prefix2 /eqP /= ->.
         (*move => /suffixP [] p2' /eqP ->.*)
@@ -1136,7 +1323,7 @@ Section CoverMachineProperties.
         rewrite addnC addnK take_cat ltnn subnn take0 cats0.
         rewrite {3}/sound all_cat.
         rewrite -/(sound prefix2 [:: i & p1]) -/(sound prefix1 [:: i & p1]).
-        
+        '
 
 
 
