@@ -1069,6 +1069,17 @@ Section CoverMachineProperties.
           * by rewrite -addn2 addnC addnK take0 /= andbT eq_refl.
     Qed.
 
+    (*Lemma step_currentResult:
+      forall s1 i1 p1 s2 p2,
+        (s1, [:: i1 & p1]) ~~> (s2, p2) ->
+        all (fun i2 => if i2 is ContinueCover _ _ currentResult2
+                    then
+                      if i1 is ContinueCover [:: (srcs, tgt, _) & _] _ currentResult1
+                      then currentResult2 
+                      currentResult \in mergedMultiArrows (subseqs (mergeComponentsOf i1))
+                    else true) (take (seq.size p2 - seq.size p1) p2).*)
+
+
     Lemma step_mergeComponents_in:
       forall s1 i1 p1 s2 p2,
         (s1, [:: i1 & p1]) ~~> (s2, p2) ->
@@ -1174,10 +1185,10 @@ Section CoverMachineProperties.
     Proof.
       move => s1 i p1 s2 p2 splits prf.
       move: (step_splitsTail _ _ _ _ _ prf).
-      move: (step_mergeComponents_in _ _ _ _ _ prf).
-      move: (step_programStack _ _ _ _ prf) => /suffixP [] prefix /eqP ->.
+      move: (step_programStack _ _ _ _ prf) => stackPrf.
+      move: stackPrf prf =>  /suffixP [] prefix /eqP -> prf.
       rewrite /= size_cat addnK take_cat subnn take0 cats0 ltnn /sound.
-      move => currentResult__prfs splits__prfs /allP soundness.
+      move => splits__prfs /allP soundness.
       apply: (introT allP).
       move => s inprf.
       rewrite map_cons /= mem_cat.
@@ -1189,9 +1200,24 @@ Section CoverMachineProperties.
         apply: (introT orP).
         left.
         rewrite /mergeComponentsOf.
-        move: soundness prf currentResult__prfs splits__prfs => _ _.
+        move: soundness prf splits__prfs => _.
         case: i.
-        + move: inPrefix.
+        + move => splits1 toCover /CoverMachine_inv.
+          case: splits1.
+          * move => /(fun res => res (fun sp1 sp2 => behead sp1.2 = sp2.2)) /= /(fun res => res Logic.eq_refl) /(f_equal seq.size) /=.
+            rewrite size_cat addnC -[X in (X = _ -> _)%type]addn0 => /eqP.
+            rewrite eqn_add2l eq_sym => /nilP prefix__nil.
+            move: inPrefix.
+              by rewrite prefix__nil.
+          * move => [] [] srcs tgt covered splits1.
+
+            
+            
+            addn_eq0. -[X in (_ && X = _ -> _)%type] leqn0 ltnn => /andP [].
+ 
+          move: inPrefix.
+          
+
           elim: prefix => //= i2 prefix IH.
           rewrite mem_cat.
           move => /orP [].
@@ -1205,18 +1231,24 @@ Section CoverMachineProperties.
                    rewrite splits1__eq mergedMultiArrows_cat mem_cat.
                    move => ->.
                      by rewrite orbT.
-            ** move => splits1 toCover currentResult inprf1 splits2 _ /andP [].
-               case: splits2 => //.
-               move => split2 splits2 currentResult__in _ /andP [] /eqP splits1__eq _.
-               rewrite /= in splits1__eq.
-               move: inprf1.
-               rewrite splits1__eq mergedMultiArrows_cat mem_cat.
-               move => /orP [].
-               *** admit.
-               *** move => result.
-                     by rewrite /= mergedMultiArrows_cat mem_cat result orbT.
-          * move => inprf2 ? ? /andP [] ? ? /andP [] ? ?.
-              by apply: IH.
+            ** move => splits1 toCover2 currentResult inprf1 splits2 toCover1 prf /andP [] /eqP splits1__eq.
+               move: splits1__eq prf.
+               case: splits2.
+               *** move => _ /CoverMachine_inv res.
+                   move: (res (fun sp1 sp2 => behead sp1.2 = sp2.2) Logic.eq_refl) => /(f_equal seq.size) /=.
+                   rewrite size_cat addnC -addn1 -[X in (X = _ -> _)%type]addn0 -addnA => /eqP.
+                     by rewrite eqn_add2l eq_sym addn_eq0 -[X in (_ && X = _ -> _)%type] leqn0 ltnn => /andP [].
+               *** move => /= [] [] srcs tgt covered splits2 splits__eq.
+                   move => /CoverMachine_inv
+                           /(fun res => res (fun sp1 sp2 => if sp2.2 is [:: ContinueCover _ _ currentResult & _] return Prop
+                                                      then currentResult = (srcs, tgt)
+                                                      else true)) res.
+                   have: (currentResult = (srcs, tgt)); first by apply: res.
+                   move => currentResult__eq.
+                   move: inprf1.
+                     by rewrite currentResult__eq splits__eq.
+          * move => inprf2 ? ? ? /andP [] ? ?.
+            apply: IH => //.
         + move: inPrefix.
           elim: prefix => //= i2 prefix IH.
           rewrite mem_cat.
