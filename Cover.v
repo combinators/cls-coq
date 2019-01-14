@@ -1327,8 +1327,383 @@ Section CoverMachineProperties.
         apply: prf.
           by exact step.
     Qed.
-    
-        
+
+    Definition toCoverOf (i: @Instruction Constructor)  :=
+      match i with
+      | Cover _ toCover => toCover
+      | ContinueCover _ toCover _ => toCover
+      end.
+
+    Definition complete s p :=
+      all (fun x =>
+             checkSubtypes x.1.2 (\bigcap_(A_i <- x.2) A_i) ==>
+             has (fun y => [&& seq.size y.1 == seq.size x.1.1,
+                         all (fun AB => checkSubtypes AB.1 AB.2) (zip x.1.1 y.1) &
+                         checkSubtypes y.2 (\bigcap_(A_i <- x.2) A_i)]) s)
+          (flatten (map (fun i => map (fun m => (m, toCoverOf i))
+                                   (mergedMultiArrows (subseqs (mergeComponentsOf i))))
+                        p)).
+
+    Lemma complete_cat:
+      forall s p1 p2, complete s (p1 ++ p2) -> complete s p1 && complete s p2.
+    Proof.
+      move => s p1 p2 /allP prf.
+      rewrite /complete.
+      apply: (introT andP).
+      split.
+      - apply: (introT allP).
+        move => x inprf.
+        apply: prf.
+          by rewrite map_cat flatten_cat mem_cat inprf.
+      - apply: (introT allP).
+        move => x inprf.
+        apply: prf.
+          by rewrite map_cat flatten_cat mem_cat inprf orbT.
+    Qed.
+
+    Lemma cat_complete:
+      forall s p1 p2, complete s p1 -> complete s p2 -> complete s (p1 ++ p2).
+    Proof.
+      move => s p1 p2 /allP prf1 /allP prf2.
+      apply: (introT allP).
+      move => x.
+      rewrite map_cat flatten_cat mem_cat.
+      move => /orP [].
+      - by apply: prf1.
+      - by apply: prf2.
+    Qed.
+
+    Definition instruction_covered (i: @Instruction Constructor): bool :=
+      all (fun mps => all (fun A => (checkSubtypes mps.1.2 A) ==> (A \in mps.2)) (toCoverOf i)) (splitsOf i).
+
+    Lemma partitionCover_subset:
+      forall (covered toCover: seq (@IT Constructor)), all (fun A => A \in covered) (partitionCover covered toCover).1.
+    Proof.
+      move => covered.
+      elim => //.
+      move => A toCover /=.
+      case: (partitionCover covered toCover) => [] coveredFresh uncovered IH.
+      case inprf: (A \in covered) => //=.
+        by rewrite inprf IH.
+    Qed.
+
+    Lemma partitionCover_subseq1:
+      forall (covered toCover: seq (@IT Constructor)), subseq (partitionCover covered toCover).1 toCover.
+    Proof.
+      move => covered.
+      elim => //= A toCover.
+      case: (partitionCover covered toCover) => [] coveredFresh uncovered.
+      case: (A \in covered) => /=.
+      - by rewrite eq_refl.
+      - case: coveredFresh => // B coveredFresh.
+        case: (B == A) => //.
+          by move => /(subseq_trans (subseq_cons coveredFresh B)).
+    Qed.
+
+    Lemma partitionCover_subseq2:
+      forall (covered toCover: seq (@IT Constructor)), subseq (partitionCover covered toCover).2 toCover.
+    Proof.
+      move => covered.
+      elim => //= A toCover.
+      case: (partitionCover covered toCover) => [] coveredFresh uncovered.
+      case: (A \in covered) => /=.
+      - case: uncovered => // B uncovered.
+        case: (B == A) => //.
+          by move => /(subseq_trans (subseq_cons uncovered B)).
+      - by rewrite eq_refl.
+    Qed.
+
+    Lemma instructions_covered_step:
+      forall sp1 sp2,
+        sp1 ~~> sp2 ->
+        all instruction_covered sp1.2 ->
+        all instruction_covered sp2.2.
+    Proof.
+      move => [] s1 p1 [] s2 p2 /CoverMachine_inv.
+      move => /(fun res => res (fun sp1 sp2 => (all instruction_covered sp1.2 -> all instruction_covered sp2.2)%type)).
+      case: p1 => //.
+      case.
+      - case.
+        + move => toCover p1 prf.
+            by apply: prf.
+        + move => [] [] srcs tgt covered splits toCover p1 prf.
+          apply: prf.
+          * move => _ /= /andP [] covered1 ->.
+            move: covered1.
+              by rewrite /instruction_covered /= => /andP [] _ ->.
+          * move => _ _ /= /andP [] covered1 ->.
+            move: covered1.
+              by rewrite /instruction_covered /= => /andP [] _ ->.
+          * move => _ _ /= /andP [] covered1 ->.
+            move: covered1.
+            rewrite /instruction_covered /= => /andP [] /= covered1 covered2.
+            rewrite andbT covered2 andbT.
+            apply: (introT allP) => x inprf.
+            move: covered2 => /allP /(fun prf => prf x inprf) /allP covered2.
+            apply: (introT allP) => y inprf2.
+            apply: covered2.
+            move: (partitionCover_subseq2 covered toCover) => /mem_subseq res.
+              by apply: res.
+      - case.
+        + move => toCover p1 currentResult prf.
+            by apply: prf.
+        + move => [] [] srcs tgt covered splits toCover currentResult p1 prf.
+          apply: prf.
+          * move => _ /= /andP [] covered1 ->.
+            move: covered1.
+              by rewrite /instruction_covered /= => /andP [] _ ->.
+          * move => _ _ /= /andP [] covered1 ->.
+            move: covered1.
+              by rewrite /instruction_covered /= => /andP [] _ ->.
+          * move => _ _ _ /= /andP [] covered1 ->.
+            move: covered1.
+            rewrite /instruction_covered /= => /andP [] /= covered1 covered2.
+            rewrite andbT.
+            apply: (introT allP) => x inprf.
+            move: covered2 => /allP /(fun prf => prf x inprf) /allP covered2.
+            apply: (introT allP) => y inprf2.
+            apply: covered2.
+            move: (partitionCover_subseq2 covered toCover) => /mem_subseq res.
+              by apply: res.
+          * move => _ _ _ /= /andP [] covered1 ->.
+            move: covered1.
+            rewrite /instruction_covered /= => /andP [] /= covered1 covered2.
+            rewrite andbT covered2 andbT.
+            apply: (introT allP) => x inprf.
+            move: covered2 => /allP /(fun prf => prf x inprf) /allP covered2.
+            apply: (introT allP) => y inprf2.
+            apply: covered2.
+            move: (partitionCover_subseq2 covered toCover) => /mem_subseq res.
+              by apply: res.
+    Qed.
+
+    Definition not_omega_instruction (i: @Instruction Constructor): bool :=
+      toCoverOf i != [::].
+
+    Lemma not_omega_instruction_step:
+      forall s1 p1 s2 p2,
+        (s1, p1) ~~> (s2, p2) ->
+        all not_omega_instruction p1 ->
+        all not_omega_instruction p2.
+    Proof.
+      move => s1 p1 s2 p2 /CoverMachine_inv.
+      move => /(fun prf => prf (fun sp1 sp2 => (all not_omega_instruction sp1.2 -> all not_omega_instruction sp2.2)%type)).
+      case: p1 => //.
+      case; case.
+      - by move => ? ? prf; apply: prf => /andP [].
+      - move => [] [] srcs tgt covered splits toCover p1 prf.
+        apply: prf => //=.
+        move => _.
+          by rewrite /not_omega_instruction /= => ->.
+      - by move => ? ? ? prf; apply: prf => /andP [].
+      - move => [] [] srcs tgt covered splits toCover currentResult p1 prf.
+        apply: prf => //=.
+        + move => _.
+            by rewrite /not_omega_instruction /= => -> _ /andP [].
+        + move => _.
+            by rewrite /not_omega_instruction /= => ->.
+    Qed.
+
+    (*Lemma mergeMultiArrows_coContra:
+      forall m ms, foldl (fun s m => mergeMultiArrows mergedMultiArrows ms*)
+
+    Definition arity_equal (i: @Instruction Constructor): bool :=
+      all (fun x => all (fun y => seq.size x.1 == seq.size y.1) (mergeComponentsOf i)) (mergeComponentsOf i).
+
+
+    Lemma mergedMultiArrows_comm:
+      forall (P: @MultiArrow Constructor -> Prop),
+        (forall m1 m2, P (mergeMultiArrow m1 m2.1 m2.2) -> P (mergeMultiArrow m2 m1.1 m1.2)) ->
+        forall m ms, P (if ms is [:: m1 & ms]
+                   then let m2 := foldl (fun m__s m => mergeMultiArrow m__s m.1 m.2) m1 ms in
+                        mergeMultiArrow m2 m.1 m.2
+                   else m) ->
+                P (foldl (fun m__s m => mergeMultiArrow m__s m.1 m.2) m ms).
+    Proof.
+      move => P P__comm m ms.
+      move: m.
+      elim: ms => //= m1 ms IH.
+      move => m /P__comm.
+      move: IH.
+      case: ms => //= m2 ms IH prf.
+      apply: IH.
+      apply: P__comm.
+      
+
+
+
+
+    Lemma complete_reverse:
+      forall s s1 p1 s2 p2,
+        (s1, p1) ~~> (s2, p2) ->
+        suffix s2 s ->
+        all arity_equal p1 ->
+        all not_omega_instruction p1 ->
+        all instruction_covered p1 ->
+        complete s p2 ->
+        complete s p1.
+    Proof.
+      move => s s1 p1 s2 p2 step s2_suffix arity_equal_instructions not_omega_instructions instructions_covered complete__p2.
+      suff: (complete s (take 1 p1)).
+      { move: complete__p2.
+        move: (step_programStack _ _ _ _ step).
+        move /suffixP => [] p3 /eqP -> /complete_cat /andP [] _ complete__rest complete__head.
+        have: (p1 = take 1 p1 ++ behead p1) by case p1 => //= ? ?; rewrite take0.
+        move => ->.
+          by apply: cat_complete. }
+      move: step arity_equal_instructions instructions_covered not_omega_instructions.
+      case: p1 => //=.
+      move => i1 p1 step.
+      move: (step_programStack _ _ _ _ step) => /suffixP [] p3 /eqP p2__eq.
+      move: step complete__p2.
+      rewrite p2__eq.
+      move => step.
+      move => /complete_cat => /andP [] complete__p3 _.
+      move: p2__eq => _.
+      have: ((s1, [:: i1]) ~~> (s2, p3)).
+      { move: step => /CoverMachine_inv.
+        move => /(fun prf => prf (fun sp1 sp2 => (sp1.1, take 1 sp1.2) ~~> (sp2.1, take (seq.size sp2.2 - seq.size (behead sp1.2)) sp2.2))).
+        case: i1; case.
+        - move => toCover /=.
+          rewrite size_cat addnK take_cat ltnn subnn take0 subnn take0 cats0.
+          move => prf.
+            by apply: prf.
+        - move => [] [] srcs tgt covered splits toCover /=.
+          rewrite size_cat addnK take_cat ltnn subnn take0 cats0 -addn2 -addn1 (addnC _ 1) (addnC _ 2) addnK addnK /= take0.
+          move => prf.
+            by apply: prf; move => *; constructor.
+        - move => toCover currentResult /=.
+          rewrite size_cat addnK take_cat ltnn subnn take0 subnn take0 cats0.
+          move => prf.
+            by apply: prf.
+        - move => [] [] srcs tgt covered splits toCover currentResult /=.
+          rewrite size_cat addnK take_cat ltnn subnn take0 cats0 -addn2 -addn1 (addnC _ 1) (addnC _ 2) addnK addnK /= take0.
+          move => prf.
+            by apply: prf; move => *; constructor. }
+      rewrite take0.
+      move: p2 step => _ _ step /andP [] arity_equal__i _ /andP [] covered__i _ /andP [] not_omega__i _.
+      move: p1 => _.
+      move: step arity_equal__i covered__i not_omega__i complete__p3.
+      move => /CoverMachine_inv
+              /(fun res => res (fun sp1 sp2 => (
+                                 arity_equal (head i1 sp1.2) ->
+                                 instruction_covered (head i1 sp1.2) ->
+                                 not_omega_instruction (head i1 sp1.2) ->
+                                 complete s sp2.2 -> complete s sp1.2)%type)).
+      case: i1; case => /=.
+      - move => toCover prf instructions_covered.
+          by apply: prf.
+      - move => [] [] srcs tgt covered splits toCover prf.
+        apply: prf.
+        + move => partition__eq arity_equal__i instructions_covered__i not_omega_instructions__i.
+          rewrite /complete /= cats0 cats0 mergedMultiArrows_cat map_cat all_cat.
+          move => prf.
+          rewrite prf andbT.
+          move: prf.
+          elim: (subseqs (map fst splits)) => // ms mss IH.
+          rewrite (mergedMultiArrows_cat [:: ms]) map_cons (mergedMultiArrows_cat [:: [:: (srcs, tgt) & ms]]).
+          do 2 rewrite map_cat all_cat.
+          move => /andP [] prf__ms /IH ->.
+          rewrite andbT /= andbT.
+          move: prf__ms.
+          rewrite /=.
+          case: ms => /=.
+
+
+
+      
+
+                  
+
+
+      rewrite take0.
+
+
+
+
+      move => /suffixP.
+      move: step => /CoverMachine_inv
+                    /(fun res => res (fun sp1 sp2 => (
+                                       all not_omega_instruction sp1.2 ->
+                                       all instruction_covered sp1.2 ->
+                                       complete s sp2.2 ->
+                                       complete s sp1.2)%type)).
+      case: p1 => // i p1.
+      case: i; case.
+      - move => toCover prf instructions_covered.
+          by apply: prf.
+      - move => [] [] srcs tgt covered splits toCover prf.
+        apply: prf.
+        + move => partition__eq not_omega_instructions instructions_covered /(complete_cat _ [:: _] p1) /andP [] prf1 prf2.
+          apply: (cat_complete _ [:: _] p1) => //.
+          move:  prf1.
+          rewrite /complete /= cats0 mergedMultiArrows_cat all_cat andbT map_cat all_cat.
+          move => prf1.
+          rewrite prf1 andbT.
+          move: prf1.
+          elim: (subseqs (map fst splits)) => // ms mss IH.
+          rewrite (mergedMultiArrows_cat [:: ms]) map_cons (mergedMultiArrows_cat [:: [:: (srcs, tgt) & ms]]).
+          do 2 rewrite map_cat all_cat.
+          move => /andP [] prf__ms /IH ->.
+          rewrite andbT /= andbT.
+          move: prf__ms.
+          rewrite /=.
+          case: ms => /=.
+          * move: instructions_covered => /andP [].
+            rewrite /instruction_covered => /andP [] /= disprf _ _.
+            suff: (~~ checkSubtypes tgt (\bigcap_(A_i <- toCover) A_i)) by move => /negbTE ->.
+            apply: (introT negP).
+            move: IH not_omega_instructions disprf partition__eq => _.
+            case: toCover => //= path [] /=.
+            ** move => _.
+                 by case: (checkSubtypes tgt path) => // /andP [] /implyP /(fun prf => prf isT) -> _ /= [] /eqP /nilP.
+            ** move => p toCover _ /andP [] disprf _ partition__eq.
+               move => /subtypeMachineP /(fun prf => BCD__Trans _ prf (BCD__Lub1)) /subtypeMachineP prf.
+               move: disprf partition__eq => /implyP /(fun disprf => disprf prf) ->.
+               case: (partitionCover covered toCover).
+                 by case: (p \in covered) => ? ? /= /eqP /nilP.
+          * admit.
+        + admit.
+        +admit.
+      - 
+
+              
+
+
+              move => /subtypeMachineP /bcd_bigcap.
+
+
+
+
+          apply: (introT allP).
+          move => x.
+          rewrite mem_filter => /andP [] prf__le.
+
+          have: (injective (cons (srcs, tgt))); first by move => ? ? [].
+          move => /mem_map <-.
+          rewrite -(map_eq [x).
+
+
+          rewrite /complete /=.
+
+*)
+      
+
+    Lemma steps_complete:
+      forall s1 p1 s2, (s1, p1) ~~>[*] (s2, [::]) -> complete s2 p1.
+    Proof.
+      move => s1 p1 s2 /nStepSemantics_complete [] n.
+      move: s1 p1 s2.
+      elim: n.
+      - move => s1 p1 s2 /nStepSemantics_inv /(fun res => res (fun _ sp1 sp2 => sp1.2 = sp2.2)).
+          by move => /(fun res => res Logic.eq_refl) /= ->.
+      - move => n IH s1 p1 s2 /nStepSemantics_inv /(fun prf => prf (fun n sp1 sp2 => complete sp2.1 sp1.2)) prf.
+        apply: prf.
+        move => [] s3 p3 step steps.
+        move: (IH s3 p3 s2 steps).
+
+
+
 
 
    
