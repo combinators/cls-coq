@@ -871,12 +871,33 @@ Section CoverMachineProperties.
               by rewrite mem_cat prf orbT.
     Qed.
 
-    Fixpoint mergedMultiArrows (ms: seq (seq (@MultiArrow Constructor))): seq (@MultiArrow Constructor) :=
+    Definition mergeMultiArrows (ms: seq (@MultiArrow Constructor)): MultiArrow :=
+      if ms is [:: m & ms]
+      then foldl (fun m__s m => mergeMultiArrow m__s m.1 m.2) m ms
+      else ([::], Omega).
+
+    Lemma mergeMultiArrows_src_size:
+      forall ms, seq.size (mergeMultiArrows ms).1 = \big[minn/0%N]_(m_i <- ms) (seq.size m_i.1).
+    Proof.
+      rewrite /mergeMultiArrows.
+      case.
+      - by rewrite unlock.
+      - move => m ms.
+        move: m.
+        elim: ms.
+        + rewrite unlock /=.
+        rewrite unlock /= => <-.
+
+
+
+
+
+    Fixpoint filterMergeMultiArrows (ms: seq (seq (@MultiArrow Constructor))): seq (@MultiArrow Constructor) :=
       match ms with
       | [::] => [::]
-      | [:: [::] & mss ] => mergedMultiArrows mss
+      | [:: [::] & mss ] => filterMergeMultiArrows mss
       | [:: [:: m & ms] & mss ] =>
-        [:: foldl (fun m1 m2 => mergeMultiArrow m1 m2.1 m2.2) m ms & mergedMultiArrows mss]
+        [:: mergeMultiArrows [:: m & ms] & filterMergeMultiArrows mss]
       end.
 
     Definition mergeComponentsOf (i: @Instruction Constructor): seq (@MultiArrow Constructor) :=
@@ -904,8 +925,9 @@ Section CoverMachineProperties.
         + by move => y s2 s /= [] -> /IH ->.
     Qed.
 
-    Lemma mergedMultiArrows_cat: forall mss1 mss2,
-        mergedMultiArrows (mss1 ++ mss2) = mergedMultiArrows mss1 ++ mergedMultiArrows mss2.
+    Lemma filterMergeMultiArrows_cat: forall mss1 mss2,
+        filterMergeMultiArrows (mss1 ++ mss2) =
+        filterMergeMultiArrows mss1 ++ filterMergeMultiArrows mss2.
     Proof.
       elim => //= ms mss1 IH mss2.
       case ms.
@@ -913,8 +935,8 @@ Section CoverMachineProperties.
       - move => *; by rewrite IH.
     Qed.
 
-    Lemma mergedMultiArrows_subseq: forall mss1 mss2,
-        subseq mss1 mss2 -> subseq (mergedMultiArrows mss1) (mergedMultiArrows mss2).
+    Lemma filterMergeMultiArrows_subseq: forall mss1 mss2,
+        subseq mss1 mss2 -> subseq (filterMergeMultiArrows mss1) (filterMergeMultiArrows mss2).
     Proof.
       move => mss1 mss2.
       move: mss1.
@@ -938,7 +960,7 @@ Section CoverMachineProperties.
     Lemma step_mergeComponents:
       forall s1 i p1 s2 p2,
         (s1, [:: i & p1]) ~~> (s2, p2) ->
-        all (fun x => x \in mergedMultiArrows (subseqs (mergeComponentsOf i)))
+        all (fun x => x \in filterMergeMultiArrows (subseqs (mergeComponentsOf i)))
             (take (seq.size s2 - seq.size s1) s2).
     Proof.
       move => s1 i p1 s2 p2 prf.
@@ -951,7 +973,7 @@ Section CoverMachineProperties.
                         (fun sp1 sp2 =>
                            forall prefix, sp2.1 = prefix ++ sp1.1 ->
                                      all (fun x =>
-                                            x \in mergedMultiArrows
+                                            x \in filterMergeMultiArrows
                                                     (subseqs (mergeComponentsOf (head i sp1.2))))
                                          prefix)).
       case: i => [] [].
@@ -968,11 +990,11 @@ Section CoverMachineProperties.
         + move => _ _ prefix'.
           rewrite /= -cat1s.
           move => /cat_prefix <- //=.
-          rewrite mergedMultiArrows_cat mem_cat andbT.
+          rewrite filterMergeMultiArrows_cat mem_cat andbT.
           apply: (introT orP).
           left.
-          apply: (@mem_subseq _ (mergedMultiArrows [:: [:: (srcs, tgt)]])).
-          * apply: mergedMultiArrows_subseq.
+          apply: (@mem_subseq _ (filterMergeMultiArrows [:: [:: (srcs, tgt)]])).
+          * apply: filterMergeMultiArrows_subseq.
             have: ([:: [:: (srcs, tgt)]] = map (fun ms => [:: (srcs, tgt) & ms]) [:: [::]]) => // ->.
             apply: map_subseq.
             rewrite sub1seq.
@@ -994,15 +1016,15 @@ Section CoverMachineProperties.
         + move => _ _ prefix'.
           rewrite /= -cat1s.
           move => /cat_prefix <- //=.
-          rewrite mergedMultiArrows_cat mem_cat andbT.
+          rewrite filterMergeMultiArrows_cat mem_cat andbT.
           apply: (introT orP).
           left.
-          rewrite map_cat mergedMultiArrows_cat mem_cat.
+          rewrite map_cat filterMergeMultiArrows_cat mem_cat.
           apply: (introT orP).
           left.
           rewrite -map_comp.
-          apply: (@mem_subseq _ (mergedMultiArrows [:: [:: currentResult; (srcs, tgt)]])).
-          * apply: mergedMultiArrows_subseq.
+          apply: (@mem_subseq _ (filterMergeMultiArrows [:: [:: currentResult; (srcs, tgt)]])).
+          * apply: filterMergeMultiArrows_subseq.
             have: ([:: [:: currentResult; (srcs, tgt)]] =
                    map (cons currentResult \o cons (srcs, tgt)) [:: [::]]) => // ->.
             apply: map_subseq.
@@ -1018,7 +1040,7 @@ Section CoverMachineProperties.
     Qed.
 
     Definition sound s p :=
-      all (fun x => x \in flatten (map  (fun i => mergedMultiArrows (subseqs (mergeComponentsOf i))) p)) s.
+      all (fun x => x \in flatten (map (fun i => filterMergeMultiArrows (subseqs (mergeComponentsOf i))) p)) s.
 
     Lemma step_sound:
       forall sp1 sp2, sp1 ~~> sp2 -> sound (take (seq.size sp2.1 - seq.size sp1.1) sp2.1) sp1.2.
@@ -1075,14 +1097,14 @@ Section CoverMachineProperties.
       forall s1 i1 p1 s2 p2,
         (s1, [:: i1 & p1]) ~~> (s2, p2) ->
         all (fun i2 => if i2 is ContinueCover _ _ currentResult
-                    then currentResult \in mergedMultiArrows (subseqs (mergeComponentsOf i1))
+                    then currentResult \in filterMergeMultiArrows (subseqs (mergeComponentsOf i1))
                     else true) (take (seq.size p2 - seq.size p1) p2).
     Proof.
       move => s1 i1 p1 s2 p2 /CoverMachine_inv.
       move => /(fun prf => prf (fun sp1 sp2 =>
                               if sp1.2 is [:: i1 & p1]
                               then all (fun i2 =>  if i2 is ContinueCover _ _ currentResult
-                                                then currentResult \in mergedMultiArrows (subseqs (mergeComponentsOf i1))
+                                                then currentResult \in filterMergeMultiArrows (subseqs (mergeComponentsOf i1))
                                                 else true)
                                        (take (seq.size sp2.2 - seq.size p1) sp2.2)
                               else true)).
@@ -1096,11 +1118,11 @@ Section CoverMachineProperties.
             move => *.
           * by rewrite -addn1 addnC addnK take0.
           * by rewrite -addn1 addnC addnK take0.
-          * rewrite -addn2 addnC addnK take0 /= andbT mergedMultiArrows_cat mem_cat.
+          * rewrite -addn2 addnC addnK take0 /= andbT filterMergeMultiArrows_cat mem_cat.
             apply: (introT orP).
             left.
-            apply: (@mem_subseq _ (mergedMultiArrows [:: [:: (srcs, tgt)]])).
-            ** apply: mergedMultiArrows_subseq.
+            apply: (@mem_subseq _ (filterMergeMultiArrows [:: [:: (srcs, tgt)]])).
+            ** apply: filterMergeMultiArrows_subseq.
                have: ([:: [:: (srcs, tgt)]] = map (fun ms => [:: (srcs, tgt) & ms]) [:: [::]]) => // ->.
                apply: map_subseq.
                rewrite sub1seq.
@@ -1112,29 +1134,29 @@ Section CoverMachineProperties.
             by rewrite subnn take0.
         + move => [] [] srcs tgt covered splits toCover currentResult /= prf.
           apply: prf; move => *.
-          * rewrite -addn1 addnC addnK take0 /= andbT mergedMultiArrows_cat mem_cat.
+          * rewrite -addn1 addnC addnK take0 /= andbT filterMergeMultiArrows_cat mem_cat.
             apply: (introT orP).
             left.
-            apply: (@mem_subseq _ (mergedMultiArrows [:: [:: currentResult]])).
-            ** apply: mergedMultiArrows_subseq.
+            apply: (@mem_subseq _ (filterMergeMultiArrows [:: [:: currentResult]])).
+            ** apply: filterMergeMultiArrows_subseq.
                have: ([:: [:: currentResult]] = map (fun ms => [:: currentResult & ms]) [:: [::]]) => // ->.
                apply: map_subseq.
                  by rewrite sub1seq mem_cat subseqs_empty orbT.
             ** by rewrite //= mem_seq1 eq_refl.
-          * rewrite -addn1 addnC addnK take0 /= andbT mergedMultiArrows_cat mem_cat.
+          * rewrite -addn1 addnC addnK take0 /= andbT filterMergeMultiArrows_cat mem_cat.
             apply: (introT orP).
             left.
-            apply: (@mem_subseq _ (mergedMultiArrows [:: [:: currentResult]])).
-            ** apply: mergedMultiArrows_subseq.
+            apply: (@mem_subseq _ (filterMergeMultiArrows [:: [:: currentResult]])).
+            ** apply: filterMergeMultiArrows_subseq.
                have: ([:: [:: currentResult]] = map (fun ms => [:: currentResult & ms]) [:: [::]]) => // ->.
                apply: map_subseq.
                  by rewrite sub1seq mem_cat subseqs_empty orbT.
             ** by rewrite //= mem_seq1 eq_refl.
-          * rewrite -addn1 addnC addnK take0 /= andbT mergedMultiArrows_cat mem_cat.
+          * rewrite -addn1 addnC addnK take0 /= andbT filterMergeMultiArrows_cat mem_cat.
             apply: (introT orP).
             left.
-            apply: (@mem_subseq _ (mergedMultiArrows [:: [:: currentResult; (srcs, tgt)]])).
-            ** apply: mergedMultiArrows_subseq.
+            apply: (@mem_subseq _ (filterMergeMultiArrows [:: [:: currentResult; (srcs, tgt)]])).
+            ** apply: filterMergeMultiArrows_subseq.
                have: ([:: [:: currentResult; (srcs, tgt)]] =
                       map (cons currentResult \o cons (srcs, tgt)) [:: [::]]) => // ->.
                rewrite map_cat.
@@ -1144,13 +1166,13 @@ Section CoverMachineProperties.
                rewrite sub1seq.
                  by apply: subseqs_empty.
             ** by rewrite //= mem_seq1 eq_refl.
-          * rewrite -addn2 addnC addnK take0 /= andbT mergedMultiArrows_cat.
+          * rewrite -addn2 addnC addnK take0 /= andbT filterMergeMultiArrows_cat.
             apply: (introT andP).
-            split; rewrite mem_cat map_cat mergedMultiArrows_cat mem_cat; apply (introT orP); left.
+            split; rewrite mem_cat map_cat filterMergeMultiArrows_cat mem_cat; apply (introT orP); left.
             ** apply: (introT orP).
                left.
-               apply: (@mem_subseq _ (mergedMultiArrows [:: [:: currentResult; (srcs, tgt)]])).
-               *** apply: mergedMultiArrows_subseq.
+               apply: (@mem_subseq _ (filterMergeMultiArrows [:: [:: currentResult; (srcs, tgt)]])).
+               *** apply: filterMergeMultiArrows_subseq.
                    have: ([:: [:: currentResult; (srcs, tgt)]] =
                           map (cons currentResult \o cons (srcs, tgt)) [:: [::]]) => // ->.
                    rewrite -(map_comp (cons currentResult) (cons (srcs, tgt))).
@@ -1160,23 +1182,12 @@ Section CoverMachineProperties.
                *** by rewrite //= mem_seq1 eq_refl.
             ** apply: (introT orP).
                right.
-               apply: (@mem_subseq _ (mergedMultiArrows [:: [:: currentResult]])).
-               *** apply: mergedMultiArrows_subseq.
+               apply: (@mem_subseq _ (filterMergeMultiArrows [:: [:: currentResult]])).
+               *** apply: filterMergeMultiArrows_subseq.
                    have: ([:: [:: currentResult]] = map (fun ms => [:: currentResult & ms]) [:: [::]]) => // ->.
                    apply: map_subseq.
                      by rewrite sub1seq subseqs_empty.
                *** by rewrite //= mem_seq1 eq_refl.
-    Qed.
-
-    Lemma mergedMultiArrows_map_cons:
-      forall m1 srcs tgt ms,
-        mergedMultiArrows [seq mergeMultiArrow m1 srcs tgt :: i | i <- ms] =
-        mergedMultiArrows [seq [:: m1, (srcs, tgt) & i] | i <- ms].
-    Proof.
-      move => m1 srcs tgt.
-      elim => // m2 ms IH.
-      do 2 rewrite map_cons.
-        by rewrite /= IH.
     Qed.
 
     Lemma sound_reverse:
@@ -1510,25 +1521,150 @@ Section CoverMachineProperties.
     Definition arity_equal (i: @Instruction Constructor): bool :=
       all (fun x => all (fun y => seq.size x.1 == seq.size y.1) (mergeComponentsOf i)) (mergeComponentsOf i).
 
+    Lemma mergedMultiArrowsA:
+      forall (m: @MultiArrow Constructor) m1 ms,
+        let m1ms := foldl (fun m__s m => mergeMultiArrow m__s m.1 m.2) m1 ms in
+        let mm1ms := foldl (fun m__s m => mergeMultiArrow m__s m.1 m.2) m [:: m1 & ms] in
+        [&& seq.size (mergeMultiArrow m m1ms.1 m1ms.2).1 == seq.size mm1ms.1,
+         all (fun m1m2 =>
+                (checkSubtypes m1m2.1 m1m2.2) && (checkSubtypes m1m2.2 m1m2.1))
+             (zip (mergeMultiArrow m m1ms.1 m1ms.2).1 mm1ms.1),
+         (checkSubtypes (mergeMultiArrow m m1ms.1 m1ms.2).2 mm1ms.2)
+         & (checkSubtypes mm1ms.2 (mergeMultiArrow m m1ms.1 m1ms.2).2)].
+    Proof.
+      move => m m1 ms.
+      move: m m1.
+      elim: ms => /=.
+      - admit.
+      - move => m2 ms IH m m1.
+        move: (IH (mergeMultiArrow m m1.1 m1.2) m2).
+        move => /andP [] /eqP <-.
+        do 2 rewrite size_map size_zip.
+        
 
-    Lemma mergedMultiArrows_comm:
+
+
+
+    Lemma mergedMultiArrowsA:
       forall (P: @MultiArrow Constructor -> Prop),
-        (forall m1 m2, P (mergeMultiArrow m1 m2.1 m2.2) -> P (mergeMultiArrow m2 m1.1 m1.2)) ->
+        (forall  m1 m2 m3,
+            P (mergeMultiArrow m1
+                               (mergeMultiArrow m2 m3.1 m3.2).1
+                               (mergeMultiArrow m2 m3.1 m3.2).2) ->
+            P (mergeMultiArrow (mergeMultiArrow m1 m2.1 m2.2) m3.1 m3.2)) ->
         forall m ms, P (if ms is [:: m1 & ms]
-                   then let m2 := foldl (fun m__s m => mergeMultiArrow m__s m.1 m.2) m1 ms in
-                        mergeMultiArrow m2 m.1 m.2
+                   then
+                     mergeMultiArrow m
+                                     (foldl (fun m__s m => mergeMultiArrow m__s m.1 m.2) m1 ms).1
+                                     (foldl (fun m__s m => mergeMultiArrow m__s m.1 m.2) m1 ms).2
                    else m) ->
                 P (foldl (fun m__s m => mergeMultiArrow m__s m.1 m.2) m ms).
     Proof.
-      move => P P__comm m ms.
+      move => P P__assoc m ms prf.
+      have: (P (if ms is [:: m1 & ms]
+                   then
+                     mergeMultiArrow m
+                                     (foldr (fun m__s m => mergeMultiArrow m m__s.1 m__s.2) m1 (rev ms)).1
+                                     (foldr (fun m__s m => mergeMultiArrow m m__s.1 m__s.2) m1 (rev ms)).2
+                else m)).
+      { move: prf.
+        case: ms => // m1 ms.
+          by rewrite -(revK ms) foldl_rev revK. }
+      rewrite -(revK ms) foldl_rev.
+      move: prf => _.
       move: m.
-      elim: ms => //= m1 ms IH.
-      move => m /P__comm.
-      move: IH.
-      case: ms => //= m2 ms IH prf.
-      apply: IH.
-      apply: P__comm.
+      move size__eq: (seq.size (rev ms)) => n.
+      move: size__eq => /eq_leq.
+      move: ms.
+      elim: n.
+      - admit.
+      - move => n IH ms.
+        case: (rev ms) => //= m1 msr.
+        case: msr => //= m2 msr.
+        rewrite -addn1 -[X in (_ <= X -> _)%type]addn1 leq_add2r.
+        move => size__leq m prf.
+        apply P__assoc.
+        rewrite -/(foldr (fun m__s m => mergeMultiArrow m m__s.1 m__s.2)
+                         (foldr (fun m__s m => mergeMultiArrow m m__s.1 m__s.2) m msr)
+                         [:: (mergeMultiArrow m2 m1.1 m1.2)]).
+        rewrite -foldr_cat.
+        rewrite -(revK ([:: mergeMultiArrow m2 m1.1 m1.2] ++ msr)).
+        apply: IH.
+        + admit.
+        + rewrite revK.
+          move: prf.
+          move: ms size__leq => _ _.
+          rewrite /= rev_cons rev_cons rev_cons.
+          case: (rev msr) => //= m3 ms.
+          rewrite rev_rcons rev_rcons.
+          have: ([:: m1, m2 & rev ms] = [:: m1; m2] ++ rev ms) by done.
+          move => ->.
+          rewrite foldr_cat rev_rcons [mergeMultiArrow]lock /= -lock.
+          move => prf.
+          apply: P__assoc.
+
+
+
+
+          
+
       
+      
+
+      rewrite -(revK ms) foldl_rev.
+      
+
+      move msr__eq: (rev ms) => msr.
+      move: msr__eq.
+      case: msr => // m1 msr.
+      elim: msr => //= m2 msr ms__eq prf.
+      apply: P__assoc.
+      move: prf.
+
+      rewrite -ms__eq.
+
+      
+
+
+      rewrite /=.
+      apply: P__assoc.
+
+      move: ms m.
+      apply: last_ind => // ms m1 IH m.
+      rewrite rev_rcons /=.
+      move: IH.
+      case: (rev ms) => //= m2 msr IH prf.
+      apply: P__assoc.
+      apply: IH.
+
+      
+
+
+
+      move: m.
+      move n__eq: (seq.size ms) => n.
+      move: n__eq => /eq_leq.
+      move: ms.
+      elim: n.
+      - move => ms.
+        rewrite leqn0.
+          by move => /eqP /size0nil ->.
+      - move => n IH [] //= m1 ms.
+        rewrite -addn1 -[X in (_ <= X -> _)%type]addn1 leq_add2r.
+        move => size__leq m prf.
+        apply: IH => //.
+        move: prf.
+        rewrite -(revK ms) foldl_rev.
+        
+
+        case: ms =
+        apply IH.
+        + by move: size__leq => /ltnW.
+        + move: prf size__leq.
+          case: ms.
+          * by rewrite /foldl => /P__assoc.
+          * move => ? ? ? ?.
+            apply: P__assoc.
 
 
 
