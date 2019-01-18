@@ -113,7 +113,7 @@ Definition dcap {Constructor: ctor} (A B: @IT Constructor): @IT Constructor :=
   else if checkSubtypes B A
        then B
        else A \cap B.
-Notation "A \dcap B" := (Inter A B) (at level 80, right associativity) : it_scope.
+Notation "A \dcap B" := (dcap A B) (at level 80, right associativity) : it_scope.
 
 Fixpoint dintersect {Constructor: ctor} (xs: seq (@IT Constructor)) : IT :=
     match xs with
@@ -876,22 +876,6 @@ Section CoverMachineProperties.
       then foldl (fun m__s m => mergeMultiArrow m__s m.1 m.2) m ms
       else ([::], Omega).
 
-    Lemma mergeMultiArrows_src_size:
-      forall ms, seq.size (mergeMultiArrows ms).1 = \big[minn/0%N]_(m_i <- ms) (seq.size m_i.1).
-    Proof.
-      rewrite /mergeMultiArrows.
-      case.
-      - by rewrite unlock.
-      - move => m ms.
-        move: m.
-        elim: ms.
-        + rewrite unlock /=.
-        rewrite unlock /= => <-.
-
-
-
-
-
     Fixpoint filterMergeMultiArrows (ms: seq (seq (@MultiArrow Constructor))): seq (@MultiArrow Constructor) :=
       match ms with
       | [::] => [::]
@@ -1190,6 +1174,17 @@ Section CoverMachineProperties.
                *** by rewrite //= mem_seq1 eq_refl.
     Qed.
 
+    Lemma filterMergeMultiArrows_map_cons:
+      forall m1 srcs tgt ms,
+        filterMergeMultiArrows [seq mergeMultiArrow m1 srcs tgt :: i | i <- ms] =
+        filterMergeMultiArrows [seq [:: m1, (srcs, tgt) & i] | i <- ms].
+    Proof.
+      move => m1 srcs tgt.
+      elim => // m2 ms IH.
+      do 2 rewrite map_cons.
+        by rewrite /= IH.
+    Qed.
+    
     Lemma sound_reverse:
       forall s1 i p1 s2 p2 splits,
         (s1, [:: i & p1]) ~~> (s2, p2) ->
@@ -1247,10 +1242,10 @@ Section CoverMachineProperties.
             move => prf.
             move: inPrefix.
             case: prf => ->.
-            ** rewrite mergedMultiArrows_cat mem_cat mem_cat orbF /=.
+            ** rewrite filterMergeMultiArrows_cat mem_cat mem_cat orbF /=.
                move => ->.
                  by rewrite orbT.
-            ** rewrite mergedMultiArrows_cat /= cats0 mem_cat mem_cat mergedMultiArrows_cat mem_cat.
+            ** rewrite filterMergeMultiArrows_cat /= cats0 mem_cat mem_cat filterMergeMultiArrows_cat mem_cat.
                  by move => /orP [] ->; last rewrite orbT.
         + move => splits1 toCover currentResult /CoverMachine_inv.
           case: splits1.
@@ -1294,24 +1289,24 @@ Section CoverMachineProperties.
             move => prf.
             move: inPrefix.
             case: prf; last case; move => ->.
-            ** rewrite mergedMultiArrows_cat mem_cat mem_cat orbF /=.
-               rewrite map_cat [X in (_ -> _ -> (_ \in X) || _)%type]mergedMultiArrows_cat mem_cat.
-               do 2 rewrite mergedMultiArrows_cat mem_cat.
+            ** rewrite filterMergeMultiArrows_cat mem_cat mem_cat orbF /=.
+               rewrite map_cat [X in (_ -> _ -> (_ \in X) || _)%type]filterMergeMultiArrows_cat mem_cat.
+               do 2 rewrite filterMergeMultiArrows_cat mem_cat.
                  by move => /orP [] ->; repeat rewrite orbT.
-            ** rewrite mergedMultiArrows_cat mem_cat mem_cat orbF /=.
-               rewrite map_cat [X in (_ -> _ -> (_ \in X) || _)%type]mergedMultiArrows_cat mem_cat.
-               do 2 rewrite mergedMultiArrows_cat mem_cat.
+            ** rewrite filterMergeMultiArrows_cat mem_cat mem_cat orbF /=.
+               rewrite map_cat [X in (_ -> _ -> (_ \in X) || _)%type]filterMergeMultiArrows_cat mem_cat.
+               do 2 rewrite filterMergeMultiArrows_cat mem_cat.
                move => /orP []; last by move => ->; repeat rewrite orbT.
-                 by rewrite -map_comp mergedMultiArrows_map_cons => ->.
-            ** rewrite mergedMultiArrows_cat mem_cat mem_cat orbF /=.
-               do 3 rewrite mergedMultiArrows_cat mem_cat.
-               rewrite mem_cat map_cat [X in (_ -> _ -> (_ \in X) || _)%type]mergedMultiArrows_cat mem_cat.
+                 by rewrite -map_comp filterMergeMultiArrows_map_cons => ->.
+            ** rewrite filterMergeMultiArrows_cat mem_cat mem_cat orbF /=.
+               do 3 rewrite filterMergeMultiArrows_cat mem_cat.
+               rewrite mem_cat map_cat [X in (_ -> _ -> (_ \in X) || _)%type]filterMergeMultiArrows_cat mem_cat.
                move => /orP [].
                *** move => /orP []; last by move => ->; repeat rewrite orbT.
-                     by rewrite -map_comp mergedMultiArrows_map_cons => ->.
+                     by rewrite -map_comp filterMergeMultiArrows_map_cons => ->.
                *** by move => /orP [] ->; repeat rewrite orbT.
       - by move => ->; rewrite orbT.
-    Qed.            
+    Qed.
             
     Lemma semantics_mergeComponents:
       forall sp1 sp2, sp1 ~~>[*] sp2 -> sound (take (seq.size sp2.1 - seq.size sp1.1) sp2.1) sp1.2.
@@ -1352,7 +1347,7 @@ Section CoverMachineProperties.
                          all (fun AB => checkSubtypes AB.1 AB.2) (zip x.1.1 y.1) &
                          checkSubtypes y.2 (\bigcap_(A_i <- x.2) A_i)]) s)
           (flatten (map (fun i => map (fun m => (m, toCoverOf i))
-                                   (mergedMultiArrows (subseqs (mergeComponentsOf i))))
+                                   (filterMergeMultiArrows (subseqs (mergeComponentsOf i))))
                         p)).
 
     Lemma complete_cat:
@@ -1385,7 +1380,9 @@ Section CoverMachineProperties.
     Qed.
 
     Definition instruction_covered (i: @Instruction Constructor): bool :=
-      all (fun mps => all (fun A => (checkSubtypes mps.1.2 A) ==> (A \in mps.2)) (toCoverOf i)) (splitsOf i).
+      all (fun mps =>
+             checkSubtypes mps.1.2 (\bigcap_(A_i <- mps.2) A_i) &&
+             all (fun A => (checkSubtypes mps.1.2 A) ==> (A \in mps.2)) (toCoverOf i)) (splitsOf i).
 
     Lemma partitionCover_subset:
       forall (covered toCover: seq (@IT Constructor)), all (fun A => A \in covered) (partitionCover covered toCover).1.
@@ -1450,7 +1447,7 @@ Section CoverMachineProperties.
             rewrite /instruction_covered /= => /andP [] /= covered1 covered2.
             rewrite andbT covered2 andbT.
             apply: (introT allP) => x inprf.
-            move: covered2 => /allP /(fun prf => prf x inprf) /allP covered2.
+            move: covered2 => /allP /(fun prf => prf x inprf) /andP [] -> /allP covered2 /=.            
             apply: (introT allP) => y inprf2.
             apply: covered2.
             move: (partitionCover_subseq2 covered toCover) => /mem_subseq res.
@@ -1471,7 +1468,7 @@ Section CoverMachineProperties.
             rewrite /instruction_covered /= => /andP [] /= covered1 covered2.
             rewrite andbT.
             apply: (introT allP) => x inprf.
-            move: covered2 => /allP /(fun prf => prf x inprf) /allP covered2.
+            move: covered2 => /allP /(fun prf => prf x inprf) /andP [] -> /allP covered2 /=.
             apply: (introT allP) => y inprf2.
             apply: covered2.
             move: (partitionCover_subseq2 covered toCover) => /mem_subseq res.
@@ -1481,12 +1478,13 @@ Section CoverMachineProperties.
             rewrite /instruction_covered /= => /andP [] /= covered1 covered2.
             rewrite andbT covered2 andbT.
             apply: (introT allP) => x inprf.
-            move: covered2 => /allP /(fun prf => prf x inprf) /allP covered2.
+            move: covered2 => /allP /(fun prf => prf x inprf) /andP [] -> /allP covered2 /=.
             apply: (introT allP) => y inprf2.
             apply: covered2.
             move: (partitionCover_subseq2 covered toCover) => /mem_subseq res.
               by apply: res.
     Qed.
+
 
     Definition not_omega_instruction (i: @Instruction Constructor): bool :=
       toCoverOf i != [::].
@@ -1515,158 +1513,349 @@ Section CoverMachineProperties.
             by rewrite /not_omega_instruction /= => ->.
     Qed.
 
-    (*Lemma mergeMultiArrows_coContra:
-      forall m ms, foldl (fun s m => mergeMultiArrows mergedMultiArrows ms*)
-
     Definition arity_equal (i: @Instruction Constructor): bool :=
       all (fun x => all (fun y => seq.size x.1 == seq.size y.1) (mergeComponentsOf i)) (mergeComponentsOf i).
 
-    Lemma mergedMultiArrowsA:
-      forall (m: @MultiArrow Constructor) m1 ms,
-        let m1ms := foldl (fun m__s m => mergeMultiArrow m__s m.1 m.2) m1 ms in
-        let mm1ms := foldl (fun m__s m => mergeMultiArrow m__s m.1 m.2) m [:: m1 & ms] in
-        [&& seq.size (mergeMultiArrow m m1ms.1 m1ms.2).1 == seq.size mm1ms.1,
-         all (fun m1m2 =>
-                (checkSubtypes m1m2.1 m1m2.2) && (checkSubtypes m1m2.2 m1m2.1))
-             (zip (mergeMultiArrow m m1ms.1 m1ms.2).1 mm1ms.1),
-         (checkSubtypes (mergeMultiArrow m m1ms.1 m1ms.2).2 mm1ms.2)
-         & (checkSubtypes mm1ms.2 (mergeMultiArrow m m1ms.1 m1ms.2).2)].
+
+    Lemma mergeMultiArrows_arity:
+      forall ms,
+        all (fun x => all (fun y => seq.size x.1 == seq.size y.1) ms) ms ->
+        all (fun m => seq.size m.1 == seq.size (mergeMultiArrows ms).1) ms.
     Proof.
-      move => m m1 ms.
-      move: m m1.
-      elim: ms => /=.
-      - admit.
-      - move => m2 ms IH m m1.
-        move: (IH (mergeMultiArrow m m1.1 m1.2) m2).
-        move => /andP [] /eqP <-.
-        do 2 rewrite size_map size_zip.
-        
-
-
-
-
-    Lemma mergedMultiArrowsA:
-      forall (P: @MultiArrow Constructor -> Prop),
-        (forall  m1 m2 m3,
-            P (mergeMultiArrow m1
-                               (mergeMultiArrow m2 m3.1 m3.2).1
-                               (mergeMultiArrow m2 m3.1 m3.2).2) ->
-            P (mergeMultiArrow (mergeMultiArrow m1 m2.1 m2.2) m3.1 m3.2)) ->
-        forall m ms, P (if ms is [:: m1 & ms]
-                   then
-                     mergeMultiArrow m
-                                     (foldl (fun m__s m => mergeMultiArrow m__s m.1 m.2) m1 ms).1
-                                     (foldl (fun m__s m => mergeMultiArrow m__s m.1 m.2) m1 ms).2
-                   else m) ->
-                P (foldl (fun m__s m => mergeMultiArrow m__s m.1 m.2) m ms).
-    Proof.
-      move => P P__assoc m ms prf.
-      have: (P (if ms is [:: m1 & ms]
-                   then
-                     mergeMultiArrow m
-                                     (foldr (fun m__s m => mergeMultiArrow m m__s.1 m__s.2) m1 (rev ms)).1
-                                     (foldr (fun m__s m => mergeMultiArrow m m__s.1 m__s.2) m1 (rev ms)).2
-                else m)).
-      { move: prf.
-        case: ms => // m1 ms.
-          by rewrite -(revK ms) foldl_rev revK. }
-      rewrite -(revK ms) foldl_rev.
-      move: prf => _.
-      move: m.
-      move size__eq: (seq.size (rev ms)) => n.
-      move: size__eq => /eq_leq.
-      move: ms.
-      elim: n.
-      - admit.
-      - move => n IH ms.
-        case: (rev ms) => //= m1 msr.
-        case: msr => //= m2 msr.
-        rewrite -addn1 -[X in (_ <= X -> _)%type]addn1 leq_add2r.
-        move => size__leq m prf.
-        apply P__assoc.
-        rewrite -/(foldr (fun m__s m => mergeMultiArrow m m__s.1 m__s.2)
-                         (foldr (fun m__s m => mergeMultiArrow m m__s.1 m__s.2) m msr)
-                         [:: (mergeMultiArrow m2 m1.1 m1.2)]).
-        rewrite -foldr_cat.
-        rewrite -(revK ([:: mergeMultiArrow m2 m1.1 m1.2] ++ msr)).
-        apply: IH.
-        + admit.
-        + rewrite revK.
-          move: prf.
-          move: ms size__leq => _ _.
-          rewrite /= rev_cons rev_cons rev_cons.
-          case: (rev msr) => //= m3 ms.
-          rewrite rev_rcons rev_rcons.
-          have: ([:: m1, m2 & rev ms] = [:: m1; m2] ++ rev ms) by done.
-          move => ->.
-          rewrite foldr_cat rev_rcons [mergeMultiArrow]lock /= -lock.
-          move => prf.
-          apply: P__assoc.
-
-
-
-
-          
-
-      
-      
-
-      rewrite -(revK ms) foldl_rev.
-      
-
-      move msr__eq: (rev ms) => msr.
-      move: msr__eq.
-      case: msr => // m1 msr.
-      elim: msr => //= m2 msr ms__eq prf.
-      apply: P__assoc.
-      move: prf.
-
-      rewrite -ms__eq.
-
-      
-
-
-      rewrite /=.
-      apply: P__assoc.
-
-      move: ms m.
-      apply: last_ind => // ms m1 IH m.
-      rewrite rev_rcons /=.
-      move: IH.
-      case: (rev ms) => //= m2 msr IH prf.
-      apply: P__assoc.
+      rewrite /mergeMultiArrows.
+      case => // m ms /allP prf.
+      suff: (seq.size (foldl (fun m__s m => mergeMultiArrow m__s m.1 m.2) m ms).1 == seq.size m.1).
+      { move => /eqP ->.
+        apply: (introT allP).
+        move => ? /prf /allP /(fun prf => prf m) res.
+        apply: res.
+          by apply: mem_head. }
+      move: m prf.
+      elim: ms => //= m2 ms IH m1 prf.
+      have: (seq.size m1.1 = seq.size (mergeMultiArrow m1 m2.1 m2.2).1).
+      { rewrite /mergeMultiArrow size_map size_zip.
+        move: (prf m1 (mem_head _ _)) => /andP [] _ /andP [] /eqP -> _.
+          by rewrite minnn. }
+      move => size__eq.
+      rewrite size__eq.
       apply: IH.
+      move => m /orP [].
+      - move => /eqP ->.
+        rewrite eq_refl /andb.
+        move: (prf m1 (mem_head _ _)) => /andP [] _ /andP [] _.
+          by rewrite size__eq.
+      - move => /(fun inprf => prf m (mem_behead (mem_behead inprf))) => /andP [] /eqP size__eq1 /andP [] /eqP size__eq2 sizes__eq.
+          by rewrite {1}size__eq1 {1}size__eq eq_refl /andb.
+    Qed.
 
-      
+    Lemma mergeMultiArrow_tgt_le:
+      forall (m1 m2: @MultiArrow Constructor), [bcd ((mergeMultiArrow m1 m2.1 m2.2).2) <= m1.2 \cap m2.2].
+    Proof.
+      move => [] srcs1 tgt1 [] srcs2 tgt2 /=.
+        by apply: BCD__Glb.
+    Qed.
 
+    Lemma mergeMultiArrow_tgt_ge:
+      forall (m1 m2: @MultiArrow Constructor), [bcd (m1.2 \cap m2.2) <= ((mergeMultiArrow m1 m2.1 m2.2).2) ].
+    Proof.
+      move => [] srcs1 tgt1 [] srcs2 tgt2 /=.
+        by apply: BCD__Glb.
+    Qed.
 
+    Lemma mergeMultiArrow_srcs_le:
+      forall (m1 m2: @MultiArrow Constructor), all (fun srcs => checkSubtypes srcs.1 (srcs.2.1 \cap srcs.2.2)) (zip (mergeMultiArrow m1 m2.1 m2.2).1 (zip m1.1 m2.1)).
+    Proof.
+      move => [] srcs1 tgt1 [] srcs2 tgt2 /=.
+      move: srcs2.
+      elim: srcs1.
+      - by move => [].
+      - move => src1 srcs1 IH [] // src2 srcs2 /=.
+        rewrite (IH srcs2) andbT /(_ \dcap _).
+        move le21__eq: (checkSubtypes src2 src1) => [].
+        + apply: (introT (subtypeMachineP _ _ _)).
+          apply: BCD__Glb => //.
+            by apply: subtypeMachineP.
+        + move le12__eq: (checkSubtypes src1 src2) => [].
+          * apply: (introT (subtypeMachineP _ _ _)).
+            apply: BCD__Glb => //.
+              by apply: subtypeMachineP.
+          * apply: (introT (subtypeMachineP _ _ _)).
+              by apply: BCD__Glb.
+    Qed.
 
+    Lemma mergeMultiArrow_srcs_ge:
+      forall (m1 m2: @MultiArrow Constructor), all (fun srcs => checkSubtypes (srcs.2.1 \cap srcs.2.2) srcs.1) (zip (mergeMultiArrow m1 m2.1 m2.2).1 (zip m1.1 m2.1)).
+    Proof.
+      move => [] srcs1 tgt1 [] srcs2 tgt2 /=.
+      move: srcs2.
+      elim: srcs1.
+      - by move => [].
+      - move => src1 srcs1 IH [] // src2 srcs2 /=.
+        rewrite (IH srcs2) andbT /(_ \dcap _).
+        move le21__eq: (checkSubtypes src2 src1) => [].
+        + apply: (introT (subtypeMachineP _ _ _)).
+            by apply: BCD__Lub2. 
+        + move le12__eq: (checkSubtypes src1 src2) => [].
+          * apply: (introT (subtypeMachineP _ _ _)).
+              by apply: BCD__Lub1.
+          * apply: (introT (subtypeMachineP _ _ _)).
+              by apply: BCD__Glb.
+    Qed.
+
+    Lemma mergeMultiArrows_tgt_le:
+      forall ms,
+        [bcd ((mergeMultiArrows ms).2) <= \bigcap_(m_i <- ms) m_i.2 ].
+    Proof.
+      rewrite /mergeMultiArrows.
+      case => // m ms.
       move: m.
-      move n__eq: (seq.size ms) => n.
-      move: n__eq => /eq_leq.
-      move: ms.
-      elim: n.
-      - move => ms.
-        rewrite leqn0.
-          by move => /eqP /size0nil ->.
-      - move => n IH [] //= m1 ms.
-        rewrite -addn1 -[X in (_ <= X -> _)%type]addn1 leq_add2r.
-        move => size__leq m prf.
-        apply: IH => //.
-        move: prf.
-        rewrite -(revK ms) foldl_rev.
-        
+      elim: ms => // m2 ms IH m1.
+      apply: BCD__Trans; first by apply: IH.
+      apply: BCD__Trans; first by apply: (bcd_cat_bigcap_f _ _ (fun m => m.2) [:: (mergeMultiArrow m1 m2.1 m2.2)]).
+      apply: BCD__Trans; last by apply: (bcd_bigcap_cat_f _ _ (fun m => m.2) [:: m1; m2]).
+      apply: BCD__Glb => //.
+      apply: BCD__Trans; last by apply: (mergeMultiArrow_tgt_le m1 m2).
+        by apply: BCD__Lub1.
+    Qed.
 
-        case: ms =
-        apply IH.
-        + by move: size__leq => /ltnW.
-        + move: prf size__leq.
-          case: ms.
-          * by rewrite /foldl => /P__assoc.
-          * move => ? ? ? ?.
-            apply: P__assoc.
+    Lemma mergeMultiArrows_tgt_ge:
+      forall ms,
+        [bcd ( \bigcap_(m_i <- ms) m_i.2) <= ((mergeMultiArrows ms).2) ].
+    Proof.
+      rewrite /mergeMultiArrows.
+      case => // m ms.
+      move: m.
+      elim: ms => // m2 ms IH m1.
+      apply: BCD__Trans; last by apply: IH.
+      apply: BCD__Trans; first by apply: (bcd_cat_bigcap_f _ _ (fun m => m.2) [:: m1; m2]).
+      apply: BCD__Trans; last by apply: (bcd_bigcap_cat_f _ _ (fun m => m.2) [:: (mergeMultiArrow m1 m2.1 m2.2)]).
+      apply: BCD__Glb => //.
+      apply: BCD__Trans; last by apply: (mergeMultiArrow_tgt_ge m1 m2).
+        by apply: BCD__Lub1.
+    Qed.
 
+    Lemma mergeMultiArrows_srcs_le:
+      forall ms n,
+        all (fun x => all (fun y => seq.size x.1 == seq.size y.1) ms) ms ->
+        [bcd (nth Omega (mergeMultiArrows ms).1 n) <= \bigcap_(m_i <- ms) (nth Omega m_i.1 n)].
+    Proof.
+      rewrite /mergeMultiArrows.
+      case => //= m ms.
+      move: m.
+      elim: ms => // m2 ms IH m1 n prf.
+      rewrite map_cons.
+      apply: BCD__Trans; first apply: IH.
+      - move: prf => /andP [] /andP [] _ /andP [] /eqP prf1 prf1__ms /andP [] /andP [] _ prf2 prf__ms.
+        rewrite eq_refl [X in X && _]/andb.
+        apply: (introT andP); split.
+        + apply: sub_all; last by exact prf1__ms.
+          move => ? /eqP <- /=.
+            by rewrite size_map size_zip prf1 minnn.
+        + apply: sub_all; last by exact prf__ms.
+          move => m /andP [] /eqP -> /andP [] _.
+          rewrite -/(all _ ms) => ->.
+            by rewrite andbT /= size_map size_zip prf1 minnn.
+      - apply: BCD__Trans; last by apply: (bcd_bigcap_cat_f _ _ (fun m => nth Omega m.1 n) [:: m1; m2]).
+        apply: BCD__Glb.
+        + move: IH prf => _ /andP [] _ /andP [] /andP [] /eqP prf _ _.
+          case: ms => /=.
+          * move: (mergeMultiArrow_srcs_le m1 m2) => /all_nthP /(fun prf => prf n).
+            case n__lt: (n < seq.size m2.1).
+            ** rewrite size_zip size_zip size_map size_zip -prf minnn minnn.
+               move => /(fun prf => prf (Omega, (Omega, Omega)) n__lt) /= /subtypeMachineP.
+               rewrite nth_zip /=; last by rewrite size_map size_zip size_zip minnC.
+                 by (rewrite nth_zip; last by symmetry).
+            ** move => _.
+               repeat rewrite nth_default; first by apply: BCD__Glb.
+               *** by rewrite leqNgt n__lt.
+               *** by rewrite -prf leqNgt n__lt.
+               *** by rewrite size_map size_zip -prf minnn leqNgt n__lt.
+          * move => ? ?.
+            apply: BCD__Trans; first by apply: BCD__Lub1.
+            move: (mergeMultiArrow_srcs_le m1 m2) => /all_nthP /(fun prf => prf n).
+            case n__lt: (n < seq.size m2.1).
+            ** rewrite size_zip size_zip size_map size_zip -prf minnn minnn.
+               move => /(fun prf => prf (Omega, (Omega, Omega)) n__lt) /= /subtypeMachineP.
+               rewrite nth_zip /=; last by rewrite size_map size_zip size_zip minnC.
+                 by (rewrite nth_zip; last by symmetry).
+            ** move => _.
+               repeat rewrite nth_default; first by apply: BCD__Glb.
+               *** by rewrite leqNgt n__lt.
+               *** by rewrite -prf leqNgt n__lt.
+               *** by rewrite size_map size_zip -prf minnn leqNgt n__lt.
+        + apply: BCD__Trans; first by apply: (bcd_cat_bigcap_f _ _ (fun m => nth Omega m.1 n) [:: mergeMultiArrow m1 m2.1 m2.2]).
+            by apply: BCD__Lub2.
+    Qed.
 
+    Lemma mergeMultiArrows_srcs_ge:
+      forall ms n,
+        all (fun x => all (fun y => seq.size x.1 == seq.size y.1) ms) ms ->
+        [bcd (\bigcap_(m_i <- ms) (nth Omega m_i.1 n)) <= (nth Omega (mergeMultiArrows ms).1 n) ].
+    Proof.
+      rewrite /mergeMultiArrows.
+      case; first by move => ?; rewrite nth_nil.
+      move => /= m ms.
+      move: m.
+      elim: ms => // m2 ms IH m1 n prf.
+      rewrite map_cons.
+      apply: BCD__Trans; last apply: IH.
+      - apply: BCD__Trans; first by apply: (bcd_cat_bigcap_f _ _ (fun m => nth Omega m.1 n) [:: m1; m2]).
+        apply: BCD__Trans; last by apply: (bcd_bigcap_cat_f _ _ (fun m => nth Omega m.1 n) [:: mergeMultiArrow m1 m2.1 m2.2]).
+        apply: BCD__Glb => //.
+        move: IH prf => _ /andP [] _ /andP [] /andP [] /eqP prf _ _.
+        apply: BCD__Trans; first by apply: BCD__Lub1.
+        move: (mergeMultiArrow_srcs_ge m1 m2) => /all_nthP /(fun prf => prf n).
+        case n__lt: (n < seq.size m2.1).
+        + rewrite size_zip size_zip size_map size_zip -prf minnn minnn.
+          move => /(fun prf => prf (Omega, (Omega, Omega)) n__lt) /= /subtypeMachineP.
+          rewrite nth_zip /=; last by rewrite size_map size_zip size_zip minnC.
+            by (rewrite nth_zip; last by symmetry).
+        + move => _ /=.
+          repeat rewrite nth_default; first by done.
+          *** by rewrite size_map size_zip -prf minnn leqNgt n__lt.
+          *** by rewrite leqNgt n__lt.
+          *** by rewrite -prf leqNgt n__lt.
+      - move: prf => /andP [] /andP [] _ /andP [] /eqP prf1 prf1__ms /andP [] /andP [] _ prf2 prf__ms.
+        rewrite eq_refl [X in X && _]/andb.
+        apply: (introT andP); split.
+        + apply: sub_all; last by exact prf1__ms.
+          move => ? /eqP <- /=.
+            by rewrite size_map size_zip prf1 minnn.
+        + apply: sub_all; last by exact prf__ms.
+          move => m /andP [] /eqP -> /andP [] _.
+          rewrite -/(all _ ms) => ->.
+            by rewrite andbT /= size_map size_zip prf1 minnn.
+    Qed.
+
+    Definition toCover_prime (i: @Instruction Constructor): bool :=
+      all (@isPrimeComponent _) (toCoverOf i).
+
+    Lemma toCover_prime_step:
+      forall s1 p1 s2 p2,
+        (s1, p1) ~~> (s2, p2) ->
+        all toCover_prime p1 ->
+        all toCover_prime p2.
+    Proof.
+      move => s1 p1 s2 p2.
+      move => /CoverMachine_inv /(fun prf => prf (fun sp1 sp2 => (all toCover_prime sp1.2 -> all toCover_prime sp2.2)%type)).
+      case: p1 => //; case; case.
+      - by move => ? ? prf; apply: prf => /andP [].
+      - move => [] [] srcs tgt covered splits toCover p1 prf.
+        apply: prf => //=.
+        move => _ _ /andP [].
+        rewrite /toCover_prime /=.
+        move => prf ->.
+        rewrite prf andbT andbT.
+        apply: (introT allP).
+        move => p inprf.
+        move: prf => /allP prf.
+        apply: prf.
+        apply: mem_subseq; last by exact inprf.
+          by apply: partitionCover_subseq2.
+      - by move => ? ? ? prf; apply: prf => /andP [].
+      - move => [] [] srcs tgt covered splits toCover currentResult p1 prf.
+        apply: prf => //=.
+        + move => _ _ _ /andP [].
+          rewrite /toCover_prime /=.
+          move => prf ->.
+          rewrite andbT.
+          apply: (introT allP).
+          move => p inprf.
+          move: prf => /allP prf.
+          apply: prf.
+          apply: mem_subseq; last by exact inprf.
+            by apply: partitionCover_subseq2.
+        + move => _ _ _ /andP [].
+          rewrite /toCover_prime /=.
+          move => prf ->.
+          rewrite prf andbT andbT.
+          apply: (introT allP).
+          move => p inprf.
+          move: prf => /allP prf.
+          apply: prf.
+          apply: mem_subseq; last by exact inprf.
+            by apply: partitionCover_subseq2.
+    Qed.
+
+    Lemma bcd_subset_f {T: eqType}:
+      forall (f: T -> @IT Constructor) (Delta1 Delta2: seq T),
+        {subset Delta2 <= Delta1} ->
+        [bcd (\bigcap_(A_i <- Delta1) (f A_i)) <=  (\bigcap_(A_i <- Delta2) (f A_i))].
+    Proof.
+      move => f Delta1.
+      elim => //= A Delta2 IH subset_prf.
+      apply: BCD__Trans; last by apply: (bcd_bigcap_cat_f _ _ f [:: A] Delta2).
+      apply: BCD__Glb.
+      - move: subset_prf => /(fun prf => prf A (mem_head A Delta2)).
+        clear...
+        elim: Delta1 => // B Delta1 IH /orP [].
+        + move => /eqP ->.
+            by apply: BCD__Trans; first by apply: (bcd_cat_bigcap_f _ _ f [:: B] Delta1).
+        + move => /IH prf.
+          apply: BCD__Trans; first by apply: (bcd_cat_bigcap_f _ _ f [:: B] Delta1).
+            by apply: BCD__Trans; first by apply: BCD__Lub2.
+      - apply: IH.
+        move => B inprf.
+        apply: subset_prf.
+          by rewrite in_cons inprf orbT.
+    Qed.
+
+    Lemma partitionCover_prime:
+      forall m (ms: seq (@MultiArrow Constructor)) covered toCover,
+        all (@isPrimeComponent _) toCover ->
+        (forall A, A \in toCover -> [bcd (m.2) <= A] -> A \in covered) ->
+        [bcd (m.2) <= \bigcap_(A_i <- covered) A_i] ->
+        [bcd (\bigcap_(m_i <- [:: m & ms]) m_i.2) <= \bigcap_(A_i <- toCover) A_i] ->
+        [bcd (m.2) <= \bigcap_(A_i <- (partitionCover covered toCover).1) A_i] /\
+        [bcd (\bigcap_(m_i <- ms) m_i.2) <= \bigcap_(A_i <- (partitionCover covered toCover).2) A_i].
+    Proof.
+      move => m ms covered toCover.
+      move: m ms covered.
+      elim: toCover => //= p toCover IH [] srcs tgt ms covered /andP [].
+      move => /isPrimeComponentP /primeComponentPrime primality rest_prime.
+      move: (partitionCover_subset covered [:: p & toCover]) => /allP inCovered.
+      move: (partitionCover_subseq1 covered [:: p & toCover]) => /mem_subseq inpToCover.
+      move => covered_complete.
+      move: IH (IH (srcs, tgt) ms covered rest_prime (fun A inprf => covered_complete A (@mem_behead _ [:: p & toCover] A inprf))) => _ IH.
+      move: IH inCovered inpToCover.
+      rewrite [partitionCover covered [:: p & toCover]]/=.
+      case: (partitionCover covered toCover) => coveredFresh uncovered.
+      case inprf: (p \in covered) => [].
+      - move => IH inCovered inpToCover le__covered le__ptoCover.
+        rewrite /fst.
+        split.
+        + apply: BCD__Trans; last by apply: (bcd_bigcap_cat _ [:: p]).
+          apply: BCD__Glb.
+          * apply: BCD__Trans; first by exact le__covered.
+            apply: bcd_subset_f.
+              by move => p1 /orP [] // /eqP ->.
+          * apply: BCD__Trans; first by exact le__covered.
+            apply: bcd_subset_f.
+            move => p1 p1_in.
+            apply: inCovered.
+              by rewrite /= in_cons p1_in orbT.
+        + apply: (fun x => proj2 (IH le__covered x)).
+          apply: BCD__Trans; first by exact le__ptoCover.
+            by apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: p] toCover).
+      - move => IH inCovered inpToCover le__covered le__ptoCover.
+        rewrite /fst.
+        split.
+        + apply: BCD__Trans; first by exact le__covered.
+          apply: bcd_subset_f.
+            by move => ? /inCovered.
+        + apply: BCD__Trans; last by apply: (bcd_bigcap_cat _ [:: p] uncovered).
+          apply: BCD__Glb.
+          * move: le__ptoCover.
+            move => /(BCD__Trans _ (bcd_bigcap_cat_f _ _ snd [:: (srcs, tgt)] ms)).
+            move => /(fun prf => BCD__Trans _ prf (bcd_cat_bigcap _ [:: p] toCover)).
+            move => /(fun prf => BCD__Trans _ prf BCD__Lub1).
+            move => /primality [] //.
+            move => /(covered_complete p (mem_head _ _)).
+              by rewrite inprf.
+          * apply: (fun x => proj2 (IH le__covered x)).
+            apply: BCD__Trans; first by exact le__ptoCover.
+              by apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: p] toCover).
+    Qed.
 
 
     Lemma complete_reverse:
@@ -1676,10 +1865,12 @@ Section CoverMachineProperties.
         all arity_equal p1 ->
         all not_omega_instruction p1 ->
         all instruction_covered p1 ->
+        all toCover_prime p1 ->
         complete s p2 ->
         complete s p1.
     Proof.
-      move => s s1 p1 s2 p2 step s2_suffix arity_equal_instructions not_omega_instructions instructions_covered complete__p2.
+      move => s s1 p1 s2 p2 step s2_suffix.
+      move => arity_equal_instructions not_omega_instructions instructions_covered prime_instructions complete__p2.
       suff: (complete s (take 1 p1)).
       { move: complete__p2.
         move: (step_programStack _ _ _ _ step).
@@ -1687,7 +1878,7 @@ Section CoverMachineProperties.
         have: (p1 = take 1 p1 ++ behead p1) by case p1 => //= ? ?; rewrite take0.
         move => ->.
           by apply: cat_complete. }
-      move: step arity_equal_instructions instructions_covered not_omega_instructions.
+      move: step arity_equal_instructions instructions_covered not_omega_instructions prime_instructions.
       case: p1 => //=.
       move => i1 p1 step.
       move: (step_programStack _ _ _ _ step) => /suffixP [] p3 /eqP p2__eq.
@@ -1717,35 +1908,77 @@ Section CoverMachineProperties.
           move => prf.
             by apply: prf; move => *; constructor. }
       rewrite take0.
-      move: p2 step => _ _ step /andP [] arity_equal__i _ /andP [] covered__i _ /andP [] not_omega__i _.
+      move: p2 step => _ _ step /andP [] arity_equal__i _ /andP [] covered__i _ /andP [] not_omega__i _ /andP [] prime__i _.
       move: p1 => _.
-      move: step arity_equal__i covered__i not_omega__i complete__p3.
+      move: step arity_equal__i covered__i not_omega__i prime__i complete__p3.
       move => /CoverMachine_inv
               /(fun res => res (fun sp1 sp2 => (
                                  arity_equal (head i1 sp1.2) ->
                                  instruction_covered (head i1 sp1.2) ->
                                  not_omega_instruction (head i1 sp1.2) ->
+                                 toCover_prime (head i1 sp1.2) ->
                                  complete s sp2.2 -> complete s sp1.2)%type)).
       case: i1; case => /=.
       - move => toCover prf instructions_covered.
           by apply: prf.
       - move => [] [] srcs tgt covered splits toCover prf.
         apply: prf.
-        + move => partition__eq arity_equal__i instructions_covered__i not_omega_instructions__i.
-          rewrite /complete /= cats0 cats0 mergedMultiArrows_cat map_cat all_cat.
+        + move => partition__eq arity_equal__i instructions_covered__i not_omega_instructions__i prime__i.
+          (*have: ([ bcd ((srcs, tgt).2) <= \bigcap_(A_i <- (partitionCover covered toCover).1) A_i] /\
+                 [ bcd (\bigcap_(m_i <- map fst splits) m_i.2) <= \bigcap_(A_i <- (partitionCover covered toCover).2) A_i]).
+          { move: instructions_covered__i => /allP /(fun prf => prf (srcs, tgt, covered) (mem_head _ _)) => /andP [] tgt__le /allP all_in.
+            apply: partitionCover_prime => //.
+            - move => p inprf tgt__lep.
+                by move: all_in tgt__lep => /(fun prf => prf _ inprf) /implyP prf /subtypeMachineP /prf.
+            - by move: tgt__le => /subtypeMachineP.
+            - apply: BCD__Trans; first by apply: (bcd_cat_bigcap_f _ _ snd [:: (srcs, tgt)] _).
+              apply: BCD__Trans; first by apply: BCD__Lub2.
+              apply: BCD__Trans; first by apply: (mergeMultiArrows_tgt_ge (map fst splits)) => tgt_prf.
+              move: complete__splits.
+              rewrite /complete.
+
+              apply: BCD__Trans; first by apply: (mergeMultiArrows_tgt_le 
+              rewrite /complete /= cats0. filterMergeMultiArrows_cat. map_cat all_cat.*)
+          rewrite /complete /= cats0 cats0 filterMergeMultiArrows_cat map_cat all_cat.
           move => prf.
           rewrite prf andbT.
           move: prf.
           elim: (subseqs (map fst splits)) => // ms mss IH.
-          rewrite (mergedMultiArrows_cat [:: ms]) map_cons (mergedMultiArrows_cat [:: [:: (srcs, tgt) & ms]]).
+          rewrite (filterMergeMultiArrows_cat [:: ms]) map_cons (filterMergeMultiArrows_cat [:: [:: (srcs, tgt) & ms]]).
           do 2 rewrite map_cat all_cat.
           move => /andP [] prf__ms /IH ->.
-          rewrite andbT /= andbT.
           move: prf__ms.
-          rewrite /=.
-          case: ms => /=.
+          rewrite andbT map_cons /(map _ [::]) /filterMergeMultiArrows.
+          have: (~~ checkSubtypes tgt (\bigcap_(A_i <- toCover) A_i)).
+          { apply: (introT negP).
+            move: IH arity_equal__i prime__i instructions_covered__i partition__eq not_omega_instructions__i => _ _ _.
+            case: toCover => //= path [] /=.
+            ** rewrite /instruction_covered /= andbT.
+                 by case: (checkSubtypes tgt path) => // /andP [] /andP [] _ /implyP /(fun prf => prf isT) -> _ /= [] /eqP /nilP.
+            ** move => p toCover /andP [] /andP [] _ /andP [] disprf _ _ partition__eq not_omega.
+               move => /subtypeMachineP /(fun prf => BCD__Trans _ prf (BCD__Lub1)) /subtypeMachineP prf.
+               move: disprf partition__eq => /implyP /(fun disprf => disprf prf) ->.
+               case: (partitionCover covered toCover).
+                 by case: (p \in covered) => ? ? /= /eqP /nilP. }
+          move => disprf.
+          move: (mergeMultiArrows_arity _ arity_equal__i) => arity_prf.
+          move: (mergeMultiArrows_tgt_ge [:: (srcs, tgt) & ms]) => tgt_prf.
+          move => /allP prf__ms.
+          apply: (introT allP).
+          move => m /andP [] /eqP -> _.
+          rewrite /fst {2}/snd.
+          apply: (introT implyP).
+          move => /subtypeMachineP /(BCD__Trans _ tgt_prf).
+          move => /(fun y z => partitionCover_prime (srcs, tgt) ms covered toCover prime__i y z).
+          
+          
 
-
+          move: tgt_prf prf__ms disprf.
+          case: ms.
+          * by move => _ _ /= /negbTE ->.
+          * move => m ms /negbTE disprf.
+            move: (
+          
 
       
 
@@ -1799,6 +2032,7 @@ Section CoverMachineProperties.
                case: (partitionCover covered toCover).
                  by case: (p \in covered) => ? ? /= /eqP /nilP.
           * admit.
+
         + admit.
         +admit.
       - 
