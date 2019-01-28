@@ -2251,7 +2251,7 @@ Section CoverMachineProperties.
 
     Lemma mergeMultiArrow_srcs_monotonic:
       forall (m: @MultiArrow Constructor) srcs tgt,
-        all (fun m12 => checkSubtypes m12.1 m12.2) (zip srcs (mergeMultiArrow m srcs tgt).1).
+        all (fun m12 => checkSubtypes m12.2 m12.1) (zip srcs (mergeMultiArrow m srcs tgt).1).
     Proof.
       move => [] srcs1 tgt1.
       elim: srcs1.
@@ -2259,8 +2259,13 @@ Section CoverMachineProperties.
       - move => src1 srcs1 IH srcs tgt.
         case: srcs => //= src srcs.
         rewrite (IH srcs tgt) andbT.
-
-        
+        apply /subtypeMachineP.
+        rewrite /dcap.
+        case: (checkSubtypes src src1) => //.
+        case prf: (checkSubtypes src1 src) => //.
+        apply /subtypeMachineP.
+          by rewrite prf.
+    Qed.        
 
     Lemma complete_reverse:
       forall s s1 p1 s2 p2,
@@ -2861,6 +2866,7 @@ Section CoverMachineProperties.
                    apply (introT andP).
                    split.
                    **** apply: (introT allP).
+
                         move => x inprf__x /(nth_index (Omega, Omega)).
                         rewrite (nth_zip Omega Omega (index x (zip srcs (mergeMultiArrow currentResult srcs tgt).1))
                                          (Logic.eq_sym arity_equal__srcs)).
