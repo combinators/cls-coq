@@ -2245,6 +2245,18 @@ Section CoverMachineProperties.
         by case: (checkSubtypes B A) => [].
     Qed.
 
+    Lemma dcap_cap: forall (A B: @IT Constructor), [bcd (A \dcap B) <= A \cap B].
+    Proof.
+      move => A B.
+      rewrite /dcap.
+      case le__AB: (checkSubtypes A B) => [].
+      - apply: BCD__Glb => //.
+          by apply /subtypeMachineP.
+      - case le__BA: (checkSubtypes B A) => [] //.
+        apply: BCD__Glb => //.
+          by apply /subtypeMachineP.
+    Qed.
+
     Lemma complete_reverse:
       forall s s1 p1 s2 p2,
         (s1, p1) ~~> (s2, p2) ->
@@ -2702,6 +2714,14 @@ Section CoverMachineProperties.
                { rewrite -fold_merge.
                    by move: (mergeMultiArrows_arity _ arity_equal__currentms) => /andP [] /eqP ->. }
                rewrite {2}/fst {2}/snd {6}/fst.
+               have currentResult_size: (seq.size (mergeMultiArrows ms).1 = seq.size currentResult.1).
+               { rewrite -(mergeMultiArrows_cons_arity (srcs, tgt) ms
+                                                       ms__nonEmpty
+                                                       arity_equal__ms).
+                 rewrite -(mergeMultiArrows_cons_arity currentResult [:: (srcs, tgt) & ms]
+                                                       isT
+                                                       arity_equal__currentms).
+                   by move: (mergeMultiArrows_arity _ arity_equal__currentms) => /andP [] /eqP ->. }
                have n_lt2: (n < seq.size (zip (mergeMultiArrows ms).1 currentResult.1)).
                { rewrite size_zip.
                  rewrite -(mergeMultiArrows_cons_arity (mergeMultiArrow currentResult srcs tgt) ms
@@ -2710,6 +2730,10 @@ Section CoverMachineProperties.
                rewrite (nth_map (Omega, Omega) Omega) => //.
                rewrite {1}/fst.
                rewrite nth_zip => //.
+               rewrite {4}/fst {2}/snd.
+               apply: BCD__Trans; last by apply: cap_dcap.
+               apply: BCD__Glb.
+               *** apply: BCD__Trans; first by apply: BCD__Lub1.
 
 
                apply: (BCD__Trans (\bigcap_(A_i <- [:: mergeMultiArrow currentResult srcs tgt & ms]) (nth Omega A_i.1 n))).
