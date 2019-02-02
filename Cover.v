@@ -2280,6 +2280,22 @@ Section CoverMachineProperties.
         by move => ->.
     Qed.
 
+    (*Lemma mergeMultiArrows_cons_eq:
+      forall (m: @MultiArrow Constructor) ms1 ms2,
+        mergeMultiArrows ms1 == mergeMultiArrows ms2 ->
+        mergeMultiArrows [:: m & ms1] == mergeMultiArrows [:: m & ms2].
+    Proof.
+      move => m ms1 ms2.
+      rewrite /mergeMultiArrows.
+      move: ms2 m.
+      elim: ms1.
+      - elim => //= m2.
+        case.
+        + rewrite /=.
+        move:
+*)
+        
+
     Lemma complete_reverse:
       forall s s1 p1 s2 p2,
         (s1, p1) ~~> (s2, p2) ->
@@ -3194,7 +3210,410 @@ Section CoverMachineProperties.
                                 by move => /andP [] /subtypeMachineP.
                         ***** apply: BCD__Trans; first by apply: mergeMultiArrows_tgt_ge.
                                 by move: le__prf => /subtypeMachineP.
-        + admit.
+        + move => partition__eq1 partition__eq2 merge__eq.
+          move => s__suffix arity_equal__i instructions_covered__i not_omega_instructions__i prime__i notDone__i.
+          rewrite /complete /=.
+          rewrite filterMergeMultiArrows_cat all_cat andbT.
+          rewrite filterMergeMultiArrows_cat all_cat.
+          move => /andP [] prf1 prf2.
+          rewrite filterMergeMultiArrows_cat map_cat all_cat.
+          rewrite filterMergeMultiArrows_cat all_cat.
+          match goal with
+          |[|- (_ ((?x && _) && _))] => have prf: x
+          end.
+          * apply: (introT allP).
+            move => m inprf__m.
+            move: prf1.
+            rewrite filterMergeMultiArrows_map_cons (map_comp (cons currentResult) (cons (srcs, tgt))).
+            move => /allP /(fun prf => prf m inprf__m) /implyP prf1.
+            apply /implyP.
+            move => /subtypeMachineP le_prf.
+            have: (checkSubtypes m.2 (\bigcap_(A_i <- (partitionCover covered toCover).2) A_i)).
+            { apply /subtypeMachineP.
+                by apply: BCD__Trans; last by apply: (bcd_subset_f _ _ _ (mem_subseq (partitionCover_subseq2 covered toCover))). }
+            move => /prf1 /hasP [] y inprf__y /andP [] y__size /andP [] srcs__le tgt__le.
+            have arity_equal__mergeCurrentResult:
+              (seq.size currentResult.1 == seq.size (mergeMultiArrow currentResult srcs tgt).1).
+            { rewrite /= size_map size_zip.
+              move: arity_equal__i => /andP [] /andP [] _ /andP [] /eqP -> _ _.
+                by rewrite minnn. }
+            have y__size_srcs: (seq.size y.1 == seq.size [seq src.1 \dcap src.2 | src <- zip m.1 currentResult.1]).
+            { rewrite size_map size_zip (eqP arity_equal__mergeCurrentResult).
+              move: y__size.
+                by rewrite size_map size_zip. }
+            apply /hasP.
+            exists y => //.
+            rewrite y__size_srcs andTb.
+            apply /andP.
+            split.
+            ** apply /(all_nthP (Omega, Omega)).
+               move => n n_lt.
+               apply /subtypeMachineP.
+               rewrite nth_zip; last by rewrite (eqP y__size_srcs).
+               rewrite explicit_pair_fst explicit_pair_snd.
+               move: srcs__le => /(all_nthP (Omega, Omega)) /(fun prf => prf n).
+               have n_lt1:
+                 (n < seq.size (zip (map (fun srcs => srcs.1 \dcap srcs.2)
+                                         (zip m.1 (map (fun srcs => srcs.1 \dcap srcs.2) (zip srcs currentResult.1)))) y.1)).
+               { rewrite size_zip (eqP y__size) minnn.
+                 rewrite -(eqP y__size) (eqP y__size_srcs).
+                 move: n_lt.
+                   by rewrite size_zip (eqP y__size_srcs) minnn. }
+               move => /(fun prf => prf n_lt1) /subtypeMachineP.
+               rewrite nth_zip; last by rewrite (eqP y__size).
+               rewrite explicit_pair_snd explicit_pair_fst.
+               move: prf1 => _ prf1.
+               apply: BCD__Trans; last by exact prf1.
+                 by rewrite (eqP merge__eq).
+            ** apply /subtypeMachineP.
+               apply: BCD__Trans; first by (apply /subtypeMachineP; exact tgt__le).
+               apply: BCD__Glb;
+                 first by apply: BCD__Trans; first by apply: BCD__Lub1.
+               apply: BCD__Trans; last by apply: (bcd_subset_f _ _ _ (partitionCover_complete covered toCover)).
+               apply: BCD__Trans; last by apply: bcd_bigcap_cat.
+               apply: BCD__Glb => //.
+               do 2 (apply: BCD__Trans; first by apply: BCD__Lub1).
+               apply: BCD__Trans;
+                 last by apply: (bcd_subset_f _ _ _ (allP (partitionCover_subset covered toCover))).
+                 by move: instructions_covered__i => /andP [] /andP [] /subtypeMachineP.
+          * rewrite prf andTb.
+            apply /andP.
+            split; last (apply /andP; split).
+            **  apply: (introT allP).
+                move => m /filterMergedArrows_in_cons.
+                move => /orP [].
+                *** move => /eqP ->.
+                    move: not_omega_instructions__i => /andP [] notEmpty _.
+                    rewrite /= in notEmpty.
+                    move: notDone__i => /notDone_incomplete disprf.
+                    apply /implyP.
+                      by move: (disprf notEmpty) => /negP.
+                *** move => /hasP [] ms [] inprf /andP [] inprf__merged m__eq.
+                    have inprf__srcsm: ((mergeMultiArrows [:: currentResult, (srcs, tgt) & ms])
+                                        \in filterMergeMultiArrows (map (cons currentResult)
+                                                                        (map (cons (srcs, tgt))
+                                                                             (subseqs (map fst splits))))).
+                    { rewrite filterMergeMultiArrows_map_cons2 /mergeMultiArrow (eqP merge__eq).
+                      move: inprf.
+                      elim: (subseqs (map fst splits)) => // ms1 mss IH.
+                      rewrite in_cons map_cons (filterMergeMultiArrows_cat [:: _]) mem_cat.
+                      move => /orP [].
+                      - move => /eqP ->.
+                          by rewrite mem_seq1 /= /mergeMultiArrow (eqP merge__eq) eq_refl.
+                      - move => /IH res.
+                          by rewrite res orbT. }
+                    apply /implyP.
+                    move => le_prf.
+                    have: (checkSubtypes (mergeMultiArrows [:: currentResult, (srcs, tgt) & ms]).2
+                                         (\bigcap_(A_i <- toCover) A_i)).
+                    { apply /subtypeMachineP.
+                      move: le_prf => /subtypeMachineP le_prf.
+                      apply: BCD__Trans; last by exact le_prf.
+                      rewrite (eqP m__eq).
+                      apply: BCD__Trans; first by apply: mergeMultiArrows_tgt_le.
+                      apply: BCD__Trans; last by apply: mergeMultiArrows_tgt_ge.
+                      apply: bcd_subset_f.
+                      move => x.
+                      do 3 rewrite in_cons.
+                      move => /orP [].
+                      - by move => /eqP ->; rewrite eq_refl.
+                      - by move => ->; rewrite orbT orbT. }
+                    move: prf => /allP /(fun prf => prf (mergeMultiArrows [:: currentResult, (srcs, tgt) & ms])).
+                    move => /(fun prf => prf inprf__srcsm) /implyP prf.
+                    move => /prf /hasP [] y inprf__res /andP [] y__size_srcs /andP [] srcs_le_res tgt_le_res.
+                    apply /hasP.
+                    exists y => //.
+                    have arity_equal__mergeCurrentResult:
+                      (seq.size currentResult.1 == seq.size (mergeMultiArrow currentResult srcs tgt).1).
+                    { rewrite /= size_map size_zip.
+                      move: arity_equal__i => /andP [] /andP [] _ /andP [] /eqP -> _ _.
+                        by rewrite minnn. }
+                    have arity_equal_currentsrcsms:
+                      (all (fun m1 => all (fun m2 => seq.size m1.1 == seq.size m2.1) [:: currentResult, (srcs, tgt) & ms])
+                           [:: currentResult, (srcs, tgt) & ms]).
+                    { apply: all_nested_subseq; last by exact arity_equal__i.
+                      rewrite /mergeComponentsOf map_cons.
+                      apply: (@cat_subseq _ [:: currentResult; (srcs, tgt)] ms
+                                          [:: currentResult; (srcs, tgt, covered).1] (map fst splits)) => //.
+                        by apply: subseqs_subseq. }
+                    have fold_merge: (mergeMultiArrows [:: currentResult, (srcs, tgt) & ms] =
+                                      mergeMultiArrows [:: (mergeMultiArrow currentResult srcs tgt) & ms]) => //.
+                    have arity_equal_mergesrcscurrent:
+                      (seq.size (currentResult.1) == seq.size (mergeMultiArrows [:: mergeMultiArrow currentResult srcs tgt & ms]).1).
+                    { move: (mergeMultiArrows_arity _ arity_equal_currentsrcsms).
+                      rewrite fold_merge.
+                        by move => /andP []. }
+                    have arity_equal_currentms:
+                      (all (fun m1 => all (fun m2 => seq.size m1.1 == seq.size m2.1) [:: currentResult & ms])
+                           [:: currentResult & ms]).
+                    { apply: all_nested_subseq; last by exact arity_equal_currentsrcsms.
+                      apply: (@cat_subseq _ [:: _] ms [:: _; _] ms) => //.
+                        by apply (prefix_subseq [:: _]). }
+                    have y__size: (seq.size y.1 == seq.size [seq src.1 \dcap src.2 | src <- zip m.1 currentResult.1]).
+                    { rewrite (eqP m__eq).
+                      rewrite size_map size_zip.
+                      move: (mergeMultiArrows_arity _ arity_equal_currentms).
+                      move => /andP [] /eqP <- _. 
+                      move: y__size_srcs.
+                        by rewrite size_map size_zip -(eqP arity_equal_mergesrcscurrent). }
+                    rewrite y__size andTb.
+                    rewrite tgt_le_res andbT.
+                    apply /(all_nthP (Omega, Omega)).
+                    move => n n_lt.
+                    apply /subtypeMachineP.
+                    rewrite nth_zip; last by rewrite (eqP y__size).
+                    rewrite explicit_pair_fst explicit_pair_snd.
+                    move: srcs_le_res => /(all_nthP (Omega, Omega)) /(fun prf => prf n).
+                    have n_lt1: (n < seq.size (zip (map (fun srcs => srcs.1 \dcap srcs.2)
+                                                        (zip (mergeMultiArrows [:: currentResult, (srcs, tgt) & ms]).1
+                                                             currentResult.1)) y.1)).
+                    { rewrite size_zip -(eqP y__size_srcs) (eqP y__size).
+                      move: n_lt.
+                        by rewrite size_zip (eqP y__size). }
+                    move => /(fun prf => prf n_lt1) /subtypeMachineP.
+                    rewrite nth_zip; last by rewrite (eqP y__size_srcs).
+                    rewrite explicit_pair_snd explicit_pair_fst.
+                    move: prf1 => _ prf1.
+                    apply: BCD__Trans; last by exact prf1.
+                    rewrite (eqP m__eq).
+                    rewrite (nth_map (Omega, Omega)); last first.
+                    { rewrite size_zip.
+                      move: (mergeMultiArrows_arity _ arity_equal_currentms) => /andP [] /eqP <- _.
+                      move: n_lt.
+                      rewrite size_zip (eqP y__size) size_map size_zip.
+                      rewrite (eqP m__eq).
+                      move: (mergeMultiArrows_arity _ arity_equal_currentms) => /andP [] /eqP <- _.
+                        by rewrite minnn. }
+                    apply: BCD__Trans; first by apply: dcap_cap.
+                    rewrite nth_zip; last first.
+                    { by move: (mergeMultiArrows_arity _ arity_equal_currentms) => /andP [] /eqP <- _. }
+                    rewrite (nth_map (Omega, Omega)); last first.
+                    { rewrite size_zip fold_merge (eqP arity_equal_mergesrcscurrent).
+                      move: n_lt1.
+                        by rewrite size_zip (eqP y__size_srcs) size_map size_zip (eqP arity_equal_mergesrcscurrent) minnn. }
+                    rewrite nth_zip; last by rewrite (eqP arity_equal_mergesrcscurrent).
+                    rewrite explicit_pair_snd explicit_pair_fst.
+                    apply: BCD__Trans; last by apply: cap_dcap.
+                    rewrite explicit_pair_snd explicit_pair_fst.
+                    apply: BCD__Glb => //.
+                    apply: BCD__Trans; first by apply: BCD__Lub1.
+                    apply: BCD__Trans; first by apply: (mergeMultiArrows_srcs_le _ _ arity_equal_currentms).
+                    have: (all
+                             (fun m1 => all (fun m2 => seq.size m1.1 == seq.size m2.1) [:: mergeMultiArrow currentResult srcs tgt & ms])
+                             [:: mergeMultiArrow currentResult srcs tgt & ms]).
+                    { apply /allP.
+                      move => x.
+                      rewrite in_cons.
+                      move => /orP [].
+                      - move => /eqP ->.
+                        apply /allP.
+                        move => z.
+                        rewrite in_cons.
+                        move => /orP [].
+                        + by move => /eqP ->.
+                        + move => inprf__z.
+                          rewrite -(eqP arity_equal__mergeCurrentResult).
+                          move: arity_equal_currentms => /allP /(fun prf => prf z).
+                          rewrite in_cons inprf__z orbT.
+                            by move => /(fun prf => prf isT) /andP [] /eqP ->.
+                      - move => inprf__x.
+                        apply /allP.
+                        move => z.
+                        rewrite in_cons.
+                        move => /orP [].
+                        + move => /eqP ->.
+                          rewrite -(eqP arity_equal__mergeCurrentResult).
+                          move: arity_equal_currentms => /allP /(fun prf => prf x).
+                          rewrite in_cons inprf__x orbT.
+                            by move => /(fun prf => prf isT) /andP [] /eqP ->.
+                        + move => inprf__z.
+                          move: arity_equal_currentms => /allP res.
+                          move: (res x) (res z).
+                          rewrite in_cons inprf__x orbT in_cons inprf__z orbT.
+                            by do 2 move => /(fun prf => prf isT) /andP [] /eqP -> _. }
+                    move: prf2 => _ /(mergeMultiArrows_srcs_ge _ n) prf2.
+                    rewrite fold_merge.
+                    apply: BCD__Trans; last by exact prf2.
+                    move: merge__eq.
+                    rewrite /mergeMultiArrow.
+                    move => /eqP ->.
+                    apply: BCD__Trans; first by apply: (bcd_cat_bigcap_f _ _ _ [::_] _).
+                    apply: BCD__Trans; last by apply: (bcd_bigcap_cat_f _ _ _ [::_] _).
+                      by apply: BCD__Glb.
+            ** apply: (introT allP).
+               move => m /filterMergedArrows_in_cons.
+               move => /orP [].
+               *** move => /eqP ->.
+                   move: not_omega_instructions__i => /andP [] notEmpty _.
+                   rewrite /= in notEmpty.
+                   move: notDone__i => /notDone_incomplete disprf.
+                   apply /implyP.
+                     by move: (disprf notEmpty) => /negP.
+               *** move => /hasP [] ms [] inprf /andP [] inprf__merged m__eq.
+                   have inprf__srcsm: ((mergeMultiArrows [:: currentResult, (srcs, tgt) & ms])
+                                       \in filterMergeMultiArrows (map (cons currentResult)
+                                                                       (map (cons (srcs, tgt))
+                                                                            (subseqs (map fst splits))))).
+                    { rewrite filterMergeMultiArrows_map_cons2 /mergeMultiArrow (eqP merge__eq).
+                      move: inprf.
+                      elim: (subseqs (map fst splits)) => // ms1 mss IH.
+                      rewrite in_cons map_cons (filterMergeMultiArrows_cat [:: _]) mem_cat.
+                      move => /orP [].
+                      - move => /eqP ->.
+                          by rewrite mem_seq1 /= /mergeMultiArrow (eqP merge__eq) eq_refl.
+                      - move => /IH res.
+                          by rewrite res orbT. }
+                    apply /implyP.
+                    move => le_prf.
+                    have: (checkSubtypes (mergeMultiArrows [:: currentResult, (srcs, tgt) & ms]).2
+                                         (\bigcap_(A_i <- toCover) A_i)).
+                    { apply /subtypeMachineP.
+                      move: le_prf => /subtypeMachineP le_prf.
+                      apply: BCD__Trans; last by exact le_prf.
+                      rewrite (eqP m__eq).
+                      apply: BCD__Trans; first by apply: mergeMultiArrows_tgt_le.
+                      apply: BCD__Trans; last by apply: mergeMultiArrows_tgt_ge.
+                      apply: bcd_subset_f.
+                      move => x.
+                      do 3 rewrite in_cons.
+                      move => /orP [].
+                      - by move => /eqP ->; rewrite eq_refl.
+                      - by move => ->; rewrite orbT orbT. }
+                    move: prf => /allP /(fun prf => prf (mergeMultiArrows [:: currentResult, (srcs, tgt) & ms])).
+                    move => /(fun prf => prf inprf__srcsm) /implyP prf.
+                    move => /prf /hasP [] y inprf__res /andP [] y__size_srcs /andP [] srcs_le_res tgt_le_res.
+                    apply /hasP.
+                    exists y => //.
+                    have arity_equal__mergeCurrentResult:
+                      (seq.size currentResult.1 == seq.size (mergeMultiArrow currentResult srcs tgt).1).
+                    { rewrite /= size_map size_zip.
+                      move: arity_equal__i => /andP [] /andP [] _ /andP [] /eqP -> _ _.
+                        by rewrite minnn. }
+                    have arity_equal_currentsrcsms:
+                      (all (fun m1 => all (fun m2 => seq.size m1.1 == seq.size m2.1) [:: currentResult, (srcs, tgt) & ms])
+                           [:: currentResult, (srcs, tgt) & ms]).
+                    { apply: all_nested_subseq; last by exact arity_equal__i.
+                      rewrite /mergeComponentsOf map_cons.
+                      apply: (@cat_subseq _ [:: currentResult; (srcs, tgt)] ms
+                                          [:: currentResult; (srcs, tgt, covered).1] (map fst splits)) => //.
+                        by apply: subseqs_subseq. }
+                    have fold_merge: (mergeMultiArrows [:: currentResult, (srcs, tgt) & ms] =
+                                      mergeMultiArrows [:: (mergeMultiArrow currentResult srcs tgt) & ms]) => //.
+                    have arity_equal_mergesrcscurrent:
+                      (seq.size (currentResult.1) == seq.size (mergeMultiArrows [:: mergeMultiArrow currentResult srcs tgt & ms]).1).
+                    { move: (mergeMultiArrows_arity _ arity_equal_currentsrcsms).
+                      rewrite fold_merge.
+                        by move => /andP []. }
+                    have arity_equal_currentms:
+                      (all (fun m1 => all (fun m2 => seq.size m1.1 == seq.size m2.1) [:: currentResult & ms])
+                           [:: currentResult & ms]).
+                    { apply: all_nested_subseq; last by exact arity_equal_currentsrcsms.
+                      apply: (@cat_subseq _ [:: _] ms [:: _; _] ms) => //.
+                        by apply (prefix_subseq [:: _]). }
+                    have y__size: (seq.size y.1 == seq.size [seq src.1 \dcap src.2 | src <- zip m.1 currentResult.1]).
+                    { rewrite (eqP m__eq).
+                      rewrite size_map size_zip.
+                      move: (mergeMultiArrows_arity _ arity_equal_currentms).
+                      move => /andP [] /eqP <- _. 
+                      move: y__size_srcs.
+                        by rewrite size_map size_zip -(eqP arity_equal_mergesrcscurrent). }
+                    rewrite y__size andTb.
+                    rewrite tgt_le_res andbT.
+                    apply /(all_nthP (Omega, Omega)).
+                    move => n n_lt.
+                    apply /subtypeMachineP.
+                    rewrite nth_zip; last by rewrite (eqP y__size).
+                    rewrite explicit_pair_fst explicit_pair_snd.
+                    move: srcs_le_res => /(all_nthP (Omega, Omega)) /(fun prf => prf n).
+                    have n_lt1: (n < seq.size (zip (map (fun srcs => srcs.1 \dcap srcs.2)
+                                                        (zip (mergeMultiArrows [:: currentResult, (srcs, tgt) & ms]).1
+                                                             currentResult.1)) y.1)).
+                    { rewrite size_zip -(eqP y__size_srcs) (eqP y__size).
+                      move: n_lt.
+                        by rewrite size_zip (eqP y__size). }
+                    move => /(fun prf => prf n_lt1) /subtypeMachineP.
+                    rewrite nth_zip; last by rewrite (eqP y__size_srcs).
+                    rewrite explicit_pair_snd explicit_pair_fst.
+                    move: prf1 => _ prf1.
+                    apply: BCD__Trans; last by exact prf1.
+                    rewrite (eqP m__eq).
+                    rewrite (nth_map (Omega, Omega)); last first.
+                    { rewrite size_zip.
+                      move: (mergeMultiArrows_arity _ arity_equal_currentms) => /andP [] /eqP <- _.
+                      move: n_lt.
+                      rewrite size_zip (eqP y__size) size_map size_zip.
+                      rewrite (eqP m__eq).
+                      move: (mergeMultiArrows_arity _ arity_equal_currentms) => /andP [] /eqP <- _.
+                        by rewrite minnn. }
+                    apply: BCD__Trans; first by apply: dcap_cap.
+                    rewrite nth_zip; last first.
+                    { by move: (mergeMultiArrows_arity _ arity_equal_currentms) => /andP [] /eqP <- _. }
+                    rewrite (nth_map (Omega, Omega)); last first.
+                    { rewrite size_zip fold_merge (eqP arity_equal_mergesrcscurrent).
+                      move: n_lt1.
+                        by rewrite size_zip (eqP y__size_srcs) size_map size_zip (eqP arity_equal_mergesrcscurrent) minnn. }
+                    rewrite nth_zip; last by rewrite (eqP arity_equal_mergesrcscurrent).
+                    rewrite explicit_pair_snd explicit_pair_fst.
+                    apply: BCD__Trans; last by apply: cap_dcap.
+                    rewrite explicit_pair_snd explicit_pair_fst.
+                    apply: BCD__Glb => //.
+                    apply: BCD__Trans; first by apply: BCD__Lub1.
+                    apply: BCD__Trans; first by apply: (mergeMultiArrows_srcs_le _ _ arity_equal_currentms).
+                    have: (all
+                             (fun m1 => all (fun m2 => seq.size m1.1 == seq.size m2.1) [:: mergeMultiArrow currentResult srcs tgt & ms])
+                             [:: mergeMultiArrow currentResult srcs tgt & ms]).
+                    { apply /allP.
+                      move => x.
+                      rewrite in_cons.
+                      move => /orP [].
+                      - move => /eqP ->.
+                        apply /allP.
+                        move => z.
+                        rewrite in_cons.
+                        move => /orP [].
+                        + by move => /eqP ->.
+                        + move => inprf__z.
+                          rewrite -(eqP arity_equal__mergeCurrentResult).
+                          move: arity_equal_currentms => /allP /(fun prf => prf z).
+                          rewrite in_cons inprf__z orbT.
+                            by move => /(fun prf => prf isT) /andP [] /eqP ->.
+                      - move => inprf__x.
+                        apply /allP.
+                        move => z.
+                        rewrite in_cons.
+                        move => /orP [].
+                        + move => /eqP ->.
+                          rewrite -(eqP arity_equal__mergeCurrentResult).
+                          move: arity_equal_currentms => /allP /(fun prf => prf x).
+                          rewrite in_cons inprf__x orbT.
+                            by move => /(fun prf => prf isT) /andP [] /eqP ->.
+                        + move => inprf__z.
+                          move: arity_equal_currentms => /allP res.
+                          move: (res x) (res z).
+                          rewrite in_cons inprf__x orbT in_cons inprf__z orbT.
+                            by do 2 move => /(fun prf => prf isT) /andP [] /eqP -> _. }
+                    move: prf2 => _ /(mergeMultiArrows_srcs_ge _ n) prf2.
+                    rewrite fold_merge.
+                    apply: BCD__Trans; last by exact prf2.
+                    move: merge__eq.
+                    rewrite /mergeMultiArrow.
+                    move => /eqP ->.
+                    apply: BCD__Trans; first by apply: (bcd_cat_bigcap_f _ _ _ [::_] _).
+                    apply: BCD__Trans; last by apply: (bcd_bigcap_cat_f _ _ _ [::_] _).
+                      by apply: BCD__Glb.
+
+
+
+
+                    
+
+
+                    
+
+
+
+
+
         + move => partition__eq1 partition__eq2 merge__ineq.
           move => s__suffix arity_equal__i instructions_covered__i not_omega_instructions__i prime__i notDone__i.
           rewrite /complete /=.
@@ -3431,29 +3850,6 @@ Section CoverMachineProperties.
                  move => /subseqs_map_cons inprf.
                  apply: all_nested_subseq; first apply: (subseqs_subseq _ _ inprf).
                    by exact arity_equal__i. }
-               have arity_equal_currentms:
-                       all (fun m1 => all (fun m2 => seq.size m1.1 == seq.size m2.1) [:: currentResult & ms])
-                           [:: currentResult & ms].
-               { apply /allP.
-                 move => x inprf__x.
-                 have: (x \in [:: currentResult, (srcs, tgt) & map fst splits]).
-                 { move: inprf__x.
-                   do 3 rewrite in_cons.
-                   move => /orP [].
-                   - by move => ->.
-                   - move => /(mem_subseq (subseqs_subseq _ _ inprf)) ->.
-                       by rewrite orbT orbT. }
-                 move => /(allP arity_equal__i) /allP prf.
-                 apply /allP.
-                 move => z inprf__z.
-                 have: (z \in [:: currentResult, (srcs, tgt) & map fst splits]).
-                 { move: inprf__z.
-                   do 3 rewrite in_cons.
-                   move => /orP [].
-                   - by move => ->.
-                   - move => /(mem_subseq (subseqs_subseq _ _ inprf)) ->.
-                       by rewrite orbT orbT. }
-                   by move => /prf. }
                have arity_equal_mergeRest:
                  (seq.size currentResult.1 == seq.size (mergeMultiArrows ((srcs, tgt) :: ms)).1).
                { rewrite (eqP arity_equal__mergeCurrentResult).
