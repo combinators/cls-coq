@@ -3609,20 +3609,39 @@ Section CoverMachineProperties.
                     rewrite in_cons.
                     move => ->.
                       by rewrite orbT.
-            **
-
-
-
-
-                    
-
-
-                    
-
-
-
-
-
+            ** apply /allP.
+               move => m inprf__m.
+               apply /implyP.
+               move => le_prf.
+               move: prf2 => /allP /(fun prf => prf m inprf__m) /implyP prf2.
+               have: (checkSubtypes m.2 (\bigcap_(A_i <- (partitionCover covered toCover).2) A_i)).
+               { apply /subtypeMachineP.
+                 move: le_prf => /subtypeMachineP le_prf.
+                 apply: BCD__Trans; first by apply: le_prf.
+                 apply: bcd_subset_f.
+                 apply: mem_subseq.
+                   by apply: partitionCover_subseq2. }
+               move => /prf2.
+               rewrite (eqP merge__eq).
+               move => /hasP [] y inprf__res /andP [] y__size_srcs /andP [] srcs_le_res tgt_le_res.
+               apply /hasP.
+               exists y => //.
+               rewrite y__size_srcs srcs_le_res andTb andTb.
+               apply /subtypeMachineP.
+               move: tgt_le_res => /subtypeMachineP tgt_le_res.
+               apply: BCD__Trans; first by exact tgt_le_res.
+               apply: BCD__Glb.
+               *** by apply: BCD__Trans; first by apply: BCD__Lub1.
+               *** apply: BCD__Trans; last by apply: (partition_cover_both covered).
+                   apply: BCD__Trans; last by apply: bcd_bigcap_cat.
+                   apply: BCD__Glb => //.
+                   apply: BCD__Trans; first by apply: BCD__Lub1.
+                   apply: BCD__Trans; first by apply: BCD__Lub1.
+                   move: (covered_head_tgt _ _ _ _ _ instructions_covered__i) => [] _ tgt_le2.
+                   apply: BCD__Trans; first by exact tgt_le2.
+                   apply: bcd_subset_f.
+                   move => x.
+                     by move: (allP (partitionCover_subset covered toCover)) => /(fun prf => prf x).
         + move => partition__eq1 partition__eq2 merge__ineq.
           move => s__suffix arity_equal__i instructions_covered__i not_omega_instructions__i prime__i notDone__i.
           rewrite /complete /=.
