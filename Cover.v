@@ -1544,6 +1544,135 @@ Section CoverMachineProperties.
     Definition arity_equal (i: @Instruction Constructor): bool :=
       all (fun x => all (fun y => seq.size x.1 == seq.size y.1) (mergeComponentsOf i)) (mergeComponentsOf i).
 
+    Lemma arity_equal_step:
+      forall sp1 sp2,
+        sp1 ~~> sp2 ->
+        all arity_equal sp1.2 ->
+        all arity_equal sp2.2.
+    Proof.
+      move => [] s1 p1 [] s2 p2 /CoverMachine_inv /(fun prf => prf (fun sp1 sp2 => (all arity_equal sp1.2 -> all arity_equal sp2.2)%type)).
+      case: p1 => //.
+      case; case.
+      - move => toCover p1 res.
+        apply: res.
+          by move => /andP [].
+      - move => [] [] srcs tgt covered splits toCover p1 res.
+        apply: res.
+        + move => _ /= /andP [] prf ->.
+          rewrite andbT.
+          apply: all_nested_tl.
+            by exact prf.
+        + move => _ _ /= /andP [] prf ->.
+          rewrite andbT.
+          apply: all_nested_tl.
+            by exact prf.
+        + move => _ _ /= /andP [] prf ->.
+          rewrite andbT.
+          move: prf.
+          rewrite /arity_equal.
+          move => prf.
+          rewrite prf.
+          apply: all_nested_tl.
+            by exact prf.
+      - move => toCover currentResult p1 res.
+        apply: res.
+          by move => /= /andP [] _.
+      - move => [] [] srcs tgt covered splits toCover currentResult p1 res.
+        apply: res.
+        + move => _ /= /andP [] prf ->.
+          rewrite andbT.
+          apply: all_nested_subseq; last by exact prf.
+          apply: (@cat_subseq _ [:: _] _ [:: _] _) => //.
+          rewrite map_cons.
+            by apply: (@suffix_subseq _ [:: _]).
+        + move => _ _ /= /andP [] prf ->.
+          rewrite andbT.
+          apply: all_nested_subseq; last by exact prf.
+          apply: (@cat_subseq _ [:: _] _ [:: _] _) => //.
+          rewrite map_cons.
+            by apply: (@suffix_subseq _ [:: _]).
+        + move => _ _ merge_eq /= /andP [] /allP prf ->.
+          rewrite andbT.
+          apply /allP.
+          move => x.
+          rewrite in_cons.
+          move => /orP [].
+          * move => /eqP ->.
+            rewrite (eqP merge_eq).
+            apply /allP.
+            move => y.
+            rewrite in_cons.
+            move => /orP [].
+            ** move => /eqP ->.
+                 by rewrite (eqP merge_eq).
+            ** move: (prf currentResult (mem_head _ _)) => /allP /(fun prf => prf y).
+               rewrite in_cons.
+               move: prf => _ prf inprf__y.
+               move: prf.
+               rewrite map_cons in_cons inprf__y orbT orbT.
+                 by move => /(fun prf => prf isT).
+          * move => inprf__x.
+            apply /allP.
+            move => y.
+            rewrite in_cons.
+            move => /orP [].
+            ** move => /eqP ->.
+               rewrite (eqP merge_eq).
+               move: prf => /(fun prf => prf x).
+               rewrite in_cons map_cons in_cons inprf__x orbT orbT.
+                 by move => /(fun prf => prf isT) /allP /(fun prf => prf currentResult (mem_head _ _)).
+            ** move => inprf__y.
+               move: prf => /(fun prf => prf x).
+               rewrite in_cons map_cons in_cons inprf__x orbT orbT.
+               move => /(fun prf => prf isT) /allP /(fun prf => prf y).
+               rewrite in_cons map_cons in_cons inprf__y orbT orbT.
+                 by move => /(fun prf => prf isT).
+        + move => _ _ _ /= /andP [] prf ->.
+          rewrite andbT.
+          apply /andP.
+          split.
+          * apply /allP.
+            move => x.
+            rewrite in_cons.
+            move => /orP [].
+            ** move => inprf__x.
+               apply /allP.
+               move => y.
+               rewrite in_cons.
+               move => /orP [].
+               *** move => /eqP ->.
+                     by rewrite (eqP inprf__x).
+               *** move => inprf__y.
+                   rewrite (eqP inprf__x).
+                   move: (prf) => /allP /(fun prf => prf currentResult (mem_head _ _)) /allP /(fun prf => prf y).
+                   rewrite in_cons map_cons in_cons inprf__y orbT orbT.
+                   rewrite /mergeMultiArrow size_map size_zip.
+                   move: prf => /andP [] /andP [] _ /andP [] /eqP <- _ _.
+                   rewrite minnn.
+                     by move => /(fun prf => prf isT).
+            ** move => inprf__x.
+               apply /allP.
+               move => y.
+               rewrite in_cons.
+               move => /orP [].
+               *** move => /eqP ->.
+                   rewrite /mergeMultiArrow size_map size_zip.
+                   move: (prf) => /andP [] /andP [] _ /andP [] /eqP <- _ _.
+                   rewrite minnn.
+                   move: prf => /allP /(fun prf => prf x).
+                   rewrite in_cons map_cons in_cons inprf__x orbT orbT.
+                     by move => /(fun prf => prf isT) /allP /(fun prf => prf currentResult (mem_head _ _)).
+               *** move => inprf__y.
+                   move: prf => /allP /(fun prf => prf x).
+                   rewrite in_cons map_cons in_cons inprf__x orbT orbT.
+                   move => /(fun prf => prf isT) /allP /(fun prf => prf y).
+                   rewrite in_cons map_cons in_cons inprf__y orbT orbT.
+                     by move => /(fun prf => prf isT).
+          * apply: all_nested_subseq; last by exact prf.
+            apply: (@cat_subseq _ [:: _] _ [:: _] _) => //.
+            rewrite map_cons.
+              by apply: (@suffix_subseq _ [:: _]).
+    Qed.
 
     Lemma mergeMultiArrows_arity:
       forall ms,
@@ -4038,22 +4167,44 @@ Section CoverMachineProperties.
 
 
     Lemma steps_complete:
-      forall s1 p1 s2, (s1, p1) ~~>[*] (s2, [::]) -> complete s2 p1.
+      forall s1 p1 s2,
+        (s1, p1) ~~>[*] (s2, [::]) ->
+        all arity_equal p1 ->
+        all not_omega_instruction p1 ->
+        all instruction_covered p1 ->
+        all toCover_prime p1 ->
+        all currentResultNotDone p1 ->
+        all (complete s2) p1.
     Proof.
       move => s1 p1 s2 /nStepSemantics_complete [] n.
       move: s1 p1 s2.
       elim: n.
       - move => s1 p1 s2 /nStepSemantics_inv /(fun res => res (fun _ sp1 sp2 => sp1.2 = sp2.2)).
           by move => /(fun res => res Logic.eq_refl) /= ->.
-      - move => n IH s1 p1 s2 /nStepSemantics_inv /(fun prf => prf (fun n sp1 sp2 => complete sp2.1 sp1.2)) prf.
+      - move => n IH s1 p1 s2 /nStepSemantics_inv /(fun prf => prf (fun n sp1 sp2 =>
+                                                                  (all arity_equal sp1.2 ->
+                                                                   all not_omega_instruction sp1.2 ->
+                                                                   all instruction_covered sp1.2 ->
+                                                                   all toCover_prime sp1.2 ->
+                                                                   all currentResultNotDone sp1.2 ->
+                                                                   all (complete sp2.1) sp1.2))%type) prf.
         apply: prf.
-        move => [] s3 p3 step steps.
-        move: (IH s3 p3 s2 steps).
+        move => [] s3 p3 step steps all_arity_equal all_not_omega_instruction.
+        move => all_instruction_covered all_toCoverPrime all_notDone.
+        move: (IH s3 p3 s2 steps
+                  (arity_equal_step (s1, p1) (s3, p3) step all_arity_equal)
+                  (not_omega_instruction_step _ _ _ _ step  all_not_omega_instruction)
+                  (instructions_covered_step (s1, p1) (s3, p3) step all_instruction_covered)
+                  (toCover_prime_step _ _ _ _ step all_toCoverPrime)
+                  (currentResultNotDone_step (s1, p1) (s3, p3) step all_instruction_covered all_toCoverPrime all_notDone)
+              ).
+        apply: complete_reverse => //; first by exact step.
+        apply: (steps_stateMonotonic (s3, p3) (s2, [::])).
+        apply: nStepSemantics_sound.
+          by exact steps.
+    Qed.
 
-
-
-
-
+    
    
   End StepInvariants.
 End CoverMachineProperties.
