@@ -42,9 +42,10 @@ Section Split.
   Definition splitTy (A: @IT Constructor): seq (seq MultiArrow) :=
     if isOmega A
     then [::]
-    else splitRec A [::] [:: [:: ([::], A)]].
+    else [:: ([::], A) ] :: splitRec A [::] [:: [::]].
 
 End Split.
+
 
 Arguments MultiArrow [Constructor].
 Arguments splitTy [Constructor].
@@ -4202,11 +4203,81 @@ Section CoverMachineProperties.
         apply: (steps_stateMonotonic (s3, p3) (s2, [::])).
         apply: nStepSemantics_sound.
           by exact steps.
+    Qed.   
+  End StepInvariants.
+
+  Section SplitProperties.
+    Arguments splitRec [Constructor].
+    Arguments safeSplit [Constructor].
+
+    Fixpoint arity_increasing n (Delta: seq (seq (@MultiArrow Constructor))): bool :=
+      match Delta with
+      | [::] => true
+      | [:: Delta1 & Delta2] =>
+        all (fun m => n == seq.size m.1) Delta1 &&
+            arity_increasing n.+1 Delta2
+      end.
+
+    Lemma arity_increasing_cat: forall n Delta1 Delta2,
+        arity_increasing n (Delta1 ++ Delta2) =
+        (arity_increasing n Delta1 && arity_increasing (n + seq.size Delta1) Delta2).
+    Proof.
+      move => n Delta1.
+      move: n.
+      elim: Delta1.
+      - move => n.
+          by rewrite /= addn0.
+      - move => ms Delta1 IH n Delta2.
+        rewrite /=.
+        move: (IH n.+1 Delta2).
+        rewrite -(addn1 (seq.size Delta1)) (addnC (seq.size Delta1)) addnA (addn1 n).
+        move => ->.
+          by rewrite andbA.
     Qed.
 
-    
-   
-  End StepInvariants.
+    Lemma splitRec_arity:
+      forall (A: @IT Constructor) srcs Delta,
+        arity_increasing (seq.size srcs).+1 (Delta) ->
+        arity_increasing (seq.size srcs).+1 (splitRec A srcs Delta).
+    Proof.
+      elim => //=.
+      - move => A1 IH1 A2 IH2 srcs Delta.
+        case: (isOmega A2) => //.
+        case: Delta.
+        + move => _ /=.
+          rewrite eq_refl.
+            by apply: IH1.
+        + move => Delta1 Delta2 /=.
+          case: Delta2.
+          * rewrite /= andbT eq_refl.
+            move => arity_equal.
+            rewrite arity_equal /=.
+              by apply: IH1.
+          * move => Delta21 Delta22 /andP [] arity_equal1 arity_equal2 /=.
+            rewrite eq_refl arity_equal1 /=.
+              by apply: IH1.
+      - move => A1 IH1 A2 IH2 srcs Delta1 Delta2.
+        case: (isOmega A1 && isOmega A2) => //.
+        apply: IH1.
+          by apply: IH2.
+    Qed.
+
+    Lemma splitTy_arity: forall A, arity_increasing 0 (splitTy A).
+    Proof.
+      move => A.
+      rewrite /splitTy.
+      case: (isOmega A) => //=.
+      
+      case: A => //.
+      - move => A1 A2 /=.
+        apply: splitRec_arity.
+      rewrite /=.
+
+
+     
+
+  End SplitProperties.
+
 End CoverMachineProperties.
 
 Recursive Extraction coverMachine.
