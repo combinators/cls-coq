@@ -33,7 +33,7 @@ Section Split.
     else match A with
          | Arrow A B =>
            let (Delta1, Delta2) := safeSplit Delta in
-           [:: [:: ([:: A & srcs], B) & Delta1] & splitRec A [:: A & srcs] Delta2]
+           [:: [:: ([:: A & srcs], B) & Delta1] & splitRec B [:: A & srcs] Delta2]
          | A \cap B =>
            splitRec A srcs (splitRec B srcs Delta)
          | _ => Delta
@@ -4246,16 +4246,16 @@ Section CoverMachineProperties.
         case: Delta.
         + move => _ /=.
           rewrite eq_refl.
-            by apply: IH1.
+            by apply: IH2.
         + move => Delta1 Delta2 /=.
           case: Delta2.
           * rewrite /= andbT eq_refl.
             move => arity_equal.
             rewrite arity_equal /=.
-              by apply: IH1.
+              by apply: IH2.
           * move => Delta21 Delta22 /andP [] arity_equal1 arity_equal2 /=.
             rewrite eq_refl arity_equal1 /=.
-              by apply: IH1.
+              by apply: IH2.
       - move => A1 IH1 A2 IH2 srcs Delta1 Delta2.
         case: (isOmega A1 && isOmega A2) => //.
         apply: IH1.
@@ -4267,12 +4267,255 @@ Section CoverMachineProperties.
       move => A.
       rewrite /splitTy.
       case: (isOmega A) => //=.
-      
-      case: A => //.
-      - move => A1 A2 /=.
-        apply: splitRec_arity.
-      rewrite /=.
+        by apply: splitRec_arity.
+    Qed.
 
+    Lemma arity_increasing_arity_equal:
+      forall n Delta, arity_increasing n Delta ->
+                 all (fun ms => all (fun m1 => all (fun m2 => seq.size m1.1 == seq.size m2.1) ms) ms) Delta.
+    Proof.
+      move => n Delta.
+      move: n.
+      elim: Delta => // ms mss IH n /andP [] prf prfs.
+      rewrite (all_cat _ [::_]).
+      apply /andP.
+      split.
+      - rewrite all_seq1.
+        apply: sub_all; last by exact prf.
+          by move => m1 /eqP <-.
+      - apply: IH; by exact prfs.
+    Qed.
+
+    Definition mkArrow (m: @MultiArrow Constructor): @IT Constructor :=
+      foldl (fun ty arg => arg -> ty) m.2 m.1.
+
+    Lemma mkArrow_tgt_le:
+      forall srcs A B, [bcd A <= B] -> [bcd (mkArrow (srcs, A)) <= (mkArrow (srcs, B))].
+    Proof.
+      elim => // A1 srcs IH A B prf.
+      rewrite /mkArrow /=.
+      apply: IH.
+        by apply: BCD__Sub.
+    Qed.
+
+    Lemma splitRec_monotonic:
+      forall A srcs Delta n,
+        [bcd (\bigcap_(m_i <- nth [::] (splitRec A srcs Delta) n) (mkArrow m_i)) <=
+         (\bigcap_(m_i <- nth [::] Delta n) (mkArrow m_i)) ].
+    Proof.
+      elim => //.
+      - move => A1 _ A2 IH srcs Delta n /=.
+        case: (isOmega A2) => //.
+        case: Delta.
+        + by rewrite nth_nil /=.
+        + move => ms1 [] /=.
+          * case: n.
+            ** do 2 rewrite [nth _ _ 0]/=.
+               apply: BCD__Trans; first by apply: (bcd_cat_bigcap_f _ _ mkArrow [:: _] ms1).
+                 by apply: BCD__Lub2.
+            ** move => n.
+                 by rewrite /= nth_nil /=.
+          * move => ms2 Delta.
+            case: n.
+            ** do 2 rewrite [nth _ _ 0]/=.
+               apply: BCD__Trans; first by apply: (bcd_cat_bigcap_f _ _ mkArrow [:: _] _).
+                 by apply: BCD__Lub2.
+            ** move => n.
+               do 2 rewrite [nth _ _ n.+1]/=.
+                 by apply: IH.
+      - move => A1 IH1 A2 IH2 /=.
+        case: (isOmega A1 && isOmega A2) => //.
+        move => srcs Delta n.
+        apply: BCD__Trans; first by apply: IH1.
+          by apply: IH2.
+    Qed.
+
+    Lemma splitRec_context_size_eq:
+      forall (A: @IT Constructor) srcs Delta1 Delta2,
+        seq.size Delta1 == seq.size Delta2 ->
+        seq.size (splitRec A srcs Delta1) == seq.size (splitRec A srcs Delta2).
+    Proof.
+      elim => //.
+      - move => A1 _ A2 IH srcs Delta1 Delta2 /=.
+        case: (isOmega A2) => //.
+        case: Delta1.
+        + by case: Delta2.
+        + case: Delta2 => // ms2 Delta2 ms1 Delta1.
+          case: Delta1.
+          * by case: Delta2.
+          * case: Delta2 => // ms22 Delta2 ms12 Delta1 /= size_eq.
+              by apply: IH.
+      - move => A1 IH1 A2 IH2 srcs Delta1 Delta2 size_eq /=.
+        case: (isOmega A1 && isOmega A2) => //.
+        apply: IH1.
+          by apply: IH2.
+    Qed.
+
+    Lemma splitRec_context_monotonic:
+      forall A srcs Delta1 Delta2 n,
+        seq.size Delta1 == seq.size Delta2 ->
+        [bcd (\bigcap_(m_i <- nth [::] Delta1 n) (mkArrow m_i)) <= (\bigcap_(m_i <- nth [::] Delta2 n) (mkArrow m_i))] ->
+        [bcd (\bigcap_(m_i <- nth [::] (splitRec A srcs Delta1) n) (mkArrow m_i)) <=
+         (\bigcap_(m_i <- nth [::] (splitRec A srcs Delta2) n) (mkArrow m_i)) ].
+    Proof.
+      elim => //.
+      - move => A1 _ A2 IH srcs Delta1 Delta2 n.
+        do 2 rewrite [splitRec _ _ _]/=.
+        case: (isOmega A2) => //.
+        case: Delta1.
+        + by case: Delta2.
+        + case: Delta2 => // ms2 Delta2 ms1 Delta1.
+          rewrite [safeSplit _]/=.
+          case: Delta1.
+          * case: Delta2 => //= _.
+            case: n => //.
+            do 4 rewrite nth0 [head _ _]/=.
+            move => prf.
+            apply: BCD__Trans; last by apply: (bcd_bigcap_cat_f _ _ mkArrow [:: _] ms2).
+            apply: BCD__Trans; first by apply: (bcd_cat_bigcap_f _ _ mkArrow [:: _] ms1).
+            apply: BCD__Glb => //.
+              by apply: BCD__Trans; first by apply: BCD__Lub2.
+          * case: Delta2 => //= ms22 Delta2 ms12 Delta1.
+            case: n.
+            ** do 4 rewrite nth0 [head _ _]/=.
+               move => _ prf.
+               apply: BCD__Trans; last by apply: (bcd_bigcap_cat_f _ _ mkArrow [:: _] ms2).
+               apply: BCD__Trans; first by apply: (bcd_cat_bigcap_f _ _ mkArrow [:: _] ms1).
+               apply: BCD__Glb => //.
+                 by apply: BCD__Trans; first by apply: BCD__Lub2.
+            ** move => n.
+               do 4 rewrite [nth _ _ n.+1]/=.
+               move => size_eq prf.
+                 by apply: IH.
+      - move => A1 IH1 A2 IH2 srcs Delta1 Delta2 n.
+        do 2 rewrite [splitRec (A1 \cap A2) _ _]/=.
+        case: (isOmega A1 && isOmega A2) => //.
+        move => size_eq prf.
+        apply: IH1.
+        + by apply: splitRec_context_size_eq.
+        + by apply: IH2.
+    Qed.
+
+    Lemma splitRec_split_context:
+      forall B A srcs Delta n,
+        [bcd B <= (\bigcap_(m_i <- nth [::] (splitRec A srcs (nseq (seq.size Delta) [::])) n) (mkArrow m_i))] ->
+        [bcd B <= (\bigcap_(m_i <- nth [::] Delta n) (mkArrow m_i)) ] ->
+        [bcd B <= (\bigcap_(m_i <- nth [::] (splitRec A srcs Delta) n) mkArrow m_i)].
+    Proof.
+      move => B.
+      elim => //.
+      - move => A1 _ A2 IH srcs.
+        case => // ms Delta.
+        case.
+        + rewrite [nth _ [:: ms & Delta] 0]nth0 [head _ _]/=.
+          do 2 rewrite [splitRec _ _ _]/=.
+          case: (isOmega A2) => //.
+          case: Delta.
+          * do 2 rewrite nth0 [head _ _]/=.
+            move => prf1 prf2.
+            apply: BCD__Trans; last by apply: (bcd_bigcap_cat_f _ _ mkArrow [:: _] ms).
+              by apply: BCD__Glb.
+          * move => ms1 Delta.
+            do 2 rewrite nth0 [head _ _]/=.
+            move => prf1 prf2.
+            apply: BCD__Trans; last by apply: (bcd_bigcap_cat_f _ _ mkArrow [:: _] ms).
+              by apply: BCD__Glb.
+        + move => n.
+          do 2 rewrite [splitRec _ _ _]/=.
+          case: (isOmega A2) => //.
+          case: Delta => // ms1 Delta.
+          do 3 rewrite [nth _ _ (n.+1)]/=.
+          move => prf1 prf2.
+            by apply: IH.
+      - move => A1 IH1 A2 IH2 srcs Delta n.
+        do 2 rewrite [splitRec (A1 \cap A2) _ _]/=.
+        case: (isOmega A1 && isOmega A2) => //=.
+        move => prf1 prf2.
+        apply: IH1.
+        + apply: BCD__Trans; first by exact prf1.
+          apply: splitRec_context_monotonic.
+          * rewrite size_nseq.
+            apply: splitRec_context_size_eq.
+              by rewrite size_nseq.
+          * rewrite nth_nseq.
+              by case: (n < seq.size (splitRec A2 srcs Delta)) => //=.
+        + apply: IH2 => //.
+            by apply: BCD__Trans; last by apply: (splitRec_monotonic A1).
+    Qed.
+
+    Lemma splitRec_sound:
+      forall A srcs n Delta,
+        [bcd (mkArrow (srcs, A)) <= \bigcap_(m_i <- nth [::] Delta n) (mkArrow m_i)] ->
+        [bcd (mkArrow (srcs, A)) <= \bigcap_(m_i <- nth [::] (splitRec A srcs Delta) n) (mkArrow m_i)].
+    Proof.
+      elim => //.
+      - move => A1 IH1 A2 IH2 srcs n Delta.
+        rewrite /=.
+        case: (isOmega A2) => //=.
+        case: Delta.
+        + rewrite /=.
+          case: n => //= n.
+          move => _.
+          apply: BCD__Trans; last apply: IH2.
+          * done.
+          * case: n => //= n.
+              by rewrite nth_nil /=.
+        + rewrite /=.
+          move => ms [].
+          * case: n.
+            ** do 2 rewrite [nth _ _ 0]/=.
+               move => prf.
+               apply: BCD__Trans; last by apply: (bcd_bigcap_cat_f _ _ mkArrow [::_] ms).
+                 by apply: BCD__Glb.
+            ** move => n.
+               do 2 rewrite [nth _ _ n.+1]/=.
+               move => prf.
+               apply: BCD__Trans; last apply: IH2.
+               *** done.
+               *** move: prf => _.
+                   case: n => //= n.
+                     by rewrite nth_nil /=.
+          * move => m1 mss.
+            case: n.
+            ** do 2 rewrite [nth _ _ 0]/=.
+               move => prf.
+               apply: BCD__Trans; last by apply: (bcd_bigcap_cat_f _ _ mkArrow [:: _] ms).
+                 by apply: BCD__Glb.
+            ** move => n.
+               do 2 rewrite [nth _ _ n.+1]/=.
+               move => prf.
+               apply: BCD__Trans; last apply: IH2.
+               *** done.
+               *** by exact prf.
+      - move => A1 IH1 A2 IH2 /=.
+        case: (isOmega A1 && isOmega A2) => //.
+        move => srcs n Delta prf.
+        apply: splitRec_split_context.
+        + apply: BCD__Trans; first by apply: (mkArrow_tgt_le srcs (A1 \cap A2) A1 BCD__Lub1).
+          apply: IH1.
+          rewrite nth_nseq.
+            by case: (n < seq.size (splitRec A2 srcs Delta)) => //=.
+        + apply: splitRec_split_context => //.
+          apply: BCD__Trans; first by apply: (mkArrow_tgt_le srcs (A1 \cap A2) A2 BCD__Lub2).
+          apply: IH2.
+          rewrite nth_nseq.
+            by case: (n < seq.size Delta) => //=.
+    Qed.
+
+    Lemma splitTy_sound:
+      forall A n, [bcd A <= \bigcap_(m_i <- nth [::] (splitTy A) n) (mkArrow m_i)].
+    Proof.
+      move => A n.
+      rewrite /splitTy.
+      case: (isOmega A).
+      - by rewrite nth_nil /=.
+      - case: n => // n.
+        rewrite [nth _ _ _]/=.
+        apply: BCD__Trans; last apply: splitRec_sound.
+        + done.
+        + case: n => //= n.
+            by rewrite nth_nil /=.
+    Qed.
 
      
 
