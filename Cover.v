@@ -4517,7 +4517,240 @@ Section CoverMachineProperties.
             by rewrite nth_nil /=.
     Qed.
 
-     
+    Lemma splitRec_context_size_monotonic:
+      forall (A: @IT Constructor) srcs Delta,
+        seq.size Delta <= seq.size (splitRec A srcs Delta).
+    Proof.
+      elim => //.
+      - move => A1 _ A2 IH srcs Delta /=.
+        case: (isOmega A2) => //.
+        case: Delta => // ms [] //= ms2 Delta.
+          by move: (IH [:: A1 & srcs] [:: ms2 & Delta]).
+      - move => A1 IH1 A2 IH2 srcs Delta /=.
+        case: (isOmega A1 && isOmega A2) => //.
+        apply: leq_trans; first by apply: IH2.
+          by apply: IH1.
+    Qed.
+
+    Lemma splitRec_context_suffix:
+      forall (A: @IT Constructor) srcs Delta,
+        all (fun ms => suffix ms.1 ms.2) (zip Delta (splitRec A srcs Delta)).
+    Proof.
+      elim.
+      - move => srcs Delta /=.
+        apply /(all_nthP ([::], [::])).
+        move => n n_lt.
+        rewrite nth_zip => //=.
+          by apply suffix_refl.
+      - move => c A _ srcs Delta /=.
+        apply /(all_nthP ([::], [::])).
+        move => n n_lt.
+        rewrite nth_zip => //=.
+          by apply suffix_refl.
+      - move => A1 _ A2 IH srcs Delta /=.
+        case: (isOmega A2).
+        + apply /(all_nthP ([::], [::])).
+          move => n n_lt.
+          rewrite nth_zip => //=.
+            by apply suffix_refl.
+        + case: Delta => // ms [] /=.
+          * rewrite suffix_refl orbT /=.
+              by case: (splitRec A2 [:: A1 & srcs] [:: [::]]).
+          * move => ms2 Delta.
+            rewrite suffix_refl orbT /=.
+              by apply: IH.
+      - move => A1 _ A _ srcs Delta /=.
+        apply /(all_nthP ([::], [::])).
+        move => n n_lt.
+        rewrite nth_zip => //=.
+          by apply suffix_refl.
+      - move => A1 IH1 A2 IH2 srcs Delta /=.
+        case: (isOmega A1 && isOmega A2).
+        + apply /(all_nthP ([::], [::])).
+          move => n n_lt.
+          rewrite nth_zip => //=.
+            by apply suffix_refl.
+        + apply /(all_nthP ([::], [::])).
+          move => n n_lt.
+          rewrite nth_zip_cond n_lt /=.
+          apply: (suffix_trans _ (nth [::] (splitRec A2 srcs Delta) n)).
+          * have: (n < seq.size (zip Delta (splitRec A2 srcs Delta))).
+            { move: n_lt.
+              do 2 rewrite size_zip.
+              rewrite leq_min.
+              move => /andP [] n_lt1 _.
+              move: (splitRec_context_size_monotonic A2 srcs Delta).
+              move: (n_lt1) => /leq_trans n_lt2 /n_lt2 n_lt3.
+                by rewrite leq_min n_lt1 n_lt3. }
+            move: (IH2 srcs Delta) => /(all_nthP ([::], [::])) /(fun prf => prf n) prf n_lt1.
+            move: (prf n_lt1).
+              by rewrite nth_zip_cond n_lt1.
+          * have: (n < seq.size (zip (splitRec A2 srcs Delta) (splitRec A1 srcs (splitRec A2 srcs Delta)))).
+            { move: n_lt.
+              do 2 rewrite size_zip.
+              rewrite leq_min.
+              move => /andP [] n_lt1 _.
+              move: (splitRec_context_size_monotonic A2 srcs Delta).
+              move: (n_lt1) => /leq_trans n_lt2 /n_lt2 n_lt3.
+              move: (splitRec_context_size_monotonic A1 srcs (splitRec A2 srcs Delta)).
+              move: (n_lt3) => /leq_trans n_lt4 /n_lt4 n_lt5.
+                by rewrite leq_min n_lt3 n_lt5. }
+            move: (IH1 srcs (splitRec A2 srcs Delta)) => /(all_nthP ([::], [::])) /(fun prf => prf n) prf n_lt1.
+            move: (prf n_lt1).
+              by rewrite nth_zip_cond n_lt1.
+    Qed.
+
+    
+
+    Lemma splitRec_cast:
+      forall (A B C: @IT Constructor) srcs Delta,
+        {subset (filter (fun AB => ~~(isOmega AB.2))
+                        (cast (A -> B) C)) <=
+         map (fun m => (head Omega m.1, m.2)) (head [::] (splitRec C srcs Delta))}.
+    Proof.
+      move => A B C.
+      rewrite (slow_cast_cast).
+      elim: C.
+      - move => srcs Delta.
+        rewrite /slow_cast /=.
+          by case: (isOmega B).
+      - move => c C _ srcs Delta.
+        rewrite /slow_cast /=.
+          by case: (isOmega B).
+      - move => C1 _ C2 _ srcs Delta.
+        rewrite /slow_cast /=.
+        case: (isOmega B) => //=.
+        case: (isOmega C2) => //=.
+        case: Delta => // ms [] /=.
+        + move => x.
+          rewrite mem_seq1.
+          move => /eqP ->.
+            by rewrite mem_head.
+        + move => ? ? x.
+          rewrite mem_seq1.
+          move => /eqP ->.
+            by rewrite mem_head.
+      - move => C1 _ C2 _ srcs Delta.
+        rewrite /slow_cast /=.
+        case: (isOmega B) => //.
+      - move => C1 IH1 C2 IH2 srcs Delta.
+        rewrite /slow_cast /=.
+        case notOmega__B: (isOmega B) => //=.
+        move => x.
+        rewrite filter_cat mem_cat.
+        move => /orP [].
+        + case omegaC1: (isOmega C1).
+          * move: omegaC1.
+            clear...
+            elim: C1 => //.
+            ** move => C11 _ C12 _ /= -> //.
+            ** move => C11 IH1 C12 IH2 /= omega_both.
+               rewrite omega_both.
+               rewrite filter_cat mem_cat.
+               move: omega_both => /andP [] omega__C1 omega__C2.
+               move: (IH1 omega__C1) (IH2 omega__C2) => prf1 prf2.
+               move => /orP [].
+               *** move => /prf1.
+                   have: (splitRec C11 srcs (splitRec C2 srcs Delta) = splitRec C2 srcs Delta).
+                   { move: omega__C1.
+                     clear ...
+                       by case: C11 => //; move => ? ? /= ->. }
+                     by move => ->.
+               *** move => /prf2.
+                   have: (splitRec C12 srcs (splitRec C2 srcs Delta) = splitRec C2 srcs Delta).
+                   { move: omega__C2.
+                     clear ...
+                       by case: C12 => //; move => ? ? /= ->. }
+                     by move => ->.
+          * rewrite andFb.
+            move: (IH1 srcs (splitRec C2 srcs Delta) x).
+            rewrite /slow_cast [isOmega _]/= notOmega__B.
+              by move => prf /prf.
+        + case omegaC2: (isOmega C2).
+          * move: omegaC2.
+            clear...
+            elim: C2 => //.
+            ** move => C21 _ C22 _ /= -> //.
+            ** move => C21 IH1 C22 IH2 /= omega_both.
+               rewrite omega_both.
+               rewrite filter_cat mem_cat.
+               move: omega_both => /andP [] omega__C1 omega__C2.
+               move: (IH1 omega__C1) (IH2 omega__C2) => prf1 prf2.
+               move => /orP [].
+               *** move => /prf1.
+                   have: (splitRec C1 srcs (splitRec C21 srcs Delta) = splitRec C1 srcs Delta).
+                   { move: omega__C1.
+                     clear ...
+                       by case: C21 => //; move => ? ? /= ->. }
+                     by move => ->.
+               *** move => /prf2.
+                   have: (splitRec C1 srcs (splitRec C22 srcs Delta) = splitRec C1 srcs Delta).
+                   { move: omega__C2.
+                     clear ...
+                       by case: C22 => //; move => ? ? /= ->. }
+                     by move => ->.
+          * rewrite andbF.
+            move: (IH2 srcs Delta x).
+            rewrite /slow_cast [isOmega _]/= notOmega__B.
+            move => prf /prf.
+            do 2 rewrite -nth0.
+            move => inprf.
+            have: (suffix (nth [::] (splitRec C2 srcs Delta) 0)
+                          (nth [::] (splitRec C1 srcs (splitRec C2 srcs Delta)) 0)).
+            { move: (splitRec_context_suffix C1 srcs (splitRec C2 srcs Delta)) => /(all_nthP ([::], [::])).
+              move => /(fun prf => prf 0).
+              case zero_lt: (0 < seq.size
+                                   (zip (splitRec C2 srcs Delta) (splitRec C1 srcs (splitRec C2 srcs Delta)))).
+              - move => /(fun prf => prf isT).
+                  by rewrite nth_zip_cond zero_lt.
+              - move: zero_lt.
+                move: inprf.
+                move: (splitRec_context_size_monotonic C1 srcs (splitRec C2 srcs Delta)).
+                case: (splitRec C1 srcs (splitRec C2 srcs Delta));
+                  case: (splitRec C2 srcs Delta) => //=. }
+            move => /suffixP [] prefix /eqP ->.
+              by rewrite map_cat mem_cat inprf orbT.
+    Qed.
+
+    Lemma omega_mkArrow_tgt: forall srcs A, isOmega (mkArrow (srcs, A)) = isOmega A.
+    Proof.
+      rewrite /mkArrow /=.
+      elim => //.
+      move => src srcs IH A /=.
+        by apply: IH.
+    Qed.
+
+    Lemma splitTy_complete:
+      forall (A B: @IT Constructor) srcs,
+        [bcd A <= (mkArrow (srcs, B))] ->
+        ~~(isOmega B) ->
+        has (fun m =>
+               [&& (seq.size m.1 == seq.size srcs),
+                all (fun AB => checkSubtypes A B) (zip srcs m.1) &
+                checkSubtypes m.2 B])
+            (filterMergeMultiArrows (subseqs (nth [::] (splitTy A) (seq.size srcs)))).
+    Proof.
+      move => A B srcs.
+      move: A B.
+      elim: srcs.
+      - move => A B prf notOmega__B.
+        rewrite /splitTy /=.
+        case omega__A: (isOmega A).
+        + move: prf.
+          move => /subty_complete /(fun prf => @Omega__subty _ A B prf omega__A).
+            by move => /(negP notOmega__B).
+        + rewrite /=.
+            by move: prf => /subtypeMachineP ->.
+      - move => src srcs IH A B prf.
+        rewrite /splitTy.
+        case omega__A: (isOmega A).
+        + move: prf.
+          move => /subty_complete /(fun prf => @Omega__subty _ A _ prf omega__A).
+          rewrite omega_mkArrow_tgt.
+            by move => ->.
+        + rewrite /=.
+          move => notOmega__B.
+          exists (
 
   End SplitProperties.
 
@@ -4526,4 +4759,5 @@ End CoverMachineProperties.
 Recursive Extraction coverMachine.
  
 Arguments coverMachine [Constructor].
+
 
