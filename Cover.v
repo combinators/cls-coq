@@ -4746,76 +4746,172 @@ Section CoverMachineProperties.
           by apply: suffix_subseq.
     Qed.
 
-    Lemma splitTy_path_complete:
-      forall (A B: @IT Constructor) srcs,
-        isPrimeComponent B ->
-        [bcd A <= (mkArrow (srcs, B))] ->
-        ~~(isOmega B) ->
+    Lemma splitTy_complete_ctor:
+      forall c A srcs B,
+        [bcd (Ctor c A) <= (mkArrow (srcs, B))] ->
         [bcd
            ((mergeMultiArrows
                (filter (fun m =>
                           (seq.size m.1 == seq.size srcs) &&
                           all (fun AB => checkSubtypes AB.1 AB.2) (zip srcs m.1))
-                       (nth [::] (splitTy A) (seq.size srcs)))).2) <=  B].
+                       (nth [::] (splitTy (Ctor c A)) (seq.size srcs)))).2) <=  B].
     Proof.
-      move => A.
-      rewrite splitTy_slow_splitTy.
-      move => B srcs.
-      move: A B.
-      elim /last_ind: srcs.
-      - move => A B _ /=.
-        case: A => //=.
-        + move => A1 A2.
-          case isOmega__A2: (isOmega A2) => //=.
-          have isOmega__A1A2: (isOmega (A1 -> A2)) => //.
-          move => /subty_complete /(fun prf => @Omega__subty _ _ _ prf isOmega__A1A2).
-            by rewrite /mkArrow /= => ->.
-        + move => A1 A2.
-          case isOmega__A1A2: (isOmega A1 && isOmega A2) => //=.
-          have isOmega__InterA1A2: (isOmega (A1 \cap A2)) => //.
-          move => /subty_complete /(fun prf => @Omega__subty _ _ _ prf isOmega__InterA1A2).
-            by rewrite /mkArrow /= => ->.
-      - move => srcs src IH A B isPrime__B.
-        case: A.
-        + move => /subty_complete /(fun prf => @Omega__subty _ Omega _ prf isT).
-            by rewrite omega_mkArrow_tgt => ->.
-        + move => c A /subty_complete /SubtypeMachine_inv.
-          rewrite mkArrow_rcons.
-          move => /(fun prf => prf (fun i r => match i, r with
-                                        | [subty _ of A], Return true => isOmega A
-                                        | _, _ => true
-                                        end)) prf.
-          suff: (isOmega B) by move => ->.
-          rewrite -(omega_mkArrow_tgt (rcons srcs src) B) mkArrow_rcons.
-          apply: prf.
-          rewrite /cast.
-          case isOmega__arr: (isOmega (src -> mkArrow (srcs, B))) => //.
-          * by move: isOmega__arr => /= ->.
-          * move => Delta r' /SubtypeMachine_inv.
-            case: Delta => // _.
-            case: r'.
-            ** move => /(fun prf => @Omega__subty _ Omega _ prf isT) disprf.
-               move: isOmega__arr => /=.
-                 by rewrite disprf.
-            ** by move: isOmega__arr => /= ->.
-        + move => A1 A2.
-          case notOmega__A2: (isOmega A2).
-          * move => /subty_complete /(fun prf => @Omega__subty _ (A1 -> A2) _ prf notOmega__A2).
-              by rewrite omega_mkArrow_tgt => ->.
+      move => c A srcs B.
+      elim /last_ind: srcs => // srcs src _.
+      rewrite size_rcons /= nth_nil /= mkArrow_rcons.
+      move => /subty_complete /SubtypeMachine_inv.
+      move => /(fun prf => prf (fun x res =>
+                              match x, res return Prop with
+                              | [subty _ of B], (Return true) => isOmega B
+                              | _, _ => True
+                              end)).
+      rewrite /=.
+      case isOmega__B: (isOmega (mkArrow (srcs, B))).
+      - move => _.
+        move: isOmega__B.
+        rewrite omega_mkArrow_tgt.
+          by move => /(bcd__omega _ Omega).
+      - move => prf.
+        suff: false => //.
+        apply: prf.
+        case.
+        + case => //.
+          move => _ /(fun prf => @Omega__subty _ Omega _ prf isT) disprf.
+            by rewrite -isOmega__B disprf.
+        + move => A1 Delta r'.
+          rewrite /cast /= isOmega__B.
+            by move => /SubtypeMachine_inv.
+    Qed.
+
+    Lemma splitTy_complete_prod:
+      forall A1 A2 srcs B,
+        [bcd (A1 \times A2) <= (mkArrow (srcs, B))] ->
+        [bcd
+           ((mergeMultiArrows
+               (filter (fun m =>
+                          (seq.size m.1 == seq.size srcs) &&
+                          all (fun AB => checkSubtypes AB.1 AB.2) (zip srcs m.1))
+                       (nth [::] (splitTy (A1 \times A2)) (seq.size srcs)))).2) <=  B].
+    Proof.
+      move => A1 A2 srcs B.
+      elim /last_ind: srcs => // srcs src _.
+      rewrite size_rcons /= nth_nil /= mkArrow_rcons.
+      move => /subty_complete /SubtypeMachine_inv.
+      move => /(fun prf => prf (fun x res =>
+                              match x, res return Prop with
+                              | [subty _ of B], (Return true) => isOmega B
+                              | _, _ => True
+                              end)).
+      rewrite /=.
+      case isOmega__B: (isOmega (mkArrow (srcs, B))).
+      - move => _.
+        move: isOmega__B.
+        rewrite omega_mkArrow_tgt.
+          by move => /(bcd__omega _ Omega).
+      - move => prf.
+        suff: false => //.
+        apply: prf.
+        case.
+        + case => //.
+          move => _ /(fun prf => @Omega__subty _ Omega _ prf isT) disprf.
+            by rewrite -isOmega__B disprf.
+        + move => ? Delta r'.
+          rewrite /cast /= isOmega__B.
+            by move => /SubtypeMachine_inv.
+    Qed.
+
+    Lemma splitTy_complete_omega:
+      forall srcs B,
+        [bcd Omega <= (mkArrow (srcs, B))] ->
+        [bcd
+           ((mergeMultiArrows
+               (filter (fun m =>
+                          (seq.size m.1 == seq.size srcs)
+                            && all (fun AB => checkSubtypes AB.1 AB.2) (zip srcs m.1))
+                       (nth [::] (splitTy Omega) (seq.size srcs)))).2) <=  B].
+    Proof.
+      move => srcs B.
+      rewrite /splitTy /= nth_nil /=.
+      move => /subty_complete /(fun prf => @Omega__subty _ Omega _ prf isT).
+      rewrite omega_mkArrow_tgt.
+        by move => /(bcd__omega _ Omega).
+    Qed.
+
+    Lemma mkArrow_dist:
+      forall srcs A1 A2, [bcd (mkArrow (srcs, A1 \cap A2)) <= (mkArrow (srcs, A1)) \cap (mkArrow (srcs, A2))].
+    Proof.
+      elim /last_ind => // srcs src IH A1 A2.
+      do 3 rewrite mkArrow_rcons.
+      apply: BCD__Glb.
+      - apply: BCD__Sub => //.
+          by apply: mkArrow_tgt_le.
+      - apply: BCD__Sub => //.
+          by apply: mkArrow_tgt_le.
+    Qed.
+
+    Lemma subseq_filtered {T: eqType}:
+      forall f (xs ys: seq T), subseq xs ys -> subseq (filter f xs) (filter f ys).
+    Proof.
+      move => f xs ys.
+      move: xs.
+      elim: ys.
+      - by case.
+      - move => y ys IH.
+        case.
+        + by move => ?; apply sub0seq.
+        + move => x xs /=.
+          case xy__eq: (x == y).
+          * move: xy__eq => /eqP ->.
+            case: (f y).
+            ** move => /IH.
+                 by rewrite /= eq_refl.
+            ** by apply: IH.
+          * move => /IH prf.
+            case: (f y).
+            ** apply: subseq_trans; first by exact prf.
+                 by apply: subseq_cons.
+            ** exact prf.
+    Qed.
+
+    Lemma splitTy_complete_alternative:
+      forall A srcs B,
+        [bcd A <= (mkArrow (srcs, B))] ->
+        [bcd
+           ((mergeMultiArrows
+               (filter (fun m =>
+                          (seq.size m.1 == seq.size srcs) &&
+                          all (fun AB => checkSubtypes AB.1 AB.2) (zip srcs m.1))
+                       (nth [::] (splitTy A) (seq.size srcs)))).2) <= B].
+    Proof.
+      elim.
+      - by apply: splitTy_complete_omega.
+      - by move => *; apply: splitTy_complete_ctor.
+      - move => A1 _ A2 IH srcs B.
+        elim /last_ind: srcs.
+        + rewrite /= /splitTy /=.
+          case isOmega__A2: (isOmega A2) => //.
+          move => /subty_complete /(fun prf => @Omega__subty _ (A1 -> A2) _ prf isOmega__A2) isOmega__srcsB.
+            by apply: bcd__omega.
+        + move => srcs src _.
+          rewrite mkArrow_rcons splitTy_slow_splitTy size_rcons /=.
+          case isOmega__A2: (isOmega A2).
+          * move => /subty_complete /(fun prf => @Omega__subty _ (A1 -> A2) _ prf isOmega__A2).
+            rewrite /= omega_mkArrow_tgt.
+              by apply: bcd__omega.
           * move => /subty_complete /SubtypeMachine_inv.
-            rewrite mkArrow_rcons.
             move => /(fun prf => prf (fun i r =>
                                     match i, r with
                                     | [subty (A1 -> A2) of (B1 -> B2)], Return true =>
-                                      [bcd B1 <= A1] /\ [bcd A2 <= B2]
+                                      isOmega (B1 -> B2) \/ ([bcd B1 <= A1] /\ [bcd A2 <= B2])
                                     | _, _ => True
                                     end)).
-            move => prf notOmega__B.
-            suff: ([ bcd src <= A1] /\ [ bcd (A2) <= mkArrow (srcs, B)]).
-            { rewrite /splitTy_slow /= notOmega__A2.
-              move => [] prf__A1 /(fun prf => IH _ _ isPrime__B prf notOmega__B).
-              rewrite size_rcons /= -/splitTy_slow.
-              case in_bounds: (seq.size srcs < seq.size (splitTy_slow A2)).
+            move => prf.
+            suff: (isOmega (src -> mkArrow (srcs, B)) \/ [ bcd src <= A1] /\ [ bcd (A2) <= mkArrow (srcs, B)]).
+            { case;
+                first by rewrite /= omega_mkArrow_tgt; apply: bcd__omega.
+              move => [] prf__A1 /(fun prf => IH _ _ prf).
+              rewrite -splitTy_slow_splitTy.
+              case in_bounds: (seq.size srcs < seq.size (splitTy A2)).
               - rewrite (nth_map [::] _ _ in_bounds).
                 rewrite filter_map.
                 rewrite /preim /=.
@@ -4845,10 +4941,15 @@ Section CoverMachineProperties.
               - rewrite nth_default; last by rewrite leqNgt in_bounds.
                   by rewrite nth_default; last by rewrite size_map leqNgt in_bounds. }
             apply: prf.
-            rewrite omega_mkArrow_tgt (negbTE notOmega__B) /=.
+            rewrite /=.
+            case isOmega__srcsB: (isOmega (mkArrow (srcs, B)));
+              first by move => *; left.
             move => Delta r'.
-            case: r' => //.
-            rewrite /cast /= omega_mkArrow_tgt (negbTE notOmega__B).
+            case: r' => //=.
+            move: isOmega__srcsB.
+            rewrite /cast /= omega_mkArrow_tgt.
+            move => isOmega__B.
+            rewrite isOmega__B.
             move => /SubtypeMachine_inv.
             move => /(fun prf => prf (fun x res =>
                                     match x, res with
@@ -4858,6 +4959,7 @@ Section CoverMachineProperties.
                                        [ bcd (src) <= A1] /\ [ bcd (A2) <= mkArrow (srcs, B)])%type
                                     | _, _ => True
                                     end)) prf.
+            move => x; right; move: x.
             apply: prf.
             move => Delta' r src_prf.
             move => /SubtypeMachine_inv.
@@ -4867,405 +4969,150 @@ Section CoverMachineProperties.
             ** move => /subty__sound /= prf1 /subty__sound /= prf2.
                  by split.
             ** move => _ /(fun prf => @Omega__subty _ Omega _ prf isT) disprf.
-               move: notOmega__B.
+               move: isOmega__B.
                  by rewrite -(omega_mkArrow_tgt srcs) disprf.
-        + move => A1 A2 /subty_complete /SubtypeMachine_inv.
-          rewrite mkArrow_rcons.
-          move => /(fun prf => prf (fun i r => match i, r with
-                                        | [subty _ of A], Return true => isOmega A
-                                        | _, _ => true
-                                        end)) prf.
-          suff: (isOmega B) by move => ->.
-          rewrite -(omega_mkArrow_tgt (rcons srcs src) B) mkArrow_rcons.
-          apply: prf.
-          rewrite /cast.
-          case isOmega__arr: (isOmega (src -> mkArrow (srcs, B))) => //.
-          * by move: isOmega__arr => /= ->.
-          * move => Delta r' /SubtypeMachine_inv.
-            case: Delta => // _.
-            case: r'.
-            ** move => /(fun prf => @Omega__subty _ Omega _ prf isT) disprf.
-               move: isOmega__arr => /=.
-                 by rewrite disprf.
-            ** by move: isOmega__arr => /= ->.
-        + move => A1 A2.
-          move: (mkArrow_prime (rcons srcs src) B isPrime__B) => /isPrimeComponentP isPrime__srcsB.
-          move => /(fun prf => primeComponentPrime _ _ _ _ prf isPrime__srcsB).
-          move => prf notOmega__B.
-          rewrite /=.
-          case omega__A1A2: (isOmega A1 && isOmega A2).
-          * move: omega__A1A2 => /andP [] omega__A1 omega__A2.
-            move: prf => [].
-            ** move => /subty_complete /(fun prf => @Omega__subty _ A1 _ prf omega__A1) disprf.
-               move: notOmega__B.
-                 by rewrite -(omega_mkArrow_tgt (rcons srcs src)) disprf.
-            ** move => /subty_complete /(fun prf => @Omega__subty _ A2 _ prf omega__A2) disprf.
-               move: notOmega__B.
-                 by rewrite -(omega_mkArrow_tgt (rcons srcs src)) disprf.
-          * move: isPrime__srcsB => /isPrimeComponentP isPrime__srcsB.
-            move: notOmega__B.
-            rewrite -(omega_mkArrow_tgt (rcons srcs src)).
-            move => notOmega__srcsB.
-            move: prf => [].
-            ** move => prf.
+      - by move => *; apply: splitTy_complete_prod.
+      - move => A1 IH1 A2 IH2 srcs B.
+        elim /last_ind: srcs.
+        { rewrite /= /splitTy.          
+          case isOmega__A1A2: (isOmega (A1 \cap A2)) => //=.
+          move => /subty_complete /(fun prf => @Omega__subty _ _ _ prf) /= /(fun prf => prf isOmega__A1A2).
+            by apply: bcd__omega. }
+        move => srcs src _.
+        move => /(fun prf => @BCD__Trans _ (A1 \cap A2) (mkArrow (rcons srcs src, B)) _
+                                   prf (mkArrow_tgt_le (rcons srcs src) _ _ (primeFactors_geq B))) prf.
+        apply: BCD__Trans; last by apply: (primeFactors_leq B).
+        move: prf.
+        move: (primeFactors_prime B).
+        elim: (primeFactors B); first by rewrite /=.
+        move => // B1 Bs IH /andP [] /(mkArrow_prime (rcons srcs src)) prime__B1 prime__Bs prf.
+        apply: BCD__Trans; last by apply: (bcd_bigcap_cat _ [:: B1] Bs).
+        have: ([bcd (A1 \cap A2) <= mkArrow (rcons srcs src, B1)] /\
+               [bcd (A1 \cap A2) <= mkArrow (rcons srcs src, \bigcap_(B_i <- Bs) B_i)]).
+        { split.
+          - apply: BCD__Trans; first by exact prf.
+            apply: mkArrow_tgt_le.
+              by apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: B1] Bs).
+          - apply: BCD__Trans; first by exact prf.
+            apply: mkArrow_tgt_le.
+              by apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: B1] Bs). }
+        move => [] prf__B1 prf__Bs.
+        apply: BCD__Glb.
+        + move: (primeComponentPrime _ _ _ _ prf__B1 (isPrimeComponentP prime__B1)).
+          case.
+          * rewrite splitTy_slow_splitTy.
+            move => prf__A1.
+            apply: BCD__Trans; first by apply: mergeMultiArrows_tgt_le.
+            move: (splitTy_slow_inter_subseq1 A1 A2 (seq.size srcs)) => subseq_prf.
+            apply: BCD__Trans.
+            ** apply: bcd_subset_f.
+               apply: mem_subseq.
+               apply: subseq_filtered.
                rewrite size_rcons.
-               move: (splitTy_slow_inter_subseq1 A1 A2 (seq.size srcs)).
-
-              move: omega__A1A2.
-               case: A1 => //.
-
-              move => /(fun prf => IH A1 _ isPrime__srcsB prf notOmega__srcsB).
-
-
-
-
-    Fixpoint splitRec_recCast (srcs: seq (@IT Constructor)): forall (A B: @IT Constructor), seq (@MultiArrow Constructor) :=
-      match srcs with
-      | [::] => fun A B => if isOmega A then [::] else [:: ([::], A)]
-      | [:: src & srcs] =>
-        fun A B => 
-          flatten (map
-                     (fun A => map (fun m => ([:: A.1 & m.1], m.2)) (splitRec_recCast srcs A.2 B))
-                     (match (mkArrow (rcons srcs src, B)) with
-                      | B1 -> B2 => cast (B1 -> B2) A
-                      | _ => [::]
-                      end))
-      end.
-
-    Lemma mkArrow_rcons: forall srcs src B, mkArrow (rcons srcs src, B) = (src -> (mkArrow (srcs, B))).
-    Proof.
-      elim => // src2 srcs IH src1 B.
-      move: (IH src1 (src2 -> B)).
-        by rewrite /mkArrow /= => ->.
+                 by exact subseq_prf.
+            ** move: prf__A1.
+               move => /IH1.
+               rewrite splitTy_slow_splitTy size_rcons.
+                 by move => /(BCD__Trans _ (mergeMultiArrows_tgt_ge _)).
+          * rewrite splitTy_slow_splitTy.
+            move => prf__A2.
+            apply: BCD__Trans; first by apply: mergeMultiArrows_tgt_le.
+            move: (splitTy_slow_inter_subseq2 A1 A2 (seq.size srcs)) => subseq_prf.
+            apply: BCD__Trans.
+            ** apply: bcd_subset_f.
+               apply: mem_subseq.
+               apply: subseq_filtered.
+               rewrite size_rcons.
+                 by exact subseq_prf.
+            ** move: prf__A2.
+               move => /IH2.
+               rewrite splitTy_slow_splitTy size_rcons.
+                 by move => /(BCD__Trans _ (mergeMultiArrows_tgt_ge _)).
+        + by apply: IH.
     Qed.
 
-    Lemma splitRec_recCast_omega:
-
-      forall srcs A B, isOmega A -> splitRec_recCast srcs A B = [::].
-    Proof.
-      elim.
-      - by move => A B /= ->.
-      - move => src srcs IH A B /=.
-        rewrite mkArrow_rcons.
-        case: A => //.
-        + rewrite /cast.
-          case: (isOmega (src -> (mkArrow (srcs, B)))) => //.
-            by rewrite /= (IH Omega _ isT).
-        + rewrite /cast.
-          case: (isOmega (src -> (mkArrow (srcs, B)))).
-          * by rewrite /= (IH Omega _ isT).
-          * by move => /= A1 A2 /(IH A2 B) ->.
-        + move => A1 A2 /andP [] /(IH A1 B) prf1 /(IH A2 B) prf2.
-          case isOmega__B: (isOmega (src -> (mkArrow (srcs, B)))).
-          * move: isOmega__B.
-            rewrite /cast /=.
-            move => -> /=.
-              by rewrite (IH Omega _ isT).
-          * rewrite (cast_inter  _ _ _ _ (negbT isOmega__B)) map_cat flatten_cat. isOmega__B.
-
-
-
-    Lemma splitTy_recCast_splitRec:
-      forall A B srcs,
-        nth [::] (splitTy A) (seq.size srcs) =
-        splitRec_recCast srcs A B.
-    Proof.
-      elim.
-      - move => B srcs.
-        rewrite /splitTy /= nth_nil.
-        case: srcs => //= src srcs.
-        
-
-
-
-    Lemma splitRec_context_size_monotonic:
-      forall (A: @IT Constructor) srcs Delta,
-        seq.size Delta <= seq.size (splitRec A srcs Delta).
-    Proof.
-      elim => //.
-      - move => A1 _ A2 IH srcs Delta /=.
-        case: (isOmega A2) => //.
-        case: Delta => // ms [] //= ms2 Delta.
-          by move: (IH [:: A1 & srcs] [:: ms2 & Delta]).
-      - move => A1 IH1 A2 IH2 srcs Delta /=.
-        case: (isOmega A1 && isOmega A2) => //.
-        apply: leq_trans; first by apply: IH2.
-          by apply: IH1.
-    Qed.
-
-    Lemma splitRec_context_suffix:
-      forall (A: @IT Constructor) srcs Delta,
-        all (fun ms => suffix ms.1 ms.2) (zip Delta (splitRec A srcs Delta)).
-    Proof.
-      elim.
-      - move => srcs Delta /=.
-        apply /(all_nthP ([::], [::])).
-        move => n n_lt.
-        rewrite nth_zip => //=.
-          by apply suffix_refl.
-      - move => c A _ srcs Delta /=.
-        apply /(all_nthP ([::], [::])).
-        move => n n_lt.
-        rewrite nth_zip => //=.
-          by apply suffix_refl.
-      - move => A1 _ A2 IH srcs Delta /=.
-        case: (isOmega A2).
-        + apply /(all_nthP ([::], [::])).
-          move => n n_lt.
-          rewrite nth_zip => //=.
-            by apply suffix_refl.
-        + case: Delta => // ms [] /=.
-          * rewrite suffix_refl orbT /=.
-              by case: (splitRec A2 [:: A1 & srcs] [:: [::]]).
-          * move => ms2 Delta.
-            rewrite suffix_refl orbT /=.
-              by apply: IH.
-      - move => A1 _ A _ srcs Delta /=.
-        apply /(all_nthP ([::], [::])).
-        move => n n_lt.
-        rewrite nth_zip => //=.
-          by apply suffix_refl.
-      - move => A1 IH1 A2 IH2 srcs Delta /=.
-        case: (isOmega A1 && isOmega A2).
-        + apply /(all_nthP ([::], [::])).
-          move => n n_lt.
-          rewrite nth_zip => //=.
-            by apply suffix_refl.
-        + apply /(all_nthP ([::], [::])).
-          move => n n_lt.
-          rewrite nth_zip_cond n_lt /=.
-          apply: (suffix_trans _ (nth [::] (splitRec A2 srcs Delta) n)).
-          * have: (n < seq.size (zip Delta (splitRec A2 srcs Delta))).
-            { move: n_lt.
-              do 2 rewrite size_zip.
-              rewrite leq_min.
-              move => /andP [] n_lt1 _.
-              move: (splitRec_context_size_monotonic A2 srcs Delta).
-              move: (n_lt1) => /leq_trans n_lt2 /n_lt2 n_lt3.
-                by rewrite leq_min n_lt1 n_lt3. }
-            move: (IH2 srcs Delta) => /(all_nthP ([::], [::])) /(fun prf => prf n) prf n_lt1.
-            move: (prf n_lt1).
-              by rewrite nth_zip_cond n_lt1.
-          * have: (n < seq.size (zip (splitRec A2 srcs Delta) (splitRec A1 srcs (splitRec A2 srcs Delta)))).
-            { move: n_lt.
-              do 2 rewrite size_zip.
-              rewrite leq_min.
-              move => /andP [] n_lt1 _.
-              move: (splitRec_context_size_monotonic A2 srcs Delta).
-              move: (n_lt1) => /leq_trans n_lt2 /n_lt2 n_lt3.
-              move: (splitRec_context_size_monotonic A1 srcs (splitRec A2 srcs Delta)).
-              move: (n_lt3) => /leq_trans n_lt4 /n_lt4 n_lt5.
-                by rewrite leq_min n_lt3 n_lt5. }
-            move: (IH1 srcs (splitRec A2 srcs Delta)) => /(all_nthP ([::], [::])) /(fun prf => prf n) prf n_lt1.
-            move: (prf n_lt1).
-              by rewrite nth_zip_cond n_lt1.
-    Qed.
-
-    
-
-    Lemma splitRec_cast:
-      forall (A B C: @IT Constructor) srcs Delta,
-        {subset (filter (fun AB => ~~(isOmega AB.2))
-                        (cast (A -> B) C)) <=
-         map (fun m => (head Omega m.1, m.2)) (head [::] (splitRec C srcs Delta))}.
-    Proof.
-      move => A B C.
-      rewrite (slow_cast_cast).
-      elim: C.
-      - move => srcs Delta.
-        rewrite /slow_cast /=.
-          by case: (isOmega B).
-      - move => c C _ srcs Delta.
-        rewrite /slow_cast /=.
-          by case: (isOmega B).
-      - move => C1 _ C2 _ srcs Delta.
-        rewrite /slow_cast /=.
-        case: (isOmega B) => //=.
-        case: (isOmega C2) => //=.
-        case: Delta => // ms [] /=.
-        + move => x.
-          rewrite mem_seq1.
-          move => /eqP ->.
-            by rewrite mem_head.
-        + move => ? ? x.
-          rewrite mem_seq1.
-          move => /eqP ->.
-            by rewrite mem_head.
-      - move => C1 _ C2 _ srcs Delta.
-        rewrite /slow_cast /=.
-        case: (isOmega B) => //.
-      - move => C1 IH1 C2 IH2 srcs Delta.
-        rewrite /slow_cast /=.
-        case notOmega__B: (isOmega B) => //=.
-        move => x.
-        rewrite filter_cat mem_cat.
-        move => /orP [].
-        + case omegaC1: (isOmega C1).
-          * move: omegaC1.
-            clear...
-            elim: C1 => //.
-            ** move => C11 _ C12 _ /= -> //.
-            ** move => C11 IH1 C12 IH2 /= omega_both.
-               rewrite omega_both.
-               rewrite filter_cat mem_cat.
-               move: omega_both => /andP [] omega__C1 omega__C2.
-               move: (IH1 omega__C1) (IH2 omega__C2) => prf1 prf2.
-               move => /orP [].
-               *** move => /prf1.
-                   have: (splitRec C11 srcs (splitRec C2 srcs Delta) = splitRec C2 srcs Delta).
-                   { move: omega__C1.
-                     clear ...
-                       by case: C11 => //; move => ? ? /= ->. }
-                     by move => ->.
-               *** move => /prf2.
-                   have: (splitRec C12 srcs (splitRec C2 srcs Delta) = splitRec C2 srcs Delta).
-                   { move: omega__C2.
-                     clear ...
-                       by case: C12 => //; move => ? ? /= ->. }
-                     by move => ->.
-          * rewrite andFb.
-            move: (IH1 srcs (splitRec C2 srcs Delta) x).
-            rewrite /slow_cast [isOmega _]/= notOmega__B.
-              by move => prf /prf.
-        + case omegaC2: (isOmega C2).
-          * move: omegaC2.
-            clear...
-            elim: C2 => //.
-            ** move => C21 _ C22 _ /= -> //.
-            ** move => C21 IH1 C22 IH2 /= omega_both.
-               rewrite omega_both.
-               rewrite filter_cat mem_cat.
-               move: omega_both => /andP [] omega__C1 omega__C2.
-               move: (IH1 omega__C1) (IH2 omega__C2) => prf1 prf2.
-               move => /orP [].
-               *** move => /prf1.
-                   have: (splitRec C1 srcs (splitRec C21 srcs Delta) = splitRec C1 srcs Delta).
-                   { move: omega__C1.
-                     clear ...
-                       by case: C21 => //; move => ? ? /= ->. }
-                     by move => ->.
-               *** move => /prf2.
-                   have: (splitRec C1 srcs (splitRec C22 srcs Delta) = splitRec C1 srcs Delta).
-                   { move: omega__C2.
-                     clear ...
-                       by case: C22 => //; move => ? ? /= ->. }
-                     by move => ->.
-          * rewrite andbF.
-            move: (IH2 srcs Delta x).
-            rewrite /slow_cast [isOmega _]/= notOmega__B.
-            move => prf /prf.
-            do 2 rewrite -nth0.
-            move => inprf.
-            have: (suffix (nth [::] (splitRec C2 srcs Delta) 0)
-                          (nth [::] (splitRec C1 srcs (splitRec C2 srcs Delta)) 0)).
-            { move: (splitRec_context_suffix C1 srcs (splitRec C2 srcs Delta)) => /(all_nthP ([::], [::])).
-              move => /(fun prf => prf 0).
-              case zero_lt: (0 < seq.size
-                                   (zip (splitRec C2 srcs Delta) (splitRec C1 srcs (splitRec C2 srcs Delta)))).
-              - move => /(fun prf => prf isT).
-                  by rewrite nth_zip_cond zero_lt.
-              - move: zero_lt.
-                move: inprf.
-                move: (splitRec_context_size_monotonic C1 srcs (splitRec C2 srcs Delta)).
-                case: (splitRec C1 srcs (splitRec C2 srcs Delta));
-                  case: (splitRec C2 srcs Delta) => //=. }
-            move => /suffixP [] prefix /eqP ->.
-              by rewrite map_cat mem_cat inprf orbT.
-    Qed.
-
-   
-
-    Lemma splitRec_castStep:
-      forall n A B1 B2 Delta,
-        nth (splitRec A Delta) n.+1 =
-        nth (splitRec A Delta) n
 
     Lemma splitTy_complete:
-      forall (A B: @IT Constructor) srcs,
+      forall (A B: @IT Constructor) (srcs: seq (@IT Constructor)),
         [bcd A <= (mkArrow (srcs, B))] ->
-        ~~(isOmega B) ->
-        [bcd
-           ((mergeMultiArrows
-               (filter (fun m => all (fun AB => checkSubtypes AB.1 AB.2) (zip srcs m.1))
-                       (nth [::] (splitTy A) (seq.size srcs)))).2) <=  B].
-    Proof.
-      move => A B srcs.
-      move: A B.
-      elim: srcs.
-      - move => A B prf notOmega__B.
-        rewrite /splitTy /=.
-        case omega__A: (isOmega A).
-        + move: prf.
-          move => /subty_complete /(fun prf => @Omega__subty _ A B prf omega__A).
-            by move => /(negP notOmega__B).
-        + done.
-      - move => src srcs IH A B prf notOmega__B.
-        apply: BCD__Trans; first by apply: mergeMultiArrows_tgt_le.
-        move: (IH A (src -> B) prf notOmega__B).
-        
-
-        rewrite /splitTy /=.
-        case omega__A: (isOmega A).
-        + move: prf notOmega__B.
-          move => /subty_complete /(fun prf => @Omega__subty _ A _ prf omega__A).
-          rewrite omega_mkArrow_tgt.
-            by move => ->.
-        + move: prf IH.
-          case: srcs.
-          * admit.
-          * move => src2 srcs prf IH.
-
-              
-
-          apply: (bcd_subset_f snd ).
-
-
-
-
-
+        ~~(isOmega (mkArrow (srcs, B))) ->
         has (fun m =>
                [&& (seq.size m.1 == seq.size srcs),
-                all (fun AB => checkSubtypes A B) (zip srcs m.1) &
+                all (fun AB => checkSubtypes AB.1 AB.2) (zip srcs m.1) &
                 checkSubtypes m.2 B])
             (filterMergeMultiArrows (subseqs (nth [::] (splitTy A) (seq.size srcs)))).
     Proof.
-      move => A B srcs.
-      move: A B.
-      elim: srcs.
-      - move => A B prf notOmega__B.
-        rewrite /splitTy /=.
-        case omega__A: (isOmega A).
-        + move: prf.
-          move => /subty_complete /(fun prf => @Omega__subty _ A B prf omega__A).
-            by move => /(negP notOmega__B).
-        + rewrite /=.
-            by move: prf => /subtypeMachineP ->.
-      - move => src srcs IH A B prf.
-        rewrite /splitTy.
-        case omega__A: (isOmega A).
-        + move: prf.
-          move => /subty_complete /(fun prf => @Omega__subty _ A _ prf omega__A).
-          rewrite omega_mkArrow_tgt.
-            by move => ->.
-        + rewrite /=.
-          move => notOmega__B.
-          move:
-            (fun prf =>
-               IH (\bigcap_(A_i <- (filter (fun srctgt => checkSubtypes src (srctgt.1))
-                                          (cast (src -> (mkArrow (srcs, B))) A))) A_i.2)
-                  B prf notOmega__B).
-
-
-          apply /hasP.
-
-          exists (mergeMultiArrows
-               (filter (fun srctgt => checkSubtypes src (srctgt.1))
-                    (cast (src -> (mkArrow (srcs, B))) A))).
-          have: (exists Delta, [tgts_
-          move: prf => /subtypeMachineP.
-
-          exists (
-
+      move => A B srcs prf.
+      move: (splitTy_complete_alternative A srcs B prf) => res.
+      move => notOmega__B.
+      have: (subseq
+               (filterMergeMultiArrows
+                  [:: filter (fun m =>
+                                (seq.size m.1 == seq.size srcs)
+                                  && all (fun AB => checkSubtypes AB.1 AB.2) (zip srcs m.1))
+                      (nth [::] (splitTy A) (seq.size srcs))])
+               (filterMergeMultiArrows (subseqs (nth [::] (splitTy A) (seq.size srcs))))).
+      { apply: filterMergeMultiArrows_subseq.
+        rewrite sub1seq.
+        apply: subseq_subseqs.
+          by apply: filter_subseq. }
+      move: res.
+      move: (filter_all (fun m => (seq.size m.1 == seq.size srcs)
+                                 && all (fun AB => checkSubtypes AB.1 AB.2) (zip srcs m.1))
+                        (nth [::] (splitTy A) (seq.size srcs))).
+      case: (filter (fun m => (seq.size m.1 == seq.size srcs)
+                             && all (fun AB => checkSubtypes AB.1 AB.2) (zip srcs m.1))
+                    (nth [::] (splitTy A) (seq.size srcs))).
+      - move => _ /subty_complete /(fun prf => @Omega__subty _ Omega _ prf isT) disprf.
+        move: notOmega__B.
+          by rewrite omega_mkArrow_tgt disprf.
+      - move => m ms prf__srcs prf__tgt.
+        rewrite /filterMergeMultiArrows -/filterMergeMultiArrows.
+        rewrite sub1seq.
+        move => inprf.
+        apply /hasP.
+        exists (mergeMultiArrows [:: m & ms]) => //.
+        move: prf__tgt => /subtypeMachineP ->.
+        rewrite andbT.
+        have size_eq: (all (fun m1 => all (fun m2 => seq.size m1.1 == seq.size m2.1) [:: m & ms])
+                           [:: m & ms]).
+        { apply /allP.
+          move => m1 inprf__m1.
+          apply /allP.
+          move => m2 inprf__m2.
+          move: prf__srcs => /allP prf__srcs.
+          move: (prf__srcs m1 inprf__m1) => /andP [] /eqP ->.
+            by move: (prf__srcs m2 inprf__m2) => /andP [] /eqP ->. }
+        apply /andP; split.
+        + move: size_eq => /(mergeMultiArrows_arity [:: m & ms]) /andP [] /eqP <- _.
+            by move: prf__srcs => /andP [] /andP [].
+        + apply /(all_nthP (Omega, Omega)).
+          move => n n_lt.
+          move: (mergeMultiArrows_srcs_ge _ n size_eq) => prf_merged.
+          rewrite nth_zip_cond n_lt [fst _]/=.
+          apply /subtypeMachineP.
+          apply: BCD__Trans; last by apply: prf_merged.
+          apply /subtypeMachineP.
+          move: prf__srcs.
+          clear...
+          elim: [:: m & ms]; move: m ms => _ _.
+          * move => _.
+              by apply /subtypeMachineP => /=.
+          * move => m ms IH.
+            move => /andP [] prf__m /IH prf__ms.
+            apply /subtypeMachineP.
+            apply: BCD__Trans; last by apply: (bcd_bigcap_cat_f _ _ _ [:: m] ms).
+            apply: BCD__Glb; last by apply /subtypeMachineP.
+            move: prf__m => /andP [] size_eq /(all_nthP (Omega, Omega)).
+            rewrite size_zip -(eqP size_eq) minnn.
+            case n_lt: (n < seq.size m.1).
+            ** move => /(fun prf => prf n n_lt).
+               rewrite nth_zip; last by rewrite -(eqP size_eq).
+                 by move => /subtypeMachineP.
+            ** rewrite /= (@nth_default _ Omega m.1) => //.
+               rewrite leqNgt.
+                 by apply: negbT.
+    Qed.
   End SplitProperties.
 
 End CoverMachineProperties.
