@@ -5115,6 +5115,148 @@ Section CoverMachineProperties.
     Qed.
   End SplitProperties.
 
+  Lemma coverMachine_splitTy_complete:
+    forall (A: @IT Constructor) srcs B s,
+      [bcd A <= mkArrow (srcs, B)] ->
+      ~~(isOmega B) ->
+      let Bs := primeFactors B in
+      let mss := splitTy A in
+      ([::], map (fun ms => Cover (map (fun m => (m, filter (checkSubtypes m.2) Bs)) ms) Bs) mss) ~~>[*] (s, [::]) ->
+       has (fun m =>
+               [&& (seq.size m.1 == seq.size srcs),
+                all (fun AB => checkSubtypes AB.1 AB.2) (zip srcs m.1) &
+                checkSubtypes m.2 B]) s.
+  Proof.
+    move => A srcs B s le__AB.
+    rewrite -(omega_mkArrow_tgt srcs).
+    move => notOmega__B.
+    move: (splitTy_complete A B srcs le__AB notOmega__B).
+    move => /hasP [] m inprf__m /andP [] srcs_size__m /andP [] srcs_ge__m tgt_le__m.
+    move => Bs mss steps.
+    have: (all (complete s) (map (fun ms => Cover (map (fun m => (m, filter (checkSubtypes m.2) Bs)) ms) Bs) mss)).
+    { apply: (steps_complete [::] _ s steps).
+      - rewrite /mss.
+        move: (splitTy_arity A).
+        move => /arity_increasing_arity_equal.
+        clear ...
+        elim: (splitTy A) => // m ms IH /andP [] prf__m prf__ms.
+        apply /andP; split.
+        + rewrite /arity_equal /= -map_comp.
+          rewrite (@eq_map _ _ (fst \o (fun m => (m, [seq x <- Bs | checkSubtypes m.2 x]))) id) => //.
+          rewrite map_id.
+            by exact prf__m.
+        + by apply: IH.
+      - rewrite /not_omega_instruction.
+        rewrite /mss.
+        apply /allP.
+        move => i.
+        move => /mapP [] ms ms_in -> /=.
+        rewrite /Bs /primeFactors.
+        move: (primeFactors__notOmega _ B [::] id isT) ->.
+        move: (primeFactors_leq B).
+        rewrite /primeFactors.
+        case: (primeFactors_rec _ B id [::]) => //=.
+        move => /subty_complete /(fun prf => Omega__subty _ Omega _ prf isT) disprf.
+        move: notOmega__B.
+          by rewrite omega_mkArrow_tgt disprf.
+      - rewrite /instruction_covered.
+        rewrite /mss.
+        apply /allP.
+        move => i.
+        move => /mapP [] ms ms_in -> /=.
+        apply /allP.
+        move => [] m__i toCover.
+        move => /mapP [] m__i2 mi2_in [] -> -> /=.
+        apply /andP.
+        split.
+        + apply /subtypeMachineP.
+          clear...
+          elim: Bs => //= B1 Bs IH.
+          case le_prf: (checkSubtypes m__i2.2 B1).
+          * apply: BCD__Trans; last by apply: (bcd_bigcap_cat _ [:: B1] _).
+            apply: BCD__Glb; first by apply /subtypeMachineP.
+              by exact IH.
+          * by exact IH.
+        + apply /allP.
+          move => B_i inprf.
+          apply /implyP.
+          move => prf.
+            by rewrite mem_filter inprf prf.
+      - rewrite /toCover_prime.
+        rewrite /mss.
+        apply /allP.
+        move => i.
+        move => /mapP [] ms ms_in -> /=.
+          by apply: primeFactors_prime.
+      - rewrite /currentResultNotDone.
+        rewrite /mss.
+        apply /allP.
+        move => i.
+          by move => /mapP [] ms ms_in -> /=. }
+    move => /allP prf__complete.
+    have: (complete s (Cover (map (fun m => (m, filter (checkSubtypes m.2) Bs))
+                                  (nth [::] (splitTy A) (seq.size srcs))) Bs)).
+    { apply: prf__complete.
+      rewrite mem_map.
+      - rewrite /mss.
+        apply: mem_nth.
+        move: inprf__m.
+        case src_size_lt: (seq.size srcs < seq.size (splitTy A)) => //.
+        rewrite nth_default => //.
+          by rewrite leqNgt src_size_lt.
+      - move => x y [].
+        apply: inj_map.
+          by move => ? ? []. }
+    rewrite /complete /mergeComponentsOf -map_comp.
+    rewrite (@eq_map _ _ (fst \o (fun m => (m, [seq x <- Bs | checkSubtypes m.2 x]))) id) => //.
+    rewrite map_id map_id.
+    move => /allP /(fun prf => prf m inprf__m) /implyP.
+    have: (forall A, checkSubtypes A (intersect (toCoverOf (Cover (map (fun m => (m, filter (checkSubtypes m.2) Bs))
+                                                               (nth [::] (splitTy A) (seq.size srcs))) Bs))) =
+                checkSubtypes A B).
+    { rewrite /= /Bs.
+      move => C.
+      case le__CB: (checkSubtypes C B).
+      - apply /subtypeMachineP.
+        rewrite -(map_id (primeFactors B)).
+        apply: BCD__Trans; last by apply (primeFactors_geq B).
+          by apply /subtypeMachineP.
+      - apply /negbTE.
+        case le__CFactors: (checkSubtypes C (intersect (primeFactors B))) => //.
+        move: le__CB => /subtypeMachineP le__CB.
+        move: le__CFactors.
+        rewrite -(map_id (primeFactors B)).
+          by move => /subtypeMachineP /(fun prf => BCD__Trans _ prf (primeFactors_leq B)) /le__CB. }
+    move => tgt_le_eq.
+    rewrite (tgt_le_eq m.2).
+    move => /(fun prf => prf tgt_le__m) /hasP [] res inprf__res /andP [] srcs_size__res.
+    rewrite (tgt_le_eq res.2).
+    move => /andP [] srcs_ge__res tgt_le__res.
+    apply /hasP.
+    exists res => //.
+    rewrite tgt_le__res (eqP srcs_size__res) srcs_size__m andTb andbT.
+    apply /(all_nthP (Omega, Omega)).
+    move => n n_lt.
+    rewrite nth_zip; last by rewrite (eqP srcs_size__res) (eqP srcs_size__m).
+    apply /subtypeMachineP.
+    move: srcs_ge__res => /(all_nthP (Omega, Omega)) /(fun prf => prf n).
+    move: srcs_ge__m => /(all_nthP (Omega, Omega)) /(fun prf => prf n).
+    move: n_lt.
+    do 3 rewrite size_zip.
+    rewrite (eqP srcs_size__res) (eqP srcs_size__m) minnn.
+    move => n_lt /(fun prf => prf n_lt) /subtypeMachineP prf1 /(fun prf => prf n_lt) /subtypeMachineP prf2.
+    move: prf1 prf2.
+    rewrite nth_zip; last by rewrite (eqP srcs_size__m).
+    rewrite nth_zip; last by rewrite (eqP srcs_size__res) (eqP srcs_size__m).
+    move => prf1 prf2.
+    apply: BCD__Trans; first by exact prf1.
+      by exact prf2.
+  Qed.
+
+
+
+
+
 End CoverMachineProperties.
 
 Recursive Extraction coverMachine.
