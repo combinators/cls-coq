@@ -4796,7 +4796,6 @@ Section CoverMachineProperties.
     Proof.
       elim => //=.
       - move => A1 IH1 A2 IH2 srcs Delta.
-        case: (isOmega A2) => //.
         case: Delta.
         + move => _ /=.
           rewrite eq_refl.
@@ -4811,7 +4810,8 @@ Section CoverMachineProperties.
             rewrite eq_refl arity_equal1 /=.
               by apply: IH2.
       - move => A1 IH1 A2 IH2 srcs Delta1 Delta2.
-        case: (isOmega A1 && isOmega A2) => //.
+        case: (isOmega A1); first by apply: IH2.
+        case: (isOmega A2); first by apply: IH1.
         apply: IH1.
           by apply: IH2.
     Qed.
@@ -4859,7 +4859,6 @@ Section CoverMachineProperties.
     Proof.
       elim => //.
       - move => A1 _ A2 IH srcs Delta n /=.
-        case: (isOmega A2) => //.
         case: Delta.
         + by rewrite nth_nil /=.
         + move => ms1 [] /=.
@@ -4878,7 +4877,8 @@ Section CoverMachineProperties.
                do 2 rewrite [nth _ _ n.+1]/=.
                  by apply: IH.
       - move => A1 IH1 A2 IH2 /=.
-        case: (isOmega A1 && isOmega A2) => //.
+        case: (isOmega A1); first by apply: IH2.
+        case: (isOmega A2); first by apply: IH1.
         move => srcs Delta n.
         apply: BCD__Trans; first by apply: IH1.
           by apply: IH2.
@@ -4891,7 +4891,6 @@ Section CoverMachineProperties.
     Proof.
       elim => //.
       - move => A1 _ A2 IH srcs Delta1 Delta2 /=.
-        case: (isOmega A2) => //.
         case: Delta1.
         + by case: Delta2.
         + case: Delta2 => // ms2 Delta2 ms1 Delta1.
@@ -4900,7 +4899,8 @@ Section CoverMachineProperties.
           * case: Delta2 => // ms22 Delta2 ms12 Delta1 /= size_eq.
               by apply: IH.
       - move => A1 IH1 A2 IH2 srcs Delta1 Delta2 size_eq /=.
-        case: (isOmega A1 && isOmega A2) => //.
+        case: (isOmega A1); first by apply: IH2.
+        case: (isOmega A2); first by apply: IH1.
         apply: IH1.
           by apply: IH2.
     Qed.
@@ -4915,7 +4915,6 @@ Section CoverMachineProperties.
       elim => //.
       - move => A1 _ A2 IH srcs Delta1 Delta2 n.
         do 2 rewrite [splitRec _ _ _]/=.
-        case: (isOmega A2) => //.
         case: Delta1.
         + by case: Delta2.
         + case: Delta2 => // ms2 Delta2 ms1 Delta1.
@@ -4943,7 +4942,8 @@ Section CoverMachineProperties.
                  by apply: IH.
       - move => A1 IH1 A2 IH2 srcs Delta1 Delta2 n.
         do 2 rewrite [splitRec (A1 \cap A2) _ _]/=.
-        case: (isOmega A1 && isOmega A2) => //.
+        case: (isOmega A1); first by apply: IH2.
+        case: (isOmega A2); first by apply: IH1.
         move => size_eq prf.
         apply: IH1.
         + by apply: splitRec_context_size_eq.
@@ -4963,7 +4963,6 @@ Section CoverMachineProperties.
         case.
         + rewrite [nth _ [:: ms & Delta] 0]nth0 [head _ _]/=.
           do 2 rewrite [splitRec _ _ _]/=.
-          case: (isOmega A2) => //.
           case: Delta.
           * do 2 rewrite nth0 [head _ _]/=.
             move => prf1 prf2.
@@ -4976,14 +4975,14 @@ Section CoverMachineProperties.
               by apply: BCD__Glb.
         + move => n.
           do 2 rewrite [splitRec _ _ _]/=.
-          case: (isOmega A2) => //.
           case: Delta => // ms1 Delta.
           do 3 rewrite [nth _ _ (n.+1)]/=.
           move => prf1 prf2.
             by apply: IH.
       - move => A1 IH1 A2 IH2 srcs Delta n.
         do 2 rewrite [splitRec (A1 \cap A2) _ _]/=.
-        case: (isOmega A1 && isOmega A2) => //=.
+        case: (isOmega A1); first by apply: IH2.
+        case: (isOmega A2); first by apply: IH1.
         move => prf1 prf2.
         apply: IH1.
         + apply: BCD__Trans; first by exact prf1.
@@ -5005,7 +5004,6 @@ Section CoverMachineProperties.
       elim => //.
       - move => A1 IH1 A2 IH2 srcs n Delta.
         rewrite /=.
-        case: (isOmega A2) => //=.
         case: Delta.
         + rewrite /=.
           case: n => //= n.
@@ -5040,18 +5038,33 @@ Section CoverMachineProperties.
                *** done.
                *** by exact prf.
       - move => A1 IH1 A2 IH2 /=.
-        case: (isOmega A1 && isOmega A2) => //.
-        move => srcs n Delta prf.
-        apply: splitRec_split_context.
-        + apply: BCD__Trans; first by apply: (mkArrow_tgt_le srcs (A1 \cap A2) A1 BCD__Lub1).
-          apply: IH1.
-          rewrite nth_nseq.
-            by case: (n < seq.size (splitRec A2 srcs Delta)) => //=.
-        + apply: splitRec_split_context => //.
-          apply: BCD__Trans; first by apply: (mkArrow_tgt_le srcs (A1 \cap A2) A2 BCD__Lub2).
-          apply: IH2.
-          rewrite nth_nseq.
-            by case: (n < seq.size Delta) => //=.
+        case isOmega__A1: (isOmega A1).
+        + move => srcs n Delta.
+          have le_prf: [bcd (mkArrow (srcs, A2)) <= (mkArrow (srcs, A1 \cap A2))].
+          { apply: mkArrow_tgt_le.
+            apply: BCD__Glb => //.
+              by apply: bcd__omega; rewrite isOmega__A1. }
+          move => /(fun prf => BCD__Trans _ le_prf prf) /IH2.
+            by move => /(fun prf => BCD__Trans _ (mkArrow_tgt_le _ _ _ (@BCD__Lub2 _ A1 A2)) prf).
+        + case isOmega__A2: (isOmega A2).
+          * move => srcs n Delta.
+            have le_prf: [bcd (mkArrow (srcs, A1)) <= (mkArrow (srcs, A1 \cap A2))].
+            { apply: mkArrow_tgt_le.
+              apply: BCD__Glb => //.
+                by apply: bcd__omega; rewrite isOmega__A2. }
+            move => /(fun prf => BCD__Trans _ le_prf prf) /IH1.
+              by move => /(fun prf => BCD__Trans _ (mkArrow_tgt_le _ _ _ (@BCD__Lub1 _ A1 A2)) prf).
+          * move => srcs n Delta prf.
+            apply: splitRec_split_context.
+            ** apply: BCD__Trans; first by apply: (mkArrow_tgt_le srcs (A1 \cap A2) A1 BCD__Lub1).
+               apply: IH1.
+               rewrite nth_nseq.
+                 by case: (n < seq.size (splitRec A2 srcs Delta)) => //=.
+            ** apply: splitRec_split_context => //.
+               apply: BCD__Trans; first by apply: (mkArrow_tgt_le srcs (A1 \cap A2) A2 BCD__Lub2).
+               apply: IH2.
+               rewrite nth_nseq.
+                 by case: (n < seq.size Delta) => //=.
     Qed.
 
     Lemma splitTy_sound:
@@ -5122,7 +5135,6 @@ Section CoverMachineProperties.
       elim => //.
       - move => A1 _ A2 IH2 srcs Delta.
         rewrite /=.
-        case isOmega__A2: (isOmega A2) => //.
         case: Delta => // Delta1 Delta2 /=.
         case: Delta2.
         + apply: f_equal.
@@ -5132,14 +5144,10 @@ Section CoverMachineProperties.
           apply: f_equal.
             by rewrite IH2.
       - move => A1 IH1 A2 IH2 srcs Delta /=.
-        case: (isOmega A1 && isOmega A2) => //.
+        case: (isOmega A1); first by apply: IH2.
+        case: (isOmega A2); first by apply: IH1.
         rewrite (IH1 srcs (splitRec A2 srcs [::])).
           by rewrite IH1 IH2 merge_assoc.
-    Qed.
-
-    Lemma splitRec_omega: forall (A: @IT Constructor) srcs Delta, isOmega A -> splitRec A srcs Delta = Delta.
-    Proof.
-        by case => //= ? ? ? ? ->.
     Qed.
 
     Lemma map_merge:
@@ -5161,15 +5169,15 @@ Section CoverMachineProperties.
     Proof.
       elim => //=.
       - move => A1 _ A2 IH srcs1 srcs2.
-        case: (isOmega A2) => //=.
         apply: f_equal.
           by rewrite (IH [:: A1 & srcs1]).
       - move => A1 IH1 A2 IH2 srcs1 srcs2.
-        case: (isOmega A1 && isOmega A2) => //.
+        case: (isOmega A1); first by apply: IH2.
+        case: (isOmega A2); first by apply: IH1.
         rewrite splitRec_merge (splitRec_merge _ _ (splitRec _ _ _)).
         rewrite map_merge; last by apply: map_cat.
           by rewrite IH1 IH2.
-    Qed.         
+    Qed.
 
 
     Lemma splitTy_slow_splitTy: forall A, splitTy A = splitTy_slow A.
@@ -5188,16 +5196,18 @@ Section CoverMachineProperties.
           by rewrite cats1.
       - move => A1 IH1 A2 IH2.
         rewrite /splitTy /=.
-        case: (isOmega A1 && isOmega A2) => //.
+        case omega__Both: (isOmega A1 && isOmega A2) => //.
         rewrite splitRec_merge.
         rewrite -IH1 -IH2.
         rewrite /splitTy /=.
-        case isOmegaA1: (isOmega A1) => /=.
-        + case isOmegaA2: (isOmega A2) => /=.
-          * by rewrite (splitRec_omega _ _ _ isOmegaA1) (splitRec_omega _ _ _ isOmegaA2).
-          * by rewrite (splitRec_omega _ _ _ isOmegaA1).
-        + case isOmegaA2: (isOmega A2) => //=.
-            by rewrite (splitRec_omega _ _ _ isOmegaA2) merges0.
+        case isOmega__A1: (isOmega A1) => /=.
+        + have notOmega__A2: (isOmega A2 = false).
+          { move: omega__Both.
+            rewrite isOmega__A1.
+              by case: (isOmega A2). }
+            by rewrite notOmega__A2 merges0.
+        + case isOmegaA2: (isOmega A2) => //.
+            by rewrite merges0 /= splitRec_merge.
     Qed.
 
     Lemma omega_mkArrow_tgt: forall srcs A, isOmega (mkArrow (srcs, A)) = isOmega A.
@@ -5806,11 +5816,6 @@ Section CoverMachineProperties.
     apply: BCD__Trans; first by exact prf1.
       by exact prf2.
   Qed.
-
-
-
-
-
 End CoverMachineProperties.
 
 Recursive Extraction coverMachine.
