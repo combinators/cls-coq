@@ -1290,6 +1290,16 @@ Section CoverMachineProperties.
     Definition sound s p :=
       all (fun x => x \in flatten (map (fun i => filterMergeMultiArrows (subseqs (mergeComponentsOf i))) p)) s.
 
+    Definition tgt_sound s p :=
+      all (fun x => has (fun i => checkSubtypes x.2 (\bigcap_(A_i <-
+                                                            match i with
+                                                            | ContinueCover _ toCover currentResult
+                                                            | CheckContinueCover _ toCover currentResult =>
+                                                              [:: currentResult.2 & toCover]
+                                                            | Cover _ toCover
+                                                            | CheckCover _ toCover => toCover
+                                                            end) A_i)) p) s.
+
     Lemma step_sound:
       forall sp1 sp2, sp1 ~~> sp2 -> sound (take (seq.size sp2.1 - seq.size sp1.1) sp2.1) sp1.2.
     Proof.
@@ -1304,6 +1314,12 @@ Section CoverMachineProperties.
         rewrite mem_cat.
           by move: (step_mergeComponents _ _ _ _ _ prf) => /allP ->.
     Qed.
+
+    Lemma step_tgt_sound:
+      forall sp1 sp2, sp1 ~~> sp2 -> sound (take (seq.size sp2.1 - seq.size sp1.1) sp2.1) sp1.2.
+    Proof.
+      move => [] s1 p2.
+
 
     Lemma step_splitsTail:
       forall s1 i1 p1 s2 p2,
