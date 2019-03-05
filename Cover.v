@@ -1290,16 +1290,6 @@ Section CoverMachineProperties.
     Definition sound s p :=
       all (fun x => x \in flatten (map (fun i => filterMergeMultiArrows (subseqs (mergeComponentsOf i))) p)) s.
 
-    Definition tgt_sound s p :=
-      all (fun x => has (fun i => checkSubtypes x.2 (\bigcap_(A_i <-
-                                                            match i with
-                                                            | ContinueCover _ toCover currentResult
-                                                            | CheckContinueCover _ toCover currentResult =>
-                                                              [:: currentResult.2 & toCover]
-                                                            | Cover _ toCover
-                                                            | CheckCover _ toCover => toCover
-                                                            end) A_i)) p) s.
-
     Lemma step_sound:
       forall sp1 sp2, sp1 ~~> sp2 -> sound (take (seq.size sp2.1 - seq.size sp1.1) sp2.1) sp1.2.
     Proof.
@@ -1314,12 +1304,6 @@ Section CoverMachineProperties.
         rewrite mem_cat.
           by move: (step_mergeComponents _ _ _ _ _ prf) => /allP ->.
     Qed.
-
-    Lemma step_tgt_sound:
-      forall sp1 sp2, sp1 ~~> sp2 -> sound (take (seq.size sp2.1 - seq.size sp1.1) sp2.1) sp1.2.
-    Proof.
-      move => [] s1 p2.
-
 
     Lemma step_splitsTail:
       forall s1 i1 p1 s2 p2,
@@ -4773,7 +4757,446 @@ Section CoverMachineProperties.
         apply: (steps_stateMonotonic (s3, p3) (s2, [::])).
         apply: nStepSemantics_sound.
           by exact steps.
-    Qed.   
+    Qed.
+
+     Definition tgt_sound s p :=
+      all (fun x => has (fun i => checkSubtypes x.2 (\bigcap_(A_i <-
+                                                            match i with
+                                                            | ContinueCover _ toCover currentResult
+                                                            | CheckContinueCover _ toCover currentResult =>
+                                                              [:: currentResult.2 & toCover]
+                                                            | Cover _ toCover
+                                                            | CheckCover _ toCover => toCover
+                                                            end) A_i)) p) s.
+
+    Lemma step_tgt_sound:
+      forall sp1 sp2,
+        all instruction_covered sp1.2 ->
+        sp1 ~~> sp2 ->
+        tgt_sound (take (seq.size sp2.1 - seq.size sp1.1) sp2.1) sp1.2.
+    Proof.
+      move => [] s1 p1 [] s2 p2 covered_prf.
+      move => /CoverMachine_inv  /(fun x => x (fun sp1 sp2 => tgt_sound (take (seq.size sp2.1 - seq.size sp1.1) sp2.1) sp1.2)).
+      move: covered_prf.
+      case: p1 => //.
+      case.
+      - case.
+        + move => toCover p1 covered_prf prf.
+          apply: prf.
+            by rewrite /= subnn take0.
+        + move => [] [] srcs tgt covered splits toCover p1 covered_prf prf.
+          apply: prf.
+          * by rewrite /= subnn take0.
+          * rewrite /= -addn1 addKn take0.
+            move => prf1 prf2.
+            rewrite /tgt_sound all_seq1.
+            apply /hasP.
+            exists (Cover [:: (srcs, tgt, covered) & splits] toCover).
+            ** by apply: mem_head.
+            ** move: covered_prf => /andP [] /andP [] /andP [] /= /subtypeMachineP res _ _ _.
+               rewrite -(partitionCover_drop2 _ _ prf2).
+               apply /subtypeMachineP.
+               apply: BCD__Trans; first by exact res.
+               apply: bcd_subset_f.
+                 by move: (partitionCover_subset covered toCover) => /allP.
+          * by rewrite /= subnn take0.
+      - case.
+        + move => toCover currentResult p1 covered_prf prf.
+          apply: prf.
+            by rewrite /= subnn take0.
+        + move => [] [] srcs tgt covered splits toCover currentResult p1 covered_prf prf.
+          apply: prf.
+          * by rewrite /= subnn take0.
+          * rewrite /= -addn1 addKn take0.
+            move => prf1 prf2.
+            rewrite /tgt_sound all_seq1.
+            apply /hasP.
+            exists (ContinueCover [:: (srcs, tgt, covered) & splits] toCover currentResult).
+            ** by apply: mem_head.
+            ** move: covered_prf => /andP [] /andP [] /andP [] /= /subtypeMachineP res _ _ _.
+               rewrite -(partitionCover_drop2 _ _ prf2).
+               apply /subtypeMachineP.
+               apply: (BCD__Trans (currentResult.2 \cap (\bigcap_(A_i <- covered) A_i))).
+               *** apply: BCD__Glb => //.
+                     by apply: BCD__Trans; last by exact res.
+               *** move: (partitionCover_subset covered toCover) => /allP.
+                   move: prf1.
+                   case: ((partitionCover covered toCover).1) => //.
+                   move => ? ? _ subset_prf.
+                   apply: BCD__Glb => //.
+                   apply: BCD__Trans; first by apply: BCD__Lub2.
+                     by apply: bcd_subset_f.
+          * by rewrite /= subnn take0.
+          * by rewrite /= subnn take0.
+      - move => splits toCover p1 covered_prf prf.
+        apply: prf.
+        + by rewrite /= subnn take0.
+        + by rewrite /= subnn take0.
+      - move => splits toCover currentResult p1 covered_prf prf.
+        apply: prf.
+        + by rewrite /= subnn take0.
+        + by rewrite /= subnn take0.
+    Qed.
+
+
+    Lemma step_tgt_sound_reverse:
+      forall i p s1 s2 s,
+        all instruction_covered [:: i] ->
+        tgt_sound s p ->
+        (s1, [:: i]) ~~> (s2, p) ->
+        tgt_sound s [:: i].
+    Proof.
+      move => i p s1 s2 s covered_prf tgt_sound_p prf.
+      move: prf covered_prf tgt_sound_p.
+      move => /CoverMachine_inv /(fun prf => prf (fun sp1 sp2 =>
+                                                (all instruction_covered sp1.2 -> 
+                                                  tgt_sound s sp2.2 ->
+                                                  tgt_sound s sp1.2)%type)).
+      case: i.
+      - case.
+        + move => toCover prf.
+          apply: prf.
+          rewrite /= /tgt_sound.
+            by case: s.
+        + move => [] [] srcs tgt covered splits toCover prf.
+          apply: prf => //.
+          move => prf1 prf2 covered_prf.
+          move => /allP prf.
+          apply /allP.
+          move => m inprf.
+          move: (prf m inprf) => /hasP [] m2.
+          rewrite in_cons.
+          move => /orP.
+          case.
+          * move => /eqP -> /subtypeMachineP le_prf.
+            rewrite has_seq1.
+            apply /subtypeMachineP.
+            apply: BCD__Trans; first by exact le_prf.
+            apply: BCD__Trans; last by apply: (bcd_subset_f _ _ _
+                                                          (partitionCover_complete
+                                                             covered toCover)).
+            apply: BCD__Trans; last by apply: bcd_bigcap_cat.
+            apply: BCD__Glb.
+            ** apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: _] _).
+               apply: BCD__Trans; first by apply: BCD__Lub1.
+               apply: BCD__Trans; last first.
+               *** apply: bcd_subset_f.
+                   move: (partitionCover_subset covered toCover) => /allP res.
+                     by exact res.
+               *** by move: covered_prf => /andP [] /andP [] /andP [] /subtypeMachineP.
+            ** by apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: _] _).
+          * rewrite mem_seq1 has_seq1.
+              by move => /eqP ->.
+      - case.
+        + move => toCover currentResult prf.
+          apply: prf.
+          rewrite /= /tgt_sound.
+            by case: s.
+        + move => [] [] srcs tgt splits covered toCover currentResult prf.
+          apply: prf => //.
+          * move => prf1 prf2 prf3 covered_prf.
+            move => /allP prf.
+            apply /allP.
+            move => m inprf.
+            move: (prf m inprf) => /hasP [] m2.
+            rewrite mem_seq1 => /eqP -> /subtypeMachineP le_prf.
+            rewrite has_seq1.
+            apply /subtypeMachineP.
+            apply: BCD__Trans; first by exact le_prf.
+            apply: BCD__Trans; last by apply: (bcd_bigcap_cat _ [:: _] _).
+            apply: BCD__Glb.
+            ** apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: _] _).
+               apply: BCD__Trans; first by apply: BCD__Lub1.
+                 by apply: BCD__Lub2.
+            ** apply: BCD__Trans; last by apply: (bcd_subset_f _ _ _
+                                                             (partitionCover_complete splits toCover)).
+               apply: BCD__Trans; last by apply: bcd_bigcap_cat.
+               apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: _] _).
+               apply: BCD__Glb => //.
+               apply: BCD__Trans; first by apply: BCD__Lub1.
+               apply: BCD__Trans; first by apply: BCD__Lub1.
+               apply: BCD__Trans; last first.
+               *** apply: bcd_subset_f.
+                   move: (partitionCover_subset splits toCover) => /allP res.
+                     by exact res.
+               *** by move: covered_prf => /andP [] /andP [] /andP [] /subtypeMachineP.
+          * move => prf1 prf2 _ covered_prf.
+             move => /allP prf.
+            apply /allP.
+            move => m inprf.
+            move: (prf m inprf) => /hasP [] m2.
+            rewrite in_cons.
+            move => /orP.
+            case.
+            ** move => /eqP -> /subtypeMachineP le_prf.
+               rewrite has_seq1.
+               apply /subtypeMachineP.
+               apply: BCD__Trans; first by exact le_prf.
+               apply: BCD__Trans; last by apply: (bcd_bigcap_cat _ [:: _] _).
+               apply: BCD__Glb.
+               *** apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: _] _).
+                   apply: BCD__Trans; first by apply: BCD__Lub1.
+                     by apply: BCD__Lub2.
+               *** apply: BCD__Trans; last by apply: (bcd_subset_f _ _ _
+                                                                 (partitionCover_complete splits toCover)).
+                   apply: BCD__Trans; last by apply: bcd_bigcap_cat.
+                   apply: BCD__Trans; first by apply: (bcd_cat_bigcap _ [:: _] _).
+                   apply: BCD__Glb => //.
+                   apply: BCD__Trans; first by apply: BCD__Lub1.
+                   apply: BCD__Trans; first by apply: BCD__Lub1.
+                   apply: BCD__Trans; last first.
+                   **** apply: bcd_subset_f.
+                        move: (partitionCover_subset splits toCover) => /allP res.
+                          by exact res.
+                   **** by move: covered_prf => /andP [] /andP [] /andP [] /subtypeMachineP.
+            ** by rewrite has_seq1 mem_seq1 => /eqP ->.
+      - move => splits toCover prf.
+        apply: prf => //.
+          by case: s.
+      - move => splits toCover currentResult prf.
+        apply: prf => //.
+          by case: s.
+    Qed.
+
+    Lemma all_filter {A: eqType}: forall (xs: seq A) (f p: A -> bool),
+        all p xs = (all p (filter f xs)) && (all p (filter (fun x => negb (f x)) xs)).
+    Proof.
+      move => xs f p.
+      elim: xs => // x xs IH /=.
+      case: (f x).
+      - by rewrite IH /= andbA.
+      - by rewrite IH /= [X in _ = X](andbA) -[X in _ = X && _](andbC) andbA.
+    Qed.
+
+    Lemma steps_tgt_sound:
+       forall sp1 sp2,
+        all instruction_covered sp1.2 ->
+        sp1 ~~>[*] sp2 ->
+        tgt_sound (take (seq.size sp2.1 - seq.size sp1.1) sp2.1) sp1.2.
+    Proof.
+      move => sp1 sp2 covered_prf prf.
+      move: covered_prf.
+      elim: sp1 sp2 /prf.
+      - move => sp1.
+          by rewrite subnn take0.
+      - move => [] s1 p1 [] s2 p2 [] s3 p3 prf.
+        rewrite -/((s2, p2) ~~>[*] (s3, p3)).
+        move => prfs IH covered_prf.
+        move: (step_tgt_sound (s1, p1) (s2, p2) covered_prf prf) => res_prefix.
+        move: (IH (instructions_covered_step (s1, p1) (s2, p2) prf covered_prf)) => res_suffix.
+        move: (step_programStack s1 p1 s2 p2 prf) => /suffixP [] p2_prefix /eqP p2__eq.
+        move: (steps_stateMonotonic (s2, p2) (s3, p3) prfs) => /suffixP [] s3_prefix /eqP s3__eq.
+        move: res_prefix res_suffix.
+        rewrite p2__eq s3__eq size_cat /= addnK take_cat ltnn subnn take0 cats0 take_cat.
+        rewrite -addnBA; last first.
+        { move: (step_stateMonotonic s1 p1 s2 p2 prf).
+          clear ...
+          move: s1.
+          elim: s2.
+          - by case.
+          - move => m2 s2 IH.
+            case => // m1 s1 /= /orP.
+            case.
+            + by move => /eqP [] _ ->.
+            + move => /IH /= res.
+                by apply: ltn_trans; first by exact res. }
+        rewrite -ltn_subRL subnn ltn0 addKn.
+        rewrite /tgt_sound all_cat.
+        move => ->.
+        rewrite andbT.
+        set (f xs :=
+               fun (x: seq (@IT Constructor) * (@IT Constructor)) =>
+                 has
+                   (fun i : Instruction =>
+                      checkSubtypes x.2
+                                    (\bigcap_(A_i <- match i with
+                                                    | Cover _ toCover | CheckCover _ toCover => toCover
+                                                    | ContinueCover _ toCover currentResult
+                                                    | CheckContinueCover _ toCover currentResult =>
+                                                      [:: currentResult.2 & toCover]
+                                                    end) A_i)) xs).
+        do 2 rewrite (all_filter s3_prefix (f p2_prefix)).
+        move => /andP [] _ res_rest.
+        move: (filter_all (f p2_prefix) s3_prefix) => res_hd.
+        apply /andP.
+        split; last first.
+        + apply /allP => m inprf.
+          move: res_rest => /allP /(fun prf => prf m inprf).
+          rewrite has_cat.
+          move => /orP [].
+          * move: inprf.
+            rewrite mem_filter /f.
+              by move => /andP [] /negbTE ->.
+          * move => /hasP [] i inprf__i le_prf.
+            apply /hasP.
+            exists i; last by exact le_prf.
+              by apply: mem_behead.
+        + have: (exists i, p1 = [:: i & behead p1] /\ (s1, [:: i]) ~~> (s2, p2_prefix)).
+          { move: prf p2__eq.
+            move => /CoverMachine_inv /(fun prf => prf (fun sp1 sp2 =>
+                                                      (sp2.2 = p2_prefix ++ behead sp1.2 ->
+                                                       exists i, sp1.2 = [:: i & behead sp1.2] /\
+                                                            (sp1.1, [:: i]) ~~> (sp2.1, p2_prefix)))%type).
+            clear ...
+            case: p1 => //.
+            case.
+            - case.
+              + move => toCover p1 prf.
+                apply: prf.
+                move => eq_prf.
+                have: (seq.size p2_prefix = 0).
+                { move: eq_prf => /(f_equal seq.size).
+                  rewrite /= size_cat -[X in X = _](add0n (seq.size p1)).
+                    by move => /addIn. }
+                move: eq_prf.
+                move => _ /size0nil ->.
+                eexists; split; first by reflexivity.
+                  by constructor.
+              + move => [] [] srcs tgt splits covered toCover p1 prf.
+                apply: prf.
+                * move => /= prf1 eq_prf.
+                  have: (seq.size p2_prefix = 1).
+                  { move: eq_prf => /(f_equal seq.size).
+                    rewrite /= size_cat -addn1 addnC.
+                      by move => /addIn. }
+                  move: eq_prf.
+                  case: p2_prefix => // i [] //=.
+                  move => [] <- _.
+                  eexists; split; first by reflexivity.
+                    by constructor.
+                * move => /= prf1 prf2 eq_prf.
+                  have: (seq.size p2_prefix = 1).
+                  { move: eq_prf => /(f_equal seq.size).
+                    rewrite /= size_cat -addn1 addnC.
+                      by move => /addIn. }
+                  move: eq_prf.
+                  case: p2_prefix => // i [] //=.
+                  move => [] <- _.
+                  eexists; split; first by reflexivity.
+                    by constructor.
+                *  move => /= prf1 prf2 eq_prf.
+                   have: (seq.size p2_prefix = 2).
+                   { move: eq_prf => /(f_equal seq.size).
+                     rewrite /= size_cat -addn2 addnC.
+                       by move => /addIn. }
+                   move: eq_prf.
+                   case: p2_prefix => // i1 [] i2 [] //=.
+                   move => [] <- <- _.
+                   eexists; split; first by reflexivity.
+                     by constructor.
+            - case.
+              + move => toCover currentResult p1 prf.
+                apply: prf.
+                move => eq_prf.
+                have: (seq.size p2_prefix = 0).
+                { move: eq_prf => /(f_equal seq.size).
+                  rewrite /= size_cat -[X in X = _](add0n (seq.size p1)).
+                    by move => /addIn. }
+                move: eq_prf.
+                move => _ /size0nil ->.
+                eexists; split; first by reflexivity.
+                  by constructor.
+              + move => [] [] srcs tgt splits covered toCover currentResult p1 prf.
+                apply: prf.
+                * move => /= prf1 eq_prf.
+                  have: (seq.size p2_prefix = 1).
+                  { move: eq_prf => /(f_equal seq.size).
+                    rewrite /= size_cat -addn1 addnC.
+                      by move => /addIn. }
+                  move: eq_prf.
+                  case: p2_prefix => // i [] //=.
+                  move => [] <- _.
+                  eexists; split; first by reflexivity.
+                    by constructor.
+                * move => /= prf1 prf2 eq_prf.
+                  have: (seq.size p2_prefix = 1).
+                  { move: eq_prf => /(f_equal seq.size).
+                    rewrite /= size_cat -addn1 addnC.
+                      by move => /addIn. }
+                  move: eq_prf.
+                  case: p2_prefix => // i [] //=.
+                  move => [] <- _.
+                  eexists; split; first by reflexivity.
+                    by constructor.
+                * move => /= prf1 prf2 prf3 eq_prf.
+                  have: (seq.size p2_prefix = 1).
+                  { move: eq_prf => /(f_equal seq.size).
+                    rewrite /= size_cat -addn1 addnC.
+                      by move => /addIn. }
+                  move: eq_prf.
+                  case: p2_prefix => // i [] //=.
+                  move => [] <- _.
+                  eexists; split; first by reflexivity.
+                    by constructor.
+                * move => /= prf1 prf2 prf3 eq_prf.
+                  have: (seq.size p2_prefix = 2).
+                  { move: eq_prf => /(f_equal seq.size).
+                    rewrite /= size_cat -addn2 addnC.
+                      by move => /addIn. }
+                  move: eq_prf.
+                  case: p2_prefix => // i1 [] i2 [] //=.
+                  move => [] <- <- _.
+                  eexists; split; first by reflexivity.
+                    by constructor.
+            - move => splits toCover p1 prf.
+              apply: prf.
+              + move => prf1 eq_prf.
+                have: (seq.size p2_prefix = 0).
+                { move: eq_prf => /(f_equal seq.size).
+                  rewrite /= size_cat -[X in X = _](add0n (seq.size p1)).
+                    by move => /addIn. }
+                move: eq_prf.
+                move => _ /size0nil ->.
+                eexists; split; first by reflexivity.
+                  by constructor.
+              + move => /= prf1 eq_prf.
+                have: (seq.size p2_prefix = 1).
+                { move: eq_prf => /(f_equal seq.size).
+                  rewrite /= size_cat -addn1 addnC.
+                    by move => /addIn. }
+                move: eq_prf.
+                case: p2_prefix => // i [] //=.
+                move => [] <- _.
+                eexists; split; first by reflexivity.
+                  by constructor.
+            - move => splits toCover currentResult p1 prf.
+              apply: prf.
+              + move => prf1 eq_prf.
+                have: (seq.size p2_prefix = 0).
+                { move: eq_prf => /(f_equal seq.size).
+                  rewrite /= size_cat -[X in X = _](add0n (seq.size p1)).
+                    by move => /addIn. }
+                move: eq_prf.
+                move => _ /size0nil ->.
+                eexists; split; first by reflexivity.
+                  by constructor.
+              + move => /= prf1 eq_prf.
+                have: (seq.size p2_prefix = 1).
+                { move: eq_prf => /(f_equal seq.size).
+                  rewrite /= size_cat -addn1 addnC.
+                    by move => /addIn. }
+                move: eq_prf.
+                case: p2_prefix => // i [] //=.
+                move => [] <- _.
+                eexists; split; first by reflexivity.
+                  by constructor. }
+          case => i [] p1__eq hd_prf.
+          have i_covered: (all instruction_covered [:: i]).
+          { move: covered_prf.
+              by rewrite p1__eq /= => /andP [] ->. }
+          move: (step_tgt_sound_reverse i p2_prefix s1 s2 (filter (f p2_prefix) s3_prefix)
+                                        i_covered res_hd hd_prf).
+          rewrite /tgt_sound p1__eq.
+          move => /allP result.
+          apply /allP.
+          move => m inprf.
+          apply /hasP.
+          move: (result m inprf).
+          rewrite has_seq1.
+          move => le_prf.
+            by eexists; first by apply: mem_head.
+    Qed.
+
   End StepInvariants.
 
   Section SplitProperties.
