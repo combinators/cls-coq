@@ -6118,6 +6118,37 @@ Section CoverMachineProperties.
     Qed.
   End SplitProperties.
 
+  Lemma splitTy_instructionsCovered:
+    forall A B,
+      let Bs := primeFactors B in
+      let mss := splitTy A in
+      all instruction_covered (map (fun ms => Cover (map (fun m => (m, filter (checkSubtypes m.2) Bs)) ms) Bs) mss).
+  Proof.
+    move => A B.
+    rewrite /instruction_covered.
+    apply /allP.
+    move => i.
+    move => /mapP [] ms ms_in -> /=.
+    apply /allP.
+    move => [] m__i toCover.
+    move => /mapP [] m__i2 mi2_in [] -> -> /=.
+    apply /andP.
+    split.
+    - apply /subtypeMachineP.
+      clear...
+      elim: (primeFactors B) => //= B1 Bs IH.
+      case le_prf: (checkSubtypes m__i2.2 B1).
+      + apply: BCD__Trans; last by apply: (bcd_bigcap_cat _ [:: B1] _).
+        apply: BCD__Glb; first by apply /subtypeMachineP.
+          by exact IH.
+      + by exact IH.
+    - apply /allP.
+      move => B_i inprf.
+      apply /implyP.
+      move => prf.
+        by rewrite mem_filter inprf prf.
+  Qed.
+
   Lemma coverMachine_splitTy_complete:
     forall (A: @IT Constructor) srcs B s,
       [bcd A <= mkArrow (srcs, B)] ->
@@ -6162,29 +6193,7 @@ Section CoverMachineProperties.
         move => /subty_complete /(fun prf => Omega__subty _ Omega _ prf isT) disprf.
         move: notOmega__B.
           by rewrite omega_mkArrow_tgt disprf.
-      - rewrite /instruction_covered.
-        rewrite /mss.
-        apply /allP.
-        move => i.
-        move => /mapP [] ms ms_in -> /=.
-        apply /allP.
-        move => [] m__i toCover.
-        move => /mapP [] m__i2 mi2_in [] -> -> /=.
-        apply /andP.
-        split.
-        + apply /subtypeMachineP.
-          clear...
-          elim: Bs => //= B1 Bs IH.
-          case le_prf: (checkSubtypes m__i2.2 B1).
-          * apply: BCD__Trans; last by apply: (bcd_bigcap_cat _ [:: B1] _).
-            apply: BCD__Glb; first by apply /subtypeMachineP.
-              by exact IH.
-          * by exact IH.
-        + apply /allP.
-          move => B_i inprf.
-          apply /implyP.
-          move => prf.
-            by rewrite mem_filter inprf prf.
+      - by apply: splitTy_instructionsCovered.
       - rewrite /toCover_prime.
         rewrite /mss.
         apply /allP.
@@ -6478,14 +6487,27 @@ Section CoverMachineProperties.
 
   Lemma coverMachine_splitTy_tgt_sound:
     forall (A: @IT Constructor) B s,
-      ~~(isOmega B) ->
       let Bs := primeFactors B in
       let mss := splitTy A in
       ([::], map (fun ms => Cover (map (fun m => (m, filter (checkSubtypes m.2) Bs)) ms) Bs) mss) ~~>[*] (s, [::]) ->
       all (fun m => checkSubtypes m.2 B) s.
   Proof.
-    
-
+    move => A B s Bs mss.
+    move: (primeFactors_leq B) => le__Bs.
+    move => /(steps_tgt_sound ([::], map (fun ms => Cover (map (fun m => (m, filter (checkSubtypes m.2) Bs)) ms) Bs) mss)
+                           (s, [::])
+                           (splitTy_instructionsCovered A B)).
+    rewrite /= subn0 take_oversize => //.
+    move => /allP tgt_sound_prf.
+    apply /allP.
+    move => m inprf.
+    apply /subtypeMachineP.
+    apply: BCD__Trans; last by exact le__Bs.
+    move: (tgt_sound_prf m inprf) => /hasP [] i [].
+    move => /mapP [] ms inprf__ms i__eq.
+    rewrite i__eq.
+      by move => /subtypeMachineP.
+  Qed.
 
 End CoverMachineProperties.
 
