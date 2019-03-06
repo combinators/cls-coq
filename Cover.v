@@ -6255,6 +6255,238 @@ Section CoverMachineProperties.
     apply: BCD__Trans; first by exact prf1.
       by exact prf2.
   Qed.
+
+  Lemma mkArrow_srcs_ge:
+    forall srcs1 srcs2 A,
+      seq.size srcs1 = seq.size srcs2 ->
+      all (fun srcs => checkSubtypes srcs.1 srcs.2) (zip srcs1 srcs2) ->
+      [bcd (mkArrow (srcs2, A)) <= (mkArrow (srcs1, A))].
+  Proof.
+    elim /last_ind.
+    - by case.
+    - move => srcs1 src1 IH srcs2 A size_prf.
+      have: (exists srcs22 src2, srcs2 = rcons srcs22 src2).
+      { move: size_prf.
+        rewrite size_rcons.
+        case: srcs2 => // x xs.
+        move => _.
+          by exists (belast x xs), (last x xs); by apply: lastI. }
+      move => [] srcs22 [] src2 srcs2__eq.
+      move: size_prf.
+      rewrite srcs2__eq.
+      do 2 rewrite mkArrow_rcons size_rcons.
+      move => [] size_prf.
+      rewrite (zip_rcons _ _ size_prf) -cats1 all_cat all_seq1.
+      move => /andP [] prf src_prf.
+      apply: BCD__Sub.
+      + by apply /subtypeMachineP.
+      + by apply: IH.
+  Qed.
+
+  Lemma mergeMultiArrow_le:
+    forall m1 m2,
+      seq.size m1.1 = seq.size m2.1 ->
+      [bcd (mkArrow m1 \cap mkArrow m2) <= mkArrow (mergeMultiArrow m1 m2.1 m2.2)].
+  Proof.
+    move => [] srcs1 tgt1 [] srcs2 tgt2.
+    rewrite /mergeMultiArrow /=.
+    move: tgt1 srcs2 tgt2.
+    elim /last_ind: srcs1.
+    - move => tgt1 [] //= tgt2 _.
+        by apply: BCD__Glb.
+    - move => srcs1 src1 IH tgt1 srcs2 tgt2 size_prf.
+      have: (exists srcs22 src2, srcs2 = rcons srcs22 src2).
+      { move: size_prf.
+        rewrite size_rcons.
+        case: srcs2 => // x xs.
+        move => _.
+          by exists (belast x xs), (last x xs); by apply: lastI. }
+      move => [] srcs22 [] src2 srcs2__eq.
+      move: size_prf.
+      rewrite srcs2__eq.
+      do 2 rewrite mkArrow_rcons size_rcons.
+      move => [] size_prf.
+      rewrite (zip_rcons _ _ (Logic.eq_sym size_prf)) -cats1 map_cat /= cats1 mkArrow_rcons.
+      apply: BCD__Trans; first by apply: bcd__Arr.
+      apply: BCD__Sub.
+      + apply: BCD__Trans; first by apply: dcap_cap.
+          by apply: BCD__Glb.
+      + by apply: IH.
+  Qed.
+
+  Lemma bcd_multiArrow_Dist:
+    forall ms,
+      all (fun m1 : @MultiArrow Constructor =>
+             all (fun m2 : @MultiArrow Constructor => seq.size m1.1 == seq.size m2.1) ms) ms ->
+      [bcd (\bigcap_(m_i <- ms) (mkArrow m_i)) <= mkArrow (mergeMultiArrows ms)].
+  Proof.
+    rewrite /mergeMultiArrows.
+    case => //.
+    move => m ms size_prf.
+    apply: BCD__Trans; first by apply: (bcd_cat_bigcap_f _ _ mkArrow [:: m] ms).
+    have m__eq: (m = mergeMultiArrows [:: m]) by reflexivity.
+    move: size_prf.
+    rewrite [X in foldl _ X _]m__eq [X in [:: X & _]]m__eq.
+    have: [bcd (\bigcap_(m_i <- [:: m]) mkArrow m_i) <= mkArrow (mergeMultiArrows [:: m])] by done.
+    have: (~~nilp [:: m]) by done.
+    move: [:: m].
+    move: m m__eq => _ _.
+    elim: ms.
+    - rewrite /=.
+      move => ms1 _ prf _.
+        by apply: BCD__Trans; first by apply: BCD__Lub1.
+    - move => m2 ms2 IH ms1 nonEmpty__ms1 prf size_prf.
+      rewrite [foldl _ _ _]/=.
+      have: (mergeMultiArrow (mergeMultiArrows ms1) m2.1 m2.2 =
+             mergeMultiArrows (rcons ms1 m2)).
+      { rewrite /mergeMultiArrows.
+        have: (exists m1 ms11, ms1 = [:: m1 & ms11]).
+        { move: nonEmpty__ms1.
+          clear...
+          case: ms1 => // m1 ms11 _.
+            by (exists m1, ms11). }
+        move => [] m1 [] ms11 -> /=.
+          by rewrite -cats1 foldl_cat. }
+      move => merge_eq.
+      rewrite merge_eq.
+      apply: (BCD__Trans ((\bigcap_(m_i <- (rcons ms1 m2)) mkArrow m_i) \cap \bigcap_(m_i <- ms2) mkArrow m_i)).
+      + apply: BCD__Glb.
+        * rewrite -cats1.
+          apply: BCD__Trans; last by apply: bcd_bigcap_cat_f.
+          apply: BCD__Glb => //.
+          apply: BCD__Trans; first by apply: BCD__Lub2.
+            by apply: BCD__Trans; first by apply: (bcd_cat_bigcap_f _ _ mkArrow [:: m2] ms2).
+        * apply: BCD__Trans; first by apply: BCD__Lub2.
+            by apply: BCD__Trans; first by apply: (bcd_cat_bigcap_f _ _ mkArrow [:: m2] ms2).
+      + apply: IH.
+        * move: nonEmpty__ms1.
+          clear...
+            by case ms1.
+        * rewrite -merge_eq.
+          rewrite -cats1.
+          apply: BCD__Trans; first by apply: bcd_cat_bigcap_f.
+          apply: (BCD__Trans (mkArrow (mergeMultiArrows ms1) \cap mkArrow m2)).
+          ** apply: BCD__Glb => //.
+               by apply: BCD__Trans; first by apply: BCD__Lub1.
+          ** apply: mergeMultiArrow_le.
+             move: size_prf.
+             rewrite (all_cat _ [:: _]) all_seq1 (all_cat _ [:: _]).
+             move => /andP [] /andP [] _ size_prf _.
+             move: size_prf.
+             rewrite (all_cat _ [:: _]) all_seq1.
+               by move => /andP [] /eqP.
+        * rewrite (all_cat _ [:: _]).
+          apply /andP.
+          move: size_prf.
+          rewrite (all_cat _ [:: _; _]).
+          move => /andP [] _ /allP size_prf.
+          have size_prf__ms2: (all
+                               (fun m : MultiArrow =>
+                                  seq.size (mergeMultiArrows (rcons ms1 m2)).1 ==
+                                  seq.size m.1) ms2).
+          { apply /allP.
+             move => m inprf.
+             move: size_prf => /(fun prf => prf m inprf) size_prf.
+             rewrite -cats1 /mergeMultiArrows.
+             have: (exists m1 ms11, ms1 = [:: m1 & ms11]).
+             { move: nonEmpty__ms1.
+               clear ...
+               case: ms1 => // m1 ms11 _.
+                 by (exists m1, ms11). }
+             move =>  [] m1 [] ms11 ms1__eq.
+             rewrite ms1__eq /= foldl_cat /= -/(mergeMultiArrows [:: m1 & ms11]) size_map size_zip.
+             move: size_prf.
+             rewrite ms1__eq (all_cat _ [:: _]) all_seq1.
+             move => /andP [] /eqP <-.
+             rewrite (all_cat _ [:: _]) all_seq1.
+             move => /andP [] /eqP <- _.
+               by rewrite minnn. }
+          split.
+          ** by rewrite all_seq1 (all_cat _ [:: _]) /= eq_refl /=.
+          ** apply /allP.
+             move => m inprf.
+             rewrite (all_cat _ [:: _]) all_seq1.
+             move: size_prf__ms2 => /allP /(fun prf => prf m inprf) /eqP ->.
+             rewrite eq_refl andTb.
+             move: size_prf => /(fun prf => prf m inprf).
+             rewrite (all_cat _ [:: _; _]).
+               by move => /andP [].
+  Qed.
+
+  Lemma coverMachine_splitTy_sound:
+    forall (A: @IT Constructor) B s,
+      ~~(isOmega B) ->
+      let Bs := primeFactors B in
+      let mss := splitTy A in
+      ([::], map (fun ms => Cover (map (fun m => (m, filter (checkSubtypes m.2) Bs)) ms) Bs) mss) ~~>[*] (s, [::]) ->
+      all (fun m => checkSubtypes A (mkArrow m)) s.
+  Proof.
+    move => A B s notOmega__B Bs mss.
+    move: (splitTy_sound A) => split_sound.
+    move => /(semantics_mergeComponents _ _).
+    rewrite /= subn0 (take_oversize (leqnn _)).
+    elim: s => // m s IH.
+    rewrite /sound (all_cat _ [:: m] s) -/(sound s _) all_seq1.
+    move => /andP [] m_sound s_sound.
+    apply /andP.
+    split.
+    - apply /subtypeMachineP.
+      move: m_sound.
+      rewrite -map_comp /=.
+      have: (((fun i => filterMergeMultiArrows (subseqs (mergeComponentsOf i)))
+                \o (fun ms => Cover (map (fun m => (m, filter (checkSubtypes m.2) Bs)) ms) Bs))
+             =1 (fun ms => filterMergeMultiArrows (subseqs ms))).
+      { move => ms.
+        rewrite /= -map_comp.
+          by rewrite map_id. }
+      move => /eq_map /(fun prf => prf mss) ->.
+      move => /flatten_mapP [] ms inprf__ms inprf__m.
+      move: (inprf__ms) => /(nth_index [::]) ms_pos.
+      apply: BCD__Trans; first by exact (split_sound (index ms mss)).
+      rewrite ms_pos.
+      have: (exists2 ms2, subseq ms2 ms & m = mergeMultiArrows ms2).
+      { move: inprf__m (subseqs_subseq ms).
+        clear ...
+        elim: (subseqs ms) => // ms21 mss22 IH.
+        rewrite /=.
+        case: ms21.
+        - move => inprf__m subseq_prf.
+          apply: IH => //.
+          move => ms2 inprf.
+          apply: subseq_prf.
+            by apply: mem_behead.
+        - move => m21 ms21.
+          rewrite -/(mergeMultiArrows [:: m21 & ms21]) in_cons.
+          move => /orP [].
+          + move => /eqP m__eq /(fun prf => prf [:: m21 & ms21] (mem_head _ _)) subseq_prf.
+              by (exists [:: m21 & ms21]).
+          + move => inprf__m subseq_prf.
+            apply: IH => //.
+            move => ms2 inprf.
+            apply: subseq_prf.
+              by apply: mem_behead. }
+      move => [] ms2 subseq_prf m_eq.
+      apply: BCD__Trans; first by apply: (bcd_subset_f mkArrow ms ms2 (mem_subseq subseq_prf)).
+      rewrite m_eq.
+      have: (all (fun (m1: @MultiArrow Constructor) =>
+                    all (fun (m2: @MultiArrow Constructor) => seq.size m1.1 == seq.size m2.1) ms2) ms2).
+      { move: (arity_increasing_arity_equal 0 mss (splitTy_arity A)) => /allP /(fun prf => prf ms inprf__ms) prf.
+          by apply: (all_nested_subseq _ ms). }
+        by apply: bcd_multiArrow_Dist.
+    - by apply: IH.
+  Qed.
+
+  Lemma coverMachine_splitTy_tgt_sound:
+    forall (A: @IT Constructor) B s,
+      ~~(isOmega B) ->
+      let Bs := primeFactors B in
+      let mss := splitTy A in
+      ([::], map (fun ms => Cover (map (fun m => (m, filter (checkSubtypes m.2) Bs)) ms) Bs) mss) ~~>[*] (s, [::]) ->
+      all (fun m => checkSubtypes m.2 B) s.
+  Proof.
+    
+
+
 End CoverMachineProperties.
 
 Recursive Extraction coverMachine.
