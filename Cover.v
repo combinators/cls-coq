@@ -720,23 +720,23 @@ Section CoverMachineProperties.
         by apply: stepSize.
   Qed.
 
-  Definition step s1 p1: (p1 = [::]) + { sp2 | (s1, p1) ~~> sp2 } :=
-    match p1 as p1 return (p1 = [::]) + { sp2 | (s1, p1) ~~> sp2 } with
-    | [::] => inl (Logic.eq_refl _)
-    | [:: CheckCover splits toCover & p1 ] =>
+  Definition step (sp1: (@State Constructor * seq (@Instruction Constructor))): (sp1.2 = [::]) + { sp2 | sp1 ~~> sp2 } :=
+    match sp1 as sp1 return (sp1.2 = [::]) + { sp2 | sp1 ~~> sp2 } with
+    | (s1, [::]) => inl (Logic.eq_refl _)
+    | (s1, [:: CheckCover splits toCover & p1 ]) =>
       match boolP (stillPossible splits toCover) with
       | AltTrue ok => inr (exist _ (s1, [:: Cover splits toCover & p1]) (step__checkOk ok))
       | AltFalse impossible => inr (exist _ (s1, p1) (step__checkPrune impossible))
       end
-    | [:: CheckContinueCover splits toCover currentResult & p1 ] =>
+    | (s1, [:: CheckContinueCover splits toCover currentResult & p1 ]) =>
       match boolP (stillPossible splits toCover) with
       | AltTrue ok => inr (exist _ (s1, [:: ContinueCover splits toCover currentResult & p1])
                                 (step__checkContinueOk ok))
       | AltFalse impossible => inr (exist _ (s1, p1) (step__checkContinuePrune impossible))
       end
-    | [:: Cover [::] toCover  & p1 ] => inr (exist _ (s1, p1) step__done)
-    | [:: ContinueCover [::] toCover currentResult  & p1 ] => inr (exist _ (s1, p1) step__doneContinue)
-    | [:: Cover [:: (srcs, tgt, covered) & splits ] toCover  & p1 ] =>
+    | (s1, [:: Cover [::] toCover  & p1 ]) => inr (exist _ (s1, p1) step__done)
+    | (s1, [:: ContinueCover [::] toCover currentResult  & p1 ]) => inr (exist _ (s1, p1) step__doneContinue)
+    | (s1, [:: Cover [:: (srcs, tgt, covered) & splits ] toCover  & p1 ]) =>
       inr (let pc := partitionCover covered toCover in
            match boolP (pc.1 == [::]) with
            | AltTrue noFresh =>
@@ -751,7 +751,7 @@ Section CoverMachineProperties.
                      (step__continue fresh someLeft)
              end
            end)
-    | [:: ContinueCover [:: (srcs, tgt, covered) & splits ] toCover currentResult  & p1 ] =>
+    | (s1, [:: ContinueCover [:: (srcs, tgt, covered) & splits ] toCover currentResult  & p1 ]) =>
       inr (let pc := partitionCover covered toCover in
            match boolP (pc.1 == [::]) with
            | AltTrue noFresh =>
@@ -811,12 +811,12 @@ Section CoverMachineProperties.
                              start step k).
     - move => [] s1 p1 limit.
       exists 0, s1.
-      case: (step s1 p1).
-      + by move => ->.
+      case: (step (s1, p1)).
+      + by move => /= ->.
       + by move => [] sp2 /(fun prf => MoreSteps 0 _ _ _ prf (Done _)) /limit.
     - move: k => _ k IH [] s1 p1 limit.
-      case: (step s1 p1).
-      + move => ->.
+      case: (step (s1, p1)).
+      + move => /= ->.
           by exists 0, s1.
       + move => [] sp2 prf.
         suff: (exists n s2, sp2 ~~>[n] (s2, [::])).
@@ -827,9 +827,9 @@ Section CoverMachineProperties.
           by move => n sp3 /(MoreSteps _ _ _ _ prf) /limit.
   Qed.
 
-  Lemma step_last: forall s p, p = [::] -> (s, p) ~~>[*] (s, [::]).
+  Lemma step_last: forall sp, sp.2 = [::] -> sp ~~>[*] (sp.1, [::]).
   Proof.
-    move => s p <-.
+    move => [] s p <-.
       by apply: rt1n_refl.
   Qed.
 
@@ -842,22 +842,21 @@ Section CoverMachineProperties.
         by rewrite -(coverMachineFunctional_step _ _ _ prf1 prf2).
   Defined.
 
-  Lemma step_next: forall s1 p1 s2 p2 s3, (s1, p1) ~~> (s2, p2) -> (s2, p2) ~~>[*] (s3, [::]) -> (s1, p1) ~~>[*] (s3, [::]).
+  Lemma step_next: forall sp1 sp2 s3, sp1 ~~> sp2 -> sp2 ~~>[*] (s3, [::]) -> sp1 ~~>[*] (s3, [::]).
   Proof.
-    move => s1 p1 s2 p2 s3 prf prfs.
+    move => [] s1 p1 [] s2 p2 s3 prf prfs.
       by apply: rt1n_trans; first by exact prf.
   Qed.
 
-  Fixpoint coverMachine_rec s1 p1 (dom: Domain (s1, p1)) {struct dom}: { s | (s1, p1) ~~>[*] (s, [::])} :=
-    match step s1 p1 return { s | (s1, p1) ~~>[*] (s, [::])} with
-    | inl prf => exist _ s1 (step_last _ _ prf)
-    | inr (exist (s2, p2) prf) =>
-      let (s, prfs) := coverMachine_rec s2 p2 (Domain_continue _ _ dom prf) in
-      exist _ s (step_next _ _ _ _ _ prf prfs)
+  Fixpoint coverMachine_rec (sp1 : (State * seq Instruction)) (dom: Domain sp1) {struct dom}: { s | sp1 ~~>[*] (s, [::])} :=
+    match step sp1 return { s | sp1 ~~>[*] (s, [::])} with
+    | inl prf => exist _ sp1.1 (step_last sp1 prf)
+    | inr (exist sp2 prf) =>
+      let (s, prfs) := coverMachine_rec sp2 (Domain_continue _ _ dom prf) in
+      exist _ s (step_next _ sp2 _ prf prfs)
     end.
 
-  Definition coverMachine sp : { s | sp ~~>[*] (s, [::])} :=
-    match sp with | (s, p) => coverMachine_rec s p (Domain_total (s, p)) end.
+  Definition coverMachine sp : { s | sp ~~>[*] (s, [::])} := coverMachine_rec sp (Domain_total sp).
 
   Section StepInvariants.
     Fixpoint suffix {A: eqType} (s1 s2: seq A) {struct s2}: bool :=
@@ -6509,10 +6508,205 @@ Section CoverMachineProperties.
       by move => /subtypeMachineP.
   Qed.
 
+  Section PostReductionPhase.
+    Fixpoint reduceMultiArrows (ms: seq (@MultiArrow Constructor)) : seq (@MultiArrow Constructor) :=
+      if ms is [:: m1 & ms2]
+      then
+        let ms__red := reduceMultiArrows ms2 in
+        if has (fun m2 => [&& (seq.size m2.1 == seq.size m1.1)
+                           & all (fun AB => checkSubtypes AB.1 AB.2) (zip m1.1 m2.1)]) ms__red
+           then ms__red
+           else [:: m1 & filter (fun m2 => negb [&& (seq.size m2.1 == seq.size m1.1)
+                                              & all (fun AB => checkSubtypes AB.1 AB.2) (zip m2.1 m1.1)])
+                                ms__red ]
+      else [::].
+
+    Lemma reduction_subseq: forall ms, subseq (reduceMultiArrows ms) ms.
+    Proof.
+      elim => // m1 ms2 IH.
+      rewrite [reduceMultiArrows _]/=.
+      case: (has (fun m2 => [&& (seq.size m2.1 == seq.size m1.1)
+                          & all (fun AB => checkSubtypes AB.1 AB.2) (zip m1.1 m2.1)]) (reduceMultiArrows ms2)).
+      - apply: subseq_trans; first by exact IH.
+          by apply: subseq_cons.
+      - apply: (@cat_subseq _ [:: m1] _ [:: m1] _) => //.
+          by apply: subseq_trans; first by apply filter_subseq.
+    Qed.
+
+    Lemma soundnessPreserving:
+      forall A ms,
+        all (fun m => checkSubtypes A (mkArrow m)) ms ->
+        all (fun m => checkSubtypes A (mkArrow m)) (reduceMultiArrows ms).
+    Proof.
+      move => ? ? /allP prf.
+      apply /allP.
+      move => m inprf.
+      apply: prf.
+      apply: mem_subseq; last by exact inprf.
+        by apply: reduction_subseq.
+    Qed.
+
+    Lemma tgt_soundnessPreserving:
+      forall B ms,
+        all (fun m => checkSubtypes m.2 B) ms ->
+        all (fun m => checkSubtypes m.2 B) (reduceMultiArrows ms).
+    Proof.
+      move => ? ? /allP prf.
+      apply /allP.
+      move => m inprf.
+      apply: prf.
+      apply: mem_subseq; last by exact inprf.
+        by apply: reduction_subseq.
+    Qed.
+
+    Lemma completenessPreserving:
+      forall srcs B ms,
+        all (fun m => checkSubtypes m.2 B) ms ->
+        has (fun m =>
+               [&& (seq.size m.1 == seq.size srcs),
+                all (fun AB => checkSubtypes AB.1 AB.2) (zip srcs m.1) &
+                checkSubtypes m.2 B]) ms ->
+        has (fun m =>
+               [&& (seq.size m.1 == seq.size srcs),
+                all (fun AB => checkSubtypes AB.1 AB.2) (zip srcs m.1) &
+                checkSubtypes m.2 B]) (reduceMultiArrows ms).
+    Proof.
+      move => srcs B.
+      elim => // m ms IH tgt_sound_prf.
+      move => /hasP [] m2.
+      rewrite in_cons => /orP [].
+      - move => /eqP -> prf.
+        rewrite [reduceMultiArrows _]/=.
+        case rest_prf: (has (fun m2 => [&& (seq.size m2.1 == seq.size m.1)
+                                     & all (fun AB => checkSubtypes AB.1 AB.2) (zip m.1 m2.1)])
+                            (reduceMultiArrows ms)).
+        + move: rest_prf => /hasP [] m3 inprf /andP [] /eqP srcs_size srcs_prf.
+          apply /hasP.
+          exists m3 => //.
+          have size__eq: (seq.size m3.1 == seq.size srcs).
+          { rewrite srcs_size.
+              by move: prf => /andP []. }
+          rewrite size__eq andTb.
+          apply /andP.
+          split.
+          * apply /(all_nthP (Omega, Omega)).
+            move => n n__lt.
+            apply /subtypeMachineP.
+            rewrite nth_zip /=; last by rewrite (eqP size__eq).
+            apply: (BCD__Trans (nth Omega m.1 n)).
+            ** apply /subtypeMachineP.
+               move: prf => /andP [] /eqP msize__eq /andP [].
+               move => /(all_nthP (Omega, Omega)).
+               rewrite size_zip -srcs_size -size_zip.
+               move => /(fun prf => prf n n__lt).
+                 by rewrite nth_zip /=.
+            ** apply /subtypeMachineP.
+               move: srcs_prf => /(all_nthP (Omega, Omega)).
+               rewrite size_zip (eqP (proj1 (andP prf))) -size_zip.
+               move => /(fun prf => prf n n__lt).
+                 by rewrite nth_zip /=.
+          * move: tgt_sound_prf => /allP /(fun prf => prf m3) res.
+            apply: res.
+            rewrite in_cons.
+            apply /orP; right.
+            apply: mem_subseq; last by exact inprf.
+              by apply: reduction_subseq.
+        + by rewrite /= prf.
+      - move => inprf prf.
+        have: (has (fun m2 => [&& (seq.size m2.1 == seq.size srcs),
+                            all (fun AB => checkSubtypes AB.1 AB.2) (zip srcs m2.1)
+                            & checkSubtypes m2.2 B])
+                   (reduceMultiArrows ms)).
+        { apply: IH.
+          - by move: tgt_sound_prf => /andP [].
+          - apply /hasP.
+              by (exists m2). }
+        rewrite [reduceMultiArrows [:: m & ms]]/=.
+        case rest_prf: (has (fun m2 => [&& (seq.size m2.1 == seq.size m.1)
+                                     & all (fun AB => checkSubtypes AB.1 AB.2) (zip m.1 m2.1)])
+                            (reduceMultiArrows ms)) => //.
+        case m_prf: [&& (seq.size m2.1 == seq.size m.1)
+                     & all (fun AB => checkSubtypes AB.1 AB.2) (zip m2.1 m.1)].
+        + move => _ /=.
+          apply /orP; left.
+          move: prf => /andP [] /eqP srcs_size /andP [] srcs_prf tgt_prf.
+          move: m_prf => /andP [] /eqP msize__eq m_srcs_ge.
+          have size__eq: (seq.size m.1 = seq.size srcs).
+          { by rewrite -srcs_size msize__eq. }
+          rewrite size__eq eq_refl andTb.
+          apply /andP.
+          split.
+          * apply /(all_nthP (Omega, Omega)).
+            move => n n__lt.
+            apply /subtypeMachineP.
+            rewrite nth_zip /=; last by rewrite size__eq.
+            apply: (BCD__Trans (nth Omega m2.1 n)).
+            ** apply /subtypeMachineP.
+               move: srcs_prf => /(all_nthP (Omega, Omega)).
+               rewrite size_zip msize__eq -size_zip.
+               move => /(fun prf => prf n n__lt).
+                 by rewrite nth_zip /=.
+            ** apply /subtypeMachineP.
+               move: m_srcs_ge => /(all_nthP (Omega, Omega)).
+               rewrite size_zip srcs_size -size_zip.
+               move => /(fun prf => prf n n__lt).
+                 by rewrite nth_zip /=.
+          * by move: tgt_sound_prf => /andP [].
+        + case hd_prf: [&& seq.size m.1 == seq.size srcs,
+                        all (fun AB : IT * IT => checkSubtypes AB.1 AB.2)
+                            (zip srcs m.1)
+                        & checkSubtypes m.2 B]; first by rewrite /= hd_prf.
+          move => /hasP [] m3 inprf__m3 m3_prf.
+          apply /hasP.
+          exists m3 => //.
+          apply: mem_behead => /=.
+          rewrite mem_filter inprf__m3 andbT negb_and.
+          move: m_prf => /negbT.
+          rewrite negb_and.
+          move => /orP [].
+          * move: prf => /andP [] /eqP -> _.
+              by move: m3_prf => /andP [] /eqP -> _ ->.
+          * case size__eq: (seq.size m3.1 == seq.size m.1) => //=.
+            move: size__eq => /eqP size__eq _.
+            rewrite -has_predC.
+            move: hd_prf.
+            have srcs_size: (seq.size m.1 == seq.size srcs).
+            { move: m3_prf => /andP [] /eqP <- _.
+                by rewrite size__eq. }
+            rewrite srcs_size.
+            move: tgt_sound_prf => /andP [] -> _.
+            rewrite andbT andTb.
+            move => /negbT.
+            rewrite -has_predC.
+            move => /(has_nthP (Omega, Omega)) [] n n_lt disprf.
+            apply /(has_nthP (Omega, Omega)).
+            exists n.
+            ** move: n_lt.
+               do 2 rewrite size_zip.
+                 by rewrite size__eq (eqP srcs_size).
+            ** rewrite /= -implybF.
+               apply /implyP.
+               rewrite nth_zip => //=.
+               move => /subtypeMachineP le_prf.
+               move: disprf.
+               rewrite /= -implybF.
+               move => /implyP disprf.
+               apply: disprf.
+               apply /subtypeMachineP.
+               rewrite nth_zip; last by rewrite (eqP srcs_size).
+               apply: BCD__Trans; last by exact le_prf.
+               apply /subtypeMachineP.
+               move: m3_prf => /andP [] /eqP m3_size__eq /andP [] /(all_nthP (Omega, Omega)).
+               rewrite size_zip size__eq -size_zip.
+               move => /(fun prf => prf n n_lt).
+                 by rewrite nth_zip.
+    Qed.
+               
+  End PostReductionPhase.
 End CoverMachineProperties.
 
 Recursive Extraction coverMachine.
  
 Arguments coverMachine [Constructor].
-
+Arguments reduceMultiArrows [Constructor].
 
