@@ -14,7 +14,7 @@ Section IntersectionTypes.
   Variable Constructor: countType.
 
   (** Intersection types with constructors and products. **)
-  Inductive IT : Type :=
+  Inductive IT: Type :=
   | Omega : IT
   | Ctor : Constructor -> IT -> IT
   | Arrow : IT -> IT -> IT
@@ -65,6 +65,13 @@ Section IntersectionTypes.
     Canonical IT_countType := CountType IT IT_countMixin.
   End ITMathcompInstances.
 
+  Fixpoint intersect (xs: seq IT) : IT :=
+    match xs with
+    | [::] => Omega
+    | [:: A] => A
+    | [:: A & Delta] => Inter A (intersect Delta)
+    end.
+
   (** Check if a type is Omega or an Arrow ending in Omega **)
   Fixpoint isOmega (A: IT) {struct A}: bool :=
     match A with
@@ -92,13 +99,6 @@ Section IntersectionTypes.
     | Prod _ _ => (Omega, Omega)
     | Inter _ _ => (Omega, Omega)
     end.
-
-  Fixpoint intersect (xs: seq IT) : IT :=
-    match xs with
-    | [::] => Omega
-    | [:: A] => A
-    | [:: A & Delta] => Inter A (intersect Delta)
-    end.
 End IntersectionTypes.
 Arguments IT [Constructor].
 Arguments Omega [Constructor].
@@ -111,7 +111,7 @@ Hint Constructors IT.
 Arguments isOmega [Constructor].
 Arguments arity [Constructor].
 Arguments omegaArg [Constructor].
-Arguments intersect [Constructor].
+Arguments intersect [Constructor].    
 
 Notation "\bigcap_ ( i <- xs ) F" :=
   (intersect (map (fun i => F) xs)) (at level 41, F at level 41, i, xs at level 50,
@@ -123,51 +123,73 @@ Notation "A -> B" := (Arrow A B) : it_scope.
 Notation "A \cap B" := (Inter A B) (at level 80, right associativity) : it_scope.
 Notation "A \times B" := (Prod A B) (at level 40, left associativity) : it_scope.
 
-Lemma bigcap_cons: forall (Constructor: countType) (T: Type) (F: T -> @IT Constructor) (A: T) (Delta: seq T),
+Lemma bigcap_cons: forall (T: Type) (ctor: countType) (F: T -> @IT ctor) (A: T) (Delta: seq T),
     \bigcap_(A__i <- [:: A & Delta]) (F A__i) = match Delta with
                                             | [::] => F A
                                             | [:: A' & Delta] =>  F A \cap \bigcap_(A__i <- A'::Delta) (F A__i)
                                             end.
 Proof. 
-  move => ? T F A Delta.
+  move => ? ? F A Delta.
     by case: Delta.
 Qed.
-Arguments bigcap_cons [Constructor T F A Delta].
+Arguments bigcap_cons [T ctor F A Delta].
 
 Module Constructor.
-  Definition ctor_preorder (ctor: countType) := (ctor -> ctor -> bool)%type.
-  Definition preorder_reflexive (ctor: countType) (lessOrEqual: ctor_preorder ctor): Type :=
+  Definition ctor_preorder (ctor: Type) := (ctor -> ctor -> bool)%type.
+  Definition preorder_reflexive (ctor: Type) (lessOrEqual: ctor_preorder ctor): Type :=
     forall c, lessOrEqual c c = true.
 
-  Definition preorder_transitive (ctor: countType) (lessOrEqual: ctor_preorder ctor): Type :=
+  Definition preorder_transitive (ctor: Type) (lessOrEqual: ctor_preorder ctor): Type :=
     forall (c: ctor) (d: ctor) (e: ctor),
       lessOrEqual c d && lessOrEqual d e ==> lessOrEqual c e.
 
-  Record mixin_of (ctor: countType): Type :=
+  Record mixin_of (ctor: Type): Type :=
     Mixin {
         lessOrEqual : ctor_preorder ctor;
         _: preorder_reflexive ctor lessOrEqual;
         _: preorder_transitive ctor lessOrEqual
       }.
-  Notation class_of := mixin_of (only parsing).
+
   Section ClassDef.
-    Structure type := Pack { sort : countType; _ : class_of sort }.
-    Variables (ctor: countType) (cCtor: type).
-    Definition class := let: Pack _ c := cCtor return class_of (sort cCtor) in c.
-    Definition pack c := @Pack ctor c.
-    Definition clone c & phant_id class c := Pack ctor c.
+    Record class_of (C: Type) :=
+      Class {
+          base: Countable.class_of C;
+          mixin: mixin_of C
+        }.
+    Local Coercion base : class_of >-> Countable.class_of.
+    Structure type: Type := Pack { sort : Type; _ : class_of sort }.
+    Local Coercion sort : type >-> Sortclass.
+    Variables (T: Type) (cCtor: type).
+    Definition class := let: Pack _ c as cCtor' := cCtor return class_of cCtor' in c.
+    Definition clone c of phant_id class c := @Pack T c.
+    Let xT := let: Pack T _ := cCtor in T.
+    Notation xclass := (class : class_of xT).
+    Definition pack m :=
+      fun b bT & phant_id (Countable.class bT) b => Pack _ (@Class T b m).
+    Definition eqType := Eval hnf in @Equality.Pack cCtor xclass xT.
+    Definition choiceType := Eval hnf in  @Choice.Pack cCtor xclass xT.
+    Definition countType := Eval hnf in @Countable.Pack cCtor xclass xT.
   End ClassDef.
-  Module Exports.
-    Coercion sort : type >-> countType.
+
+  Module Import Exports.
+    Coercion base : class_of >-> Countable.class_of.
+    Coercion mixin: class_of >-> mixin_of.
+    Coercion sort : type >-> Sortclass.
+    Coercion eqType : type >-> Equality.type.
+    Canonical eqType.
+    Coercion choiceType : type >-> Choice.type.
+    Canonical choiceType.
+    Coercion countType : type >-> Countable.type.
+    Canonical countType.
+
     Notation ctor := type.
+    Notation CtorType C m := (@pack C m _ _ id).
     Notation CtorMixin := Mixin.
-    Notation CtorType C m := (@pack C m).
-    Notation "[ 'ctorMixin' 'of' ctor ]" :=
-      (class _ : mixin_of ctor) (at level 0, format "[ 'ctorMixin' 'of' ctor ]") : form_scope.
-    Notation "[ 'ctorType' 'of' ctor 'for' C ]" :=
-      (@clone ctor C _ idfun id) (at level 0, format "[ 'ctorType' 'of' ctor 'for' C ]") : form_scope.
-    Notation "[ 'ctorType' 'of' C ]" :=
-      (@clone ctor _ _ id id) (at level 0, format "[ 'ctorType' 'of' C ]") : form_scope.
+
+    Notation "[ 'ctorType' 'of' T 'for' cT ]" :=
+      (@clone T cT _ idfun) (at level 0, format "[ 'ctorType' 'of' T 'for' cT ]") : form_scope.
+    Notation "[ 'ctorType' 'of' T ]" :=
+      (@clone T _ _ id) (at level 0, format "[ 'ctorType' 'of' T ]") : form_scope.
   End Exports.
 End Constructor.
 Export Constructor.Exports.
@@ -176,17 +198,17 @@ Definition lessOrEqual c := Constructor.lessOrEqual _ (Constructor.class c).
 Arguments lessOrEqual [c].
 Notation "[ 'ctor' c <= d ]" := (lessOrEqual c d) (at level 0, c at next level): it_scope.
 Lemma preorder_reflexive c: Constructor.preorder_reflexive _ (@lessOrEqual c).
-Proof. by case c => ? []. Qed.
+Proof. by case c => ? [] ? []. Qed.
 Arguments preorder_reflexive [c].
 Lemma preorder_transitive c: Constructor.preorder_transitive _ (@lessOrEqual c).
-Proof. by case c => ? []. Qed.
+Proof. by case c => ? [] ? []. Qed.
 Arguments preorder_transitive [c].
 
 Reserved Notation "[ 'bcd' A <= B ]" (at level 0, A at next level).
 (** BCD Rules with Products and distributing covariant constructors. **)
 Section BCD.
   Variable Constructor: ctor.
-
+  
   Inductive BCD: @IT Constructor -> @IT Constructor -> Prop :=
   | BCD__CAx: forall a b A B, [ ctor a <= b] -> [ bcd A <= B] -> [ bcd (Ctor a A) <= (Ctor b B)]
   | BCD__omega: forall A, [ bcd A <= Omega]
@@ -229,10 +251,11 @@ Hint Constructors BCD.
 Notation "[ 'bcd' A <= B ]" := (BCD A B) : it_scope.
 Hint Resolve BCD__Refl.
 
-(** Instructions for a machine deciding subtyping on intersection types **)
-Section SubtypeMachineInstuctions.
-  Variable Constructor: ctor.
 
+Section SubtypeMachineInstuctions.
+  Variable Constructor: countType.
+
+  (** Instructions for a machine deciding subtyping on intersection types **)
   Inductive Instruction: Type :=
   | LessOrEqual of (@IT Constructor * @IT Constructor)
   | TgtForSrcsGte of (@IT Constructor * seq (@IT Constructor * @IT Constructor)).
@@ -240,6 +263,7 @@ Section SubtypeMachineInstuctions.
   Inductive Result: Type :=
   | Return of bool
   | CheckTgt of seq (@IT Constructor).
+
 
   (** Enable mathcomp functionalities on instructions **)
   Section InstructionMathcompInstances.
@@ -4989,10 +5013,8 @@ Section NatConstructors.
       by apply: prf.
   Qed.
 
-  Definition nat_ctorMixin :=
-    Constructor.Mixin nat_countType
-                      leq leqnn leq_transb.
-  Canonical nat_ctorType := Eval hnf in CtorType nat_countType nat_ctorMixin.
+  Definition nat_ctorMixin := Constructor.Mixin nat leq leqnn leq_transb.
+  Canonical nat_ctorType := Eval hnf in CtorType nat nat_ctorMixin.
 End NatConstructors.
 
 Section PrimeFactorTest.

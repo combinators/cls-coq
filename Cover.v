@@ -6709,4 +6709,4 @@ Recursive Extraction coverMachine.
  
 Arguments coverMachine [Constructor].
 Arguments reduceMultiArrows [Constructor].
-
+Arguments mkArrow [Constructor].

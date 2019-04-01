@@ -2,9 +2,9 @@ let
   pkgs = import <nixpkgs>{}; 
 in 
 { stdenv ? pkgs.stdenv,
-  coq ? pkgs.coq_8_8,
+  coq ? pkgs.coq_8_9,
   gnumake ? pkgs.gnumake,
-  coqPackages ? pkgs.coqPackages_8_8 }:
+  coqPackages ? pkgs.coqPackages_8_9 }:
   #let
     #inherit (coqPackages) autosubst;
     #in
