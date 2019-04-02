@@ -2161,12 +2161,48 @@ End SplitContexts.
 Section InhabitationMachine.
   Variable Combinator: finType.
   Variable Constructor: ctor.
-  Variable SplitCtxt: {ffun Combinator -> seq (seq (@MultiArrow Constructor))}.
+  Variable Gamma: Ctxt Combinator Constructor.
+
+  Definition SplitCtxt: {ffun Combinator -> seq (seq (@MultiArrow Constructor))} :=
+    [ffun c => splitTy (Gamma c)].
 
   Inductive Rule : Type :=
   | RuleFail : @IT Constructor -> Rule
   | RuleCombinator : @IT Constructor -> Combinator -> Rule
   | RuleApply : @IT Constructor -> @IT Constructor -> @IT Constructor -> Rule.
+
+  Section RuleMathcompInstances.
+    Definition Rule2tree (r: Rule):
+      GenTree.tree (@IT Constructor + ((@IT Constructor * Combinator) + (@IT Constructor * @IT Constructor * @IT Constructor))) :=
+      match r with
+      | RuleFail A => GenTree.Node 0 [:: GenTree.Leaf (inl A)]
+      | RuleCombinator A c => GenTree.Node 1 [:: GenTree.Leaf (inr (inl (A, c)))]
+      | RuleApply A B C => GenTree.Node 2 [:: GenTree.Leaf (inr (inr (A, B, C)))]
+      end.
+
+    Fixpoint tree2Rule (t: GenTree.tree (@IT Constructor + ((@IT Constructor * Combinator) + (@IT Constructor * @IT Constructor * @IT Constructor)))):
+      option Rule :=
+      match t with
+      | GenTree.Node n args =>
+        match n, args with
+        | 0, [:: GenTree.Leaf (inl A)] => Some (RuleFail A)
+        | 1, [:: GenTree.Leaf (inr (inl (A, c)))] => Some (RuleCombinator A c)
+        | 2, [:: GenTree.Leaf (inr (inr (A, B, C)))] => Some (RuleApply A B C)
+        | _, _ => None
+        end
+      | _ => None
+      end.
+
+    Lemma pcan_Ruletree: pcancel Rule2tree tree2Rule.
+    Proof. by elim => //=. Qed.
+
+    Definition Rule_eqMixin := PcanEqMixin pcan_Ruletree.
+    Canonical Rule_eqType := EqType Rule Rule_eqMixin.
+    Definition Rule_choiceMixin := PcanChoiceMixin pcan_Ruletree.
+    Canonical Rule_choiceType := ChoiceType Rule Rule_choiceMixin.
+    Definition Rule_countMixin := PcanCountMixin pcan_Ruletree.
+    Canonical Rule_countType := CountType Rule Rule_countMixin.
+  End RuleMathcompInstances.
 
   Definition TreeGrammar: Type := seq Rule.
 
@@ -2176,65 +2212,78 @@ Section InhabitationMachine.
       match r with
       | RuleFail B =>
         if checkSubtypes A B
-        then (true, true, [:: RuleFail A, r & G])
+        then (true, true, if A == B then [:: r & G] else [:: RuleFail A, r & G])
         else let: (hasUpdate, failed, updated) := updatedExisting G A in (hasUpdate, failed, [:: r & updated])
       | RuleCombinator B c =>
         let: (hasUpdate, failed, updated) := updatedExisting G A in
-        if ~~failed && checkSubtypes A B && checkSubtypes B A
-        then (true, false, [:: RuleCombinator A c, r & updated])
-        else (hasUpdate, failed, [:: r & updated])
+        let: AB__eq := A == B in
+        if ~~failed && ~~AB__eq && checkSubtypes A B && checkSubtypes B A
+        then (true, false, [::RuleCombinator A c, r & updated])
+        else (AB__eq || hasUpdate, failed, [:: r & updated])
       | RuleApply B F X =>
         let: (hasUpdate, failed, updated) := updatedExisting G A in
-        if ~~failed && checkSubtypes A B && checkSubtypes B A
+        let: AB__eq := A == B in
+        if ~~failed && ~~AB__eq && checkSubtypes A B && checkSubtypes B A
         then (true, false, [:: RuleApply A F X, r & updated])
-        else (hasUpdate, failed, [:: r & updated])
+        else (AB__eq || hasUpdate, failed, [:: r & updated])
       end
     else (false, false, [::]).
 
-  Fixpoint commitMultiArrow (accStable: TreeGrammar) (accTgts: TreeGrammar) (c: Combinator)
-           (srcs: seq (@IT Constructor)) (currentTgt: @IT Constructor) {struct srcs}:
-    TreeGrammar * TreeGrammar :=
+  Fixpoint commitMultiArrow (accTgts: TreeGrammar) (c: Combinator)
+           (srcs: seq (@IT Constructor)) (currentTgt: @IT Constructor) {struct srcs}: TreeGrammar :=
     if srcs is [:: src & srcs]
     then
-      let newRule := RuleApply currentTgt (src -> currentTgt) src in
-      commitMultiArrow [:: newRule & accStable] [:: newRule & accTgts] c srcs (src -> currentTgt)
+      commitMultiArrow [:: RuleApply currentTgt (src -> currentTgt) src & accTgts] c srcs (src -> currentTgt)
     else
-      let newRule := RuleCombinator currentTgt c in
-      ([:: newRule & accStable], [:: newRule & accTgts]).
+      [:: RuleCombinator currentTgt c & accTgts].
 
-  Fixpoint commitUpdates (accStable: TreeGrammar) (accTgts: TreeGrammar) (currentTgt: @IT Constructor) (c: Combinator)
-           (covers: seq MultiArrow) {struct covers}:
-    TreeGrammar * TreeGrammar :=
+  Fixpoint commitUpdates (accTgts: TreeGrammar) (currentTgt: @IT Constructor) (c: Combinator)
+           (covers: seq MultiArrow) {struct covers}: TreeGrammar :=
     if covers is [:: (srcs, _) & ms]
-    then commitMultiArrow accStable accTgts c srcs currentTgt
-    else (accStable, accTgts).
+    then commitUpdates (commitMultiArrow accTgts c srcs currentTgt) currentTgt c ms
+    else accTgts.
 
   Fixpoint dropTargets (targets: TreeGrammar): TreeGrammar :=
     if targets is [:: RuleApply _ _ _ & targets]
     then dropTargets targets
     else targets.
 
+  Definition accumulateCovers
+             (currentTarget: @IT Constructor)
+             (toCover: seq (@IT Constructor))
+             (s: TreeGrammar * bool)
+             (c: Combinator): TreeGrammar * bool :=
+    let: (newTargets, failed) := s in
+    let mss := SplitCtxt c in
+    let: (exist covers _) :=
+       coverMachine ([::], map (fun ms =>
+                                  Cover (map (fun m => (m, filter (checkSubtypes m.2) toCover)) ms) toCover)
+                               mss) in
+    let: reducedCovers := reduceMultiArrows covers in
+    (commitUpdates newTargets currentTarget c reducedCovers, failed && ~~nilp covers).
+
+  Definition inhabit_cover (targets: TreeGrammar) (currentTarget: @IT Constructor): bool * TreeGrammar :=
+    let factors := primeFactors currentTarget in
+    let: (newTargets, failed) :=
+       foldl (accumulateCovers currentTarget factors) ([::], true) (enum Combinator) in
+    if failed
+    then (true, [:: RuleFail currentTarget & targets])
+    else (false, targets ++ newTargets).
+             
   Definition inhabitation_step (stable: TreeGrammar) (targets: TreeGrammar): TreeGrammar * TreeGrammar :=
     match targets with
-    | [:: RuleApply _ _ currentTarget & targets] =>
+    | [:: RuleApply A B currentTarget & targets] =>
       if isOmega currentTarget then (stable, targets)
       else if updatedExisting stable currentTarget is (true, failed, updated)
            then (updated, if failed then [:: RuleFail currentTarget & targets] else targets)
-           else
-             let factors := primeFactors currentTarget in
-             let: (updated, newTargets, failed) :=
-                foldl (fun s c =>
-                         let: (updated, newTargets, failed) := s in
-                         let mss := SplitCtxt c in
-                         let: (exist covers _) :=
-                            coverMachine ([::], map (fun ms =>
-                                                       Cover (map (fun m => (m, filter (checkSubtypes m.2) factors)) ms)
-                                                             factors)
-                                                    mss) in
-                         (commitUpdates updated newTargets currentTarget c covers, failed && ~~nilp covers))
-                      (stable, [::], true) (enum Combinator) in
-             (updated, if failed then [:: RuleFail currentTarget & targets] else targets ++ newTargets)
-    | [:: RuleCombinator _ _ & targets] => (stable, targets)
+           else let: (failed, nextTargets) := inhabit_cover targets currentTarget in
+                if failed
+                then (stable, nextTargets)
+                else ([:: RuleApply A B currentTarget & stable], nextTargets)
+    | [:: RuleCombinator A c & targets] =>
+      if RuleCombinator A c \in stable
+      then (stable, dropTargets targets)
+      else ([:: RuleCombinator A c & stable], targets)
     | [:: RuleFail _ & targets] => (stable, dropTargets targets)
     | [::] => (stable, [::])
     end.
@@ -2253,8 +2302,550 @@ Section InhabitationMachine.
     | M @ N => 
       has (fun r => if r is RuleApply B C D then (root == B) && word G C M && word G D N else false) G
     end.
+End InhabitationMachine.
+
+Arguments SplitCtxt [Combinator Constructor].
+Arguments Rule [Combinator Constructor].
+Arguments RuleFail [Combinator Constructor].
+Arguments RuleCombinator [Combinator Constructor].
+Arguments RuleApply [Combinator Constructor].
+Arguments TreeGrammar [Combinator Constructor].
+Hint Constructors Rule.
+
+Arguments updatedExisting [Combinator Constructor].
+Arguments commitMultiArrow [Combinator Constructor].
+Arguments commitUpdates [Combinator Constructor].
+Arguments dropTargets [Combinator Constructor].
+Arguments accumulateCovers [Combinator Constructor].
+Arguments inhabit_cover [Combinator Constructor].
+Arguments inhabitation_step [Combinator Constructor].
+Arguments InhabitationSemantics [Combinator Constructor].
+Arguments OmegaRules [Combinator Constructor].
+Arguments word [Combinator Constructor].
+
+Section InhabitationMachineProperties.
+  Variable Combinator: finType.
+  Variable Constructor: ctor.
+  Variable Gamma: Ctxt Combinator Constructor.
+
+  Implicit Types stable targets G : @TreeGrammar Combinator Constructor.
+
+  Definition FCL_sound G: Prop :=
+    all (fun r =>
+           match r with
+           | RuleCombinator A c => checkSubtypes (Gamma c) A
+           | RuleApply A B C => checkSubtypes B (C -> A)
+           | _ => true
+           end) G.
+
+  Lemma FCL_sound_sound: forall G A M, FCL_sound G -> word G A M -> [FCL Gamma |- M : A].
+  Proof.
+    move => G A M /allP sound.
+    move: A.
+    elim: M.
+    - move => c A /hasP [].
+      case => // B d /sound le_prf /andP [] /eqP -> /eqP ->.
+      apply: FCL__Sub; first by apply: FCL__Var.
+        by apply /subtypeMachineP.
+    - move => M IH__M N IH__N A /hasP [].
+      case => // B C D /sound le_prf /andP [] /andP [] /eqP -> /IH__M prf__M /IH__N prf__N.
+      apply: (FCL__MP D); last by exact prf__N.
+      apply: FCL__Sub; first by exact prf__M.
+        by apply /subtypeMachineP.
+  Qed.
+
+  Lemma dropTargets_suffix: forall G, suffix (dropTargets G) G.
+  Proof.
+    elim => //.
+    case.
+    - move => ? ? _.
+        by rewrite /= eq_refl.
+    - move => ? ? ? _.
+        by rewrite /= eq_refl.
+    - move => ? ? ? ? /= ->.
+        by rewrite orbT.
+  Qed.
+
+  Lemma suffix_word: forall G1 G2, suffix G1 G2 -> forall A M, word G1 A M -> word G2 A M.
+  Proof.
+    move => G1 G2 /suffixP [] prefix /eqP G2__eq A M.
+    move: A.
+    elim: M.
+    - move => c A.
+      rewrite /word /= G2__eq has_cat => ->.
+        by rewrite orbT.
+    - move => M IH__M N IH__N A.
+      rewrite /word /= G2__eq has_cat.
+      move => /hasP [].
+      case => // B C D inprf /andP [] /andP [] A__eq /IH__M prf__M /IH__N prf__N.
+      apply /orP.
+      right.
+      apply /hasP.
+      eexists; first by exact inprf.
+        by rewrite /= -G2__eq A__eq -/(word G2 C M) prf__M -/(word G2 D N) prf__N.
+  Qed.
+
+  Lemma suffix_sound: forall G1 G2, suffix G1 G2 -> FCL_sound G2 -> FCL_sound G1.
+  Proof.
+    move => G1 G2 /suffixP [] prefix /eqP G2__eq.
+      by rewrite /FCL_sound G2__eq all_cat => /andP [].
+  Qed.
+
+  Lemma word_perm: forall G1 G2, perm_eq G1 G2 -> forall A M, word G1 A M -> word G2 A M.
+  Proof.
+    move => G1 G2 perm_prf A M.
+    move: A.
+    elim: M.
+    - move => c A /hasP [] r inprf prf.
+      apply /hasP.
+      exists r.
+      + by rewrite -(perm_eq_mem perm_prf r).
+      + done.
+    - move => M IH__M N IH__N A.
+      move => /hasP [].
+      case => // B C D inprf /andP [] /andP [] A__eq /IH__M prf__M /IH__N prf__N.
+      apply /hasP.
+      exists (RuleApply B C D).
+      + by rewrite -(perm_eq_mem perm_prf _).
+      + by rewrite /= A__eq -/(word G2 C M) prf__M -/(word G2 D N) prf__N.
+  Qed.
+
+  Lemma perm_sound: forall G1 G2, perm_eq G1 G2 -> FCL_sound G2 -> FCL_sound G1.
+  Proof.
+    move => G1 G2 perm_prf prf.
+      by rewrite /FCL_sound (perm_eq_all _ perm_prf).
+  Qed.
+
+  Lemma cat_sound: forall G1 G2, FCL_sound G1 -> FCL_sound G2 -> FCL_sound (G1 ++ G2).
+  Proof.
+    move => G1 G2 prf1 prf2.
+      by rewrite /FCL_sound all_cat prf1 prf2.
+  Qed.
+
+  Lemma updatedExisting_sound:
+    forall G A, FCL_sound G -> FCL_sound ((updatedExisting G A).2).
+  Proof.
+    move => G A.
+    elim: G => // r G IH.
+    rewrite /updatedExisting.
+    case: r.
+    - move => B.
+      case: (checkSubtypes A B).
+      + by case: (A == B).
+      + move => /IH.
+        rewrite -/(updatedExisting G A).
+          by case: (updatedExisting G A) => [] [].
+    - move => B c.
+      rewrite -/(updatedExisting G A).
+      move => /andP [] prf /IH.
+      case: (updatedExisting G A) => [] [] ? failed updated /= prfs.
+      have: (FCL_sound [:: RuleCombinator B c & updated]).
+      { by rewrite /FCL_sound /= prf prfs. }
+      move: (A == B) => AB__eq.
+      case le_prf: (checkSubtypes B A).
+      + case: (~~failed && ~~AB__eq && checkSubtypes A B && true).
+        * rewrite /FCL_sound /= => ->.
+          rewrite andbT /=.
+          apply /subtypeMachineP.
+          apply: BCD__Trans; first by (apply /subtypeMachineP; exact prf).
+            by apply /subtypeMachineP.
+        * by rewrite /=.
+      + by rewrite andbF /=.
+    - move => B C D.
+      rewrite -/(updatedExisting G A).
+      move => /andP [] prf /IH.
+      case: (updatedExisting G A) => [] [] ? failed updated /= prfs.
+      have: (FCL_sound [:: RuleApply B C D & updated]).
+      { by rewrite /FCL_sound /= prf prfs. }
+      move: (A == B) => AB__eq.
+      case le_prf: (checkSubtypes B A).
+      + case: (~~failed && ~~AB__eq && checkSubtypes A B && true).
+        * rewrite /FCL_sound /= => ->.
+          rewrite andbT /=.
+          apply /subtypeMachineP.
+          apply: BCD__Trans; first by (apply /subtypeMachineP; exact prf).
+          apply: BCD__Sub; first by done.
+            by apply /subtypeMachineP.
+        * by rewrite /=.
+      + by rewrite andbF /=.
+  Qed.
+
+  Lemma commitMultiArrow_sound:
+    forall G A m c,
+      FCL_sound G ->
+      checkSubtypes (Gamma c) (mkArrow m) ->
+      checkSubtypes m.2 A ->
+      FCL_sound (commitMultiArrow G c m.1 A).
+  Proof.
+    move => G A [] srcs tgt c.
+    rewrite /commitMultiArrow /=.
+    move: A tgt G.
+    elim: srcs.
+    - move => A tgt G prfs.
+      rewrite /mkArrow /= /FCL_sound /= prfs andbT.
+      move => /subtypeMachineP prf1 /subtypeMachineP prf2.
+      apply /subtypeMachineP.
+        by (apply: BCD__Trans; first by exact prf1).
+    - move => src srcs IH A tgt G.
+      rewrite /= -/(commitMultiArrow [:: RuleApply A (src -> A) src & G] c srcs (src -> A)).
+      move => prfs le_prf tgt_prf.
+      apply: (IH (src -> A) (src -> A) [:: RuleApply A (src -> A) src & G]).
+      + rewrite /FCL_sound /= prfs andbT.
+          by apply /subtypeMachineP.
+      + apply /subtypeMachineP.
+        apply: BCD__Trans; first by (apply /subtypeMachineP; exact le_prf).
+        apply: mkArrow_tgt_le.
+          by apply /subtypeMachineP.
+      + by apply /subtypeMachineP.
+  Qed.
+
+
+  Lemma commitUpdates_sound:
+    forall G A ms c,
+      FCL_sound G ->
+      all (fun m : MultiArrow => checkSubtypes (Gamma c) (mkArrow m)) ms ->
+      all (fun m : MultiArrow => checkSubtypes m.2 A) ms ->
+      FCL_sound (commitUpdates G A c ms).
+  Proof.
+    move => G A ms c.
+    move: G A.
+    rewrite /commitUpdates.
+    elim: ms => //.
+    move => [] srcs tgt ms IH G A G_sound /andP [] le_prf le_prfs /andP [] tgt_prf tgt_prfs.
+      by (apply: IH; first by apply: (commitMultiArrow_sound G A (srcs, tgt) c)).
+  Qed.
+
+  Lemma accumulateCovers_sound:
+    forall A G b c,
+      ~~(isOmega A) ->
+      FCL_sound G ->
+      FCL_sound (accumulateCovers Gamma A (primeFactors A) (G, b) c).1.
+  Proof.
+    move => A G b c notOmega__A G_sound.
+    rewrite /accumulateCovers.
+    move: (coverMachine ([::], map (fun ms =>
+                                      Cover (map (fun m => (m, filter (checkSubtypes m.2) (primeFactors A))) ms) (primeFactors A))
+                                   (SplitCtxt Gamma c))) => [] s.
+    rewrite /SplitCtxt ffunE.
+    move => prf.
+    move: (prf) => /(coverMachine_splitTy_sound _ (Gamma c) A s notOmega__A) /soundnessPreserving cover_sound.
+    move: prf => /(coverMachine_splitTy_tgt_sound _ (Gamma c) A s) /tgt_soundnessPreserving cover_tgt_sound.
+      by apply: commitUpdates_sound.
+  Qed.
+
+  Lemma foldl_accumulateCovers_sound:
+    forall A G b,
+      ~~(isOmega A) ->
+      FCL_sound G ->
+      FCL_sound (foldl (accumulateCovers Gamma A (primeFactors A)) (G, b) (enum Combinator)).1.
+  Proof.
+    elim: (enum Combinator) => // c cs IH A G b notOmega__A G_sound.
+    rewrite /foldl -/(foldl (accumulateCovers Gamma A (primeFactors A))).
+    move: (accumulateCovers_sound A G b c notOmega__A G_sound) => /IH.
+    case: (accumulateCovers Gamma A (primeFactors A) (G, b) c) => G' b' res.
+      by apply: res.
+  Qed.
+
+  Lemma inhabit_cover_sound:
+    forall (targets: TreeGrammar) (currentTarget: @IT Constructor),
+      ~~isOmega currentTarget ->
+      FCL_sound targets ->
+      FCL_sound (inhabit_cover Gamma targets currentTarget).2.
+  Proof.
+    move => targets currentTarget notOmega__currentTarget targets_sound.
+    rewrite /inhabit_cover.
+    move: (foldl_accumulateCovers_sound currentTarget [::] true notOmega__currentTarget isT).
+    case: (foldl (accumulateCovers Gamma currentTarget (primeFactors currentTarget)) ([::], true) (enum Combinator)) => G' [] //=.
+    rewrite /FCL_sound all_cat targets_sound => ->.
+      by rewrite andbT.
+  Qed.
+
+
+  Lemma inhabitation_step_sound:
+    forall stable targets,
+      FCL_sound stable ->
+      FCL_sound targets ->
+      FCL_sound (inhabitation_step Gamma stable targets).1 /\ FCL_sound (inhabitation_step Gamma stable targets).2.
+  Proof.
+    move => stable targets stable_sound.
+    case: targets => //.
+    case.
+    - move => A targets /=.
+      move => /(suffix_sound _ _ (dropTargets_suffix _)).
+      move => /(suffix_sound _ _ (suffix_behead _ _ (suffix_refl _))).
+        by move => /(suffix_sound _ _ (dropTargets_suffix _)).
+    - move => A c targets /andP [] prf prfs /=.
+      case: (RuleCombinator A c \in stable).
+      + split => //.
+          by move: prfs => /(suffix_sound _ _ (dropTargets_suffix _)).
+      + split => //.
+          by apply /andP.
+    - move => A B C targets /=.
+      case isOmega__C: (isOmega C).
+      + move => /andP [] _ prf.
+          by split.
+      + move: (updatedExisting_sound _ C stable_sound).
+        case: (updatedExisting stable C) => [] [] hasExisting failed updated.
+        case: hasExisting.
+        * case: failed; by move => ? /andP [].
+        * move => updated_sound /andP [] le_prf targets_sound.
+          move: (inhabit_cover_sound targets C (negbT isOmega__C) targets_sound).
+          case: (inhabit_cover Gamma targets C) => [] nextFailed nextTargets.
+          case: nextFailed => //=.
+          move => nextTargets_sound.
+          split => //.
+            by apply /andP; split.
+  Qed.
+
+  Definition lhs (rule: @Rule Combinator Constructor): @IT Constructor :=
+    match rule with
+    | RuleFail A => A
+    | RuleCombinator A _ => A
+    | RuleApply A _ _ => A
+    end.
+    
+  Fixpoint grammarTypes (srcs: seq (@IT Constructor)) (tgt: @IT Constructor): seq (@IT Constructor) :=
+    if srcs is [:: src & srcs]
+    then [:: src , tgt & grammarTypes srcs (src -> tgt)]
+    else [:: tgt ].
+
+  Definition maxTypes (A: @IT Constructor): seq (@IT Constructor) :=
+    flatten (map (fun c => flatten (map (fun ms => flatten (map (fun m => grammarTypes m.1 m.2 ++ grammarTypes m.1 A)
+                                                          (filterMergeMultiArrows _ (subseqs ms))))
+                                     (SplitCtxt Gamma c)))
+                 (enum Combinator)).
+
+  Definition recursiveTargets (G: @TreeGrammar Combinator Constructor): seq (@IT Constructor) :=
+    pmap (fun r => match r with
+                | RuleApply _ _ C => Some C
+                | RuleCombinator A _ => Some A
+                | _ => None
+                end) G.
+
+  Lemma grammarTypes_src_mem: forall src srcs tgt, src \in srcs -> src \in grammarTypes srcs tgt.
+  Proof.
+    move => src1.
+    elim => // src2 srcs IH tgt.
+    rewrite /= in_cons.
+    move => /orP.
+    case.
+    - move => /eqP ->.
+        by apply: mem_head.
+    - move => /(IH (src2 -> tgt)).
+      rewrite in_cons in_cons => ->.
+        by rewrite orbT orbT.
+  Qed.
+
+  Lemma commitMultiArrow_subset:
+    forall (Delta: seq (@IT Constructor)) G c srcs tgt,
+      {subset (undup (recursiveTargets G)) <= Delta} ->
+      {subset grammarTypes srcs tgt <= Delta} ->
+      {subset (undup (recursiveTargets (commitMultiArrow G c srcs tgt))) <= Delta}.
+  Proof.
+    move => Delta G c srcs.
+    move: G.
+    elim: srcs.
+    - move => G tgt /= targets_subset inprf__tgt.
+      case: (tgt \in recursiveTargets G) => //.
+      move => A.
+      rewrite in_cons.
+      move => /orP.
+      case.
+      + move => /eqP ->.
+        apply: inprf__tgt.
+          by rewrite mem_seq1.
+      + by move => /targets_subset.
+    - move => /= src srcs IH G tgt G_prf inprf__srctgt.
+      apply: IH.
+      + rewrite /=.
+        case: (src \in recursiveTargets G) => //.
+        move => x /orP.
+        case.
+        * move => /eqP ->.
+          apply: inprf__srctgt.
+            by rewrite in_cons eq_refl.
+        * by move => /G_prf.
+      + move => x inprf.
+        apply: inprf__srctgt.
+          by rewrite in_cons in_cons inprf orbT orbT.
+  Qed.
+
+  Lemma commitUpdates_subset:
+    forall (Delta: seq (@IT Constructor)) G currentTarget c (ms : seq (@MultiArrow Constructor)),
+      {subset (undup (recursiveTargets G)) <= Delta} ->
+      (forall m,  m \in ms -> {subset (grammarTypes m.1 currentTarget) <= Delta}) ->
+      {subset (undup (recursiveTargets (commitUpdates G currentTarget c ms))) <= Delta}.
+  Proof.
+    move => Delta G currentTarget c ms.
+    move: G.
+    elim: ms => // [] [] srcs tgt ms IH G subset__G subset__ms.
+    rewrite /=.
+    apply: IH.
+    - apply: commitMultiArrow_subset => //.
+      apply: (subset__ms (srcs, tgt)).
+        by rewrite in_cons eq_refl.
+    - move => m inprf__m.
+      apply: subset__ms.
+        by rewrite in_cons inprf__m orbT.
+  Qed.
+  
+  Lemma accumulateCovers_subset:
+    forall c targets b currentTarget initialTarget,
+      (currentTarget \in [:: initialTarget & (recursiveTargets targets)]) ->
+      {subset (undup (recursiveTargets targets)) <= maxTypes initialTarget} ->
+      {subset
+         (undup (recursiveTargets
+                   (accumulateCovers Gamma currentTarget (primeFactors currentTarget) (targets, b) c).1)) <=
+       maxTypes initialTarget}.
+  Proof.
+    move => c targets b currentTarget initialTarget currentTarget_member.
+    rewrite /accumulateCovers.
+    move: (coverMachine ([::],
+                         map (fun ms =>
+                                Cover (map (fun m => (m, filter (checkSubtypes m.2)
+                                                             (primeFactors currentTarget))) ms)
+                                      (primeFactors currentTarget))
+                             (SplitCtxt Gamma c))) => [] covers steps.
+    move: (semantics_mergeComponents _ _ (covers, [::]) steps).
+    rewrite /sound.
+    move => /allP /(fun prf x inprf => prf x (mem_subseq (reduction_subseq _ _) inprf)).    
+    move: steps => _.
+    case: covers => // m covers prf prfs.
+    apply: commitUpdates_subset => //.
+    move: prf.
+    rewrite [([::], _).1]/= [seq.size [::]]/= subn0 take_size.
+    move => prf.
+    move => [] srcs tgt /prf.
+    rewrite [([::], _).2]/= -map_comp.
+    have: ((fun i => (filterMergeMultiArrows _ (subseqs (mergeComponentsOf Constructor i))))
+             \o (fun ms =>
+                   Cover (map (fun m => (m, filter (checkSubtypes m.2)
+                                                (primeFactors currentTarget))) ms)
+                         (primeFactors currentTarget))
+           =1 (fun ms => filterMergeMultiArrows _ (subseqs ms))).
+    { move => ms /=.
+      rewrite -map_comp.
+      apply f_equal.
+      apply f_equal.
+        by apply: map_id. }
+    move => /eq_map ->.
+    rewrite /maxTypes.
+    move => inprf__srcstgt src inprf__src.
+    apply /flatten_mapP.
+    exists c.
+    - by rewrite mem_enum.
+    - apply /flattenP.
+      move: inprf__srcstgt => /flatten_mapP [] ms inprf__ms inprf__srcstgt.
+      exists (flatten (map (fun m => grammarTypes m.1 m.2 ++ grammarTypes m.1 initialTarget) (filterMergeMultiArrows _ (subseqs ms)))).
+      + apply /mapP.
+          by (exists ms).
+      + apply /flatten_mapP.
+        exists (srcs, tgt) => //.
+        rewrite mem_cat.
+        apply /orP.
+        move: inprf__src currentTarget_member.
+        case currentTarget__eq: (currentTarget == initialTarget).
+        * rewrite (eqP currentTarget__eq).
+            by move => * /=; right.
+        * rewrite in_cons currentTarget__eq orFb.
+          rewrite -[_ \in recursiveTargets _]mem_undup.
+          move => inprf__src /prfs.
+
+        left.
+        rewrite /=.
+        apply: grammarTypes_src_mem.
+  Qed.
+
+
+  Lemma foldl_accumulateCovers_subset:
+     forall targets b currentTarget,
+      {subset (undup (recursiveTargets targets)) <= [:: currentTarget & maxTypes]} ->
+      {subset
+         (undup (recursiveTargets
+                   (foldl (accumulateCovers Gamma currentTarget (primeFactors currentTarget))
+                          (targets, b) (enum Combinator)).1)) <=
+       [:: currentTarget & maxTypes]}.
+  Proof.
+    elim: (enum Combinator) => // c combinators IH targets b currentTarget prf.
+    rewrite (foldl_cat _ _ [:: c]).
+    move: (accumulateCovers_subset c targets b currentTarget prf).
+    rewrite [accumulateCovers _ _ _]lock /= -lock.
+    case: (accumulateCovers Gamma currentTarget (primeFactors currentTarget) (targets, b) c).
+    move => nextTargets failed nextTargets_subeset.
+      by apply: IH.
+  Qed.
+
+  Lemma pmap_cat {T1 T2: Type}: forall (f: T1 -> option T2) xs ys, pmap f (xs ++ ys) = pmap f xs ++ pmap f ys.
+  Proof.
+    move => f.
+    elim => //= x xs IH ys.
+    rewrite IH.
+      by case: (f x).
+  Qed.
+
+  Lemma inhabit_cover_subset:
+    forall targets currentTarget,
+      {subset (undup (recursiveTargets targets)) <= [:: currentTarget & maxTypes]} ->
+      {subset (undup (recursiveTargets
+                        (inhabit_cover Gamma targets currentTarget).2)) <=
+       [:: currentTarget & maxTypes]}.
+  Proof.
+    move => targets currentTarget targets_subset.
+    rewrite /inhabit_cover.
+    move: (foldl_accumulateCovers_subset [::] true currentTarget (mem_subseq (sub0seq _))).
+    case: (foldl (accumulateCovers Gamma currentTarget (primeFactors currentTarget))
+                 ([::], true) (enum Combinator)).
+    move => nextTargets failed.
+    case: failed => // nextTargets_subset.
+    rewrite /recursiveTargets pmap_cat.
+    move => A.
+    rewrite mem_undup mem_cat.
+    move => /orP.
+    case.
+    - rewrite -mem_
+                 undup.
+        by apply: targets_subset.
+    - rewrite -mem_undup.
+        by apply: nextTargets_subset.
+  Qed.
+
+  Lemma inhabitation_step_subset:
+    forall tgt stable targets,
+      {subset (undup (map lhs stable)) <= [:: tgt & maxTypes]} ->
+      {subset (undup (recursiveTargets targets)) <= [:: tgt & maxTypes]} ->
+      {subset (undup (map lhs (inhabitation_step Gamma stable targets).1)) <= [:: tgt & maxTypes]} /\
+      {subset (undup (recursiveTargets (inhabitation_step Gamma stable targets).2)) <= [:: tgt & maxTypes]}.
+  Proof.
+    move => tgt stable.
+    rewrite /inhabitation_step.
+    case => //.
+    case.
+    - move => A targets stable_subset targets_subset.
+      split => //.
+      rewrite /=.
+      move => B.
+      rewrite mem_undup.
+      rewrite /recursiveTargets.
+      move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP targets_eq inprf.
+      apply: targets_subset.
+      rewrite mem_undup /= targets_eq /recursiveTargets pmap_cat mem_cat.
+      apply /orP.
+        by right.
+    - move => A c targets stable_subset targets_subset.
+      split.
+      + case inprf: (RuleCombinator A c \in stable) => //.
+        
+
+
+
+
+  Lemma inhabitation_step_stable_size:
+    forall stable targets,
+      all (fun 
+      seq.size 
 
   
+
 
 
 
