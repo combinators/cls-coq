@@ -348,7 +348,25 @@ Section FCLProperties.
       by apply: BCD__Sub.
   Qed.
 
+  Definition typeCheck Gamma (M: Term) (A: IT): bool :=
+    checkSubtypes (minimalType Gamma M) A.
+
+  Lemma fclP : forall Gamma M A, reflect [FCL Gamma |- M : A] (typeCheck Gamma M A).
+  Proof.
+    move => Gamma M A.
+    case checks: (typeCheck Gamma M A).
+    - constructor.
+      apply: FCL__Sub; first by apply: minimalType_sound.
+        by apply /subtypeMachineP.
+    - constructor.
+      move => prf.
+      move: (minimalType_minimal _ _ _ prf) => /subtypeMachineP.
+      move: checks.
+      rewrite /typeCheck.
+        by move => ->.
+  Qed.
 End FCLProperties.
+
 Arguments FCL_Var_le [Combinator Constructor].
 Arguments FCL_MP_inv [Combinator Constructor].
 Arguments FCL_normalized_ind [Combinator Constructor].
