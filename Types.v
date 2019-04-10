@@ -1,6 +1,7 @@
 Require Import PeanoNat.
 Require Import Coq.Arith.Wf_nat.
 From mathcomp Require Import all_ssreflect.
+Require Import PreOrders.
 
 Set Bullet Behavior "Strict Subproofs".
 
@@ -134,75 +135,8 @@ Proof.
 Qed.
 Arguments bigcap_cons [T ctor F A Delta].
 
-Module Constructor.
-  Definition ctor_preorder (ctor: Type) := (ctor -> ctor -> bool)%type.
-  Definition preorder_reflexive (ctor: Type) (lessOrEqual: ctor_preorder ctor): Type :=
-    forall c, lessOrEqual c c = true.
-
-  Definition preorder_transitive (ctor: Type) (lessOrEqual: ctor_preorder ctor): Type :=
-    forall (c: ctor) (d: ctor) (e: ctor),
-      lessOrEqual c d && lessOrEqual d e ==> lessOrEqual c e.
-
-  Record mixin_of (ctor: Type): Type :=
-    Mixin {
-        lessOrEqual : ctor_preorder ctor;
-        _: preorder_reflexive ctor lessOrEqual;
-        _: preorder_transitive ctor lessOrEqual
-      }.
-
-  Section ClassDef.
-    Record class_of (C: Type) :=
-      Class {
-          base: Countable.class_of C;
-          mixin: mixin_of C
-        }.
-    Local Coercion base : class_of >-> Countable.class_of.
-    Structure type: Type := Pack { sort : Type; _ : class_of sort }.
-    Local Coercion sort : type >-> Sortclass.
-    Variables (T: Type) (cCtor: type).
-    Definition class := let: Pack _ c as cCtor' := cCtor return class_of cCtor' in c.
-    Definition clone c of phant_id class c := @Pack T c.
-    Let xT := let: Pack T _ := cCtor in T.
-    Notation xclass := (class : class_of xT).
-    Definition pack m :=
-      fun b bT & phant_id (Countable.class bT) b => Pack _ (@Class T b m).
-    Definition eqType := Eval hnf in @Equality.Pack cCtor xclass xT.
-    Definition choiceType := Eval hnf in  @Choice.Pack cCtor xclass xT.
-    Definition countType := Eval hnf in @Countable.Pack cCtor xclass xT.
-  End ClassDef.
-
-  Module Import Exports.
-    Coercion base : class_of >-> Countable.class_of.
-    Coercion mixin: class_of >-> mixin_of.
-    Coercion sort : type >-> Sortclass.
-    Coercion eqType : type >-> Equality.type.
-    Canonical eqType.
-    Coercion choiceType : type >-> Choice.type.
-    Canonical choiceType.
-    Coercion countType : type >-> Countable.type.
-    Canonical countType.
-
-    Notation ctor := type.
-    Notation CtorType C m := (@pack C m _ _ id).
-    Notation CtorMixin := Mixin.
-
-    Notation "[ 'ctorType' 'of' T 'for' cT ]" :=
-      (@clone T cT _ idfun) (at level 0, format "[ 'ctorType' 'of' T 'for' cT ]") : form_scope.
-    Notation "[ 'ctorType' 'of' T ]" :=
-      (@clone T _ _ id) (at level 0, format "[ 'ctorType' 'of' T ]") : form_scope.
-  End Exports.
-End Constructor.
-Export Constructor.Exports.
-
-Definition lessOrEqual c := Constructor.lessOrEqual _ (Constructor.class c).
-Arguments lessOrEqual [c].
+Notation ctor := preOrdered.
 Notation "[ 'ctor' c <= d ]" := (lessOrEqual c d) (at level 0, c at next level): it_scope.
-Lemma preorder_reflexive c: Constructor.preorder_reflexive _ (@lessOrEqual c).
-Proof. by case c => ? [] ? []. Qed.
-Arguments preorder_reflexive [c].
-Lemma preorder_transitive c: Constructor.preorder_transitive _ (@lessOrEqual c).
-Proof. by case c => ? [] ? []. Qed.
-Arguments preorder_transitive [c].
 
 Reserved Notation "[ 'bcd' A <= B ]" (at level 0, A at next level).
 (** BCD Rules with Products and distributing covariant constructors. **)
@@ -5003,19 +4937,6 @@ Arguments primeFactors_minimal [Constructor].
   (**)
 End Split. *)
 
-Section NatConstructors.
-  Lemma leq_transb: forall (m n p: nat), (m <= n) && (n <= p) ==> (m <= p).
-  Proof.
-    move => m n p.
-    move: (@leq_trans n m p).
-    case (m <= n) => //=.
-    case (n <= p) => //= prf.
-      by apply: prf.
-  Qed.
-
-  Definition nat_ctorMixin := Constructor.Mixin nat leq leqnn leq_transb.
-  Canonical nat_ctorType := Eval hnf in CtorType nat nat_ctorMixin.
-End NatConstructors.
 
 Section PrimeFactorTest.
   Definition A := Ctor 1 Omega -> Ctor 1 Omega.

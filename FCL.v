@@ -4,6 +4,7 @@ Require Import Coq.Arith.Wf_nat.
 Require Import Coq.Wellfounded.Inverse_Image.
 Require Import Coq.Wellfounded.Lexicographic_Product.
 From mathcomp Require Import all_ssreflect.
+Require Import PreOrders.
 Require Import Types.
 Require Import Cover.
 
@@ -17,7 +18,7 @@ Import EqNotations.
 Reserved Notation "[ 'FCL' Gamma |- M : A ]" (at level 0, M at level 50).
 Reserved Notation "M @ N" (at level 50, left associativity).
 
-Definition context_of (combT: finType) (ctorT: ctor) (_: phantom Type (Finite.sort combT)) (_: phantom Type (Constructor.sort ctorT)) :=
+Definition context_of (combT: finType) (ctorT: ctor) (_: phantom Type (Finite.sort combT)) (_: phantom Type (PreOrdered.sort ctorT)) :=
   {ffun combT -> @IT ctorT}.
 Notation Ctxt Combinator Constructor :=
   (context_of _ _ (Phantom Type Combinator) (Phantom Type Constructor)).
@@ -378,12 +379,12 @@ Section ConstructorSum.
     | _, _ => false
     end.
 
-  Lemma leq_sum_refl: Constructor.preorder_reflexive ctorSum_countType leq_sum.
+  Lemma leq_sum_refl: PreOrdered.preorder_reflexive ctorSum_countType leq_sum.
   Proof.
     move => [] c; by apply: preorder_reflexive.
   Qed.
 
-  Lemma leq_sum_trans: Constructor.preorder_transitive ctorSum_countType leq_sum.
+  Lemma leq_sum_trans: PreOrdered.preorder_transitive ctorSum_countType leq_sum.
   Proof.
     move => [] c1 [] c2 [] c3 //=.
     - by apply: preorder_transitive.
@@ -392,10 +393,10 @@ Section ConstructorSum.
     - by apply: preorder_transitive.
   Qed.
 
-  Definition sum_ctorMixin :=
-    Constructor.Mixin ctorSum_countType
-                      leq_sum leq_sum_refl leq_sum_trans.
-  Canonical sum_ctorType := Eval hnf in CtorType ctorSum_countType sum_ctorMixin.
+  Definition sum_preOrderedMixin :=
+    PreOrdered.Mixin ctorSum_countType
+                     leq_sum leq_sum_refl leq_sum_trans.
+  Canonical sum_preOrderedType := Eval hnf in PreOrderedType ctorSum_countType sum_preOrderedMixin.
 End ConstructorSum.
 
 Module SplitTypeUniverse.  
@@ -437,10 +438,10 @@ Module SplitTypeUniverse.
   Section ClassDef.
     Record class_of (C: Type) :=
       Class {
-          base: Constructor.class_of C;
-          mixin: mixin_of (Constructor.Pack C base)
+          base: PreOrdered.class_of C;
+          mixin: mixin_of (PreOrdered.Pack C base)
         }.
-    Local Coercion base : class_of >-> Constructor.class_of.
+    Local Coercion base : class_of >-> PreOrdered.class_of.
     Structure type := Pack { sort : Type; _ : class_of sort }.
     Local Coercion sort : type >-> Sortclass.
     Variables (T: Type) (splitUniverse: type).
@@ -448,17 +449,17 @@ Module SplitTypeUniverse.
     Definition clone c of phant_id class c := @Pack T c.
     Let xT := let: Pack T _ := splitUniverse in T.
     Notation xclass := (class : class_of xT).
-    Definition pack b0 (m0: mixin_of (Constructor.Pack T b0)) :=
-      fun bT b & phant_id (Constructor.class bT) b =>
+    Definition pack b0 (m0: mixin_of (PreOrdered.Pack T b0)) :=
+      fun bT b & phant_id (PreOrdered.class bT) b =>
         fun m & phant_id m0 m => Pack T (@Class T b m).
-    Definition eqType := Eval hnf in @Equality.Pack splitUniverse xclass xT.
-    Definition choiceType := Eval hnf in  @Choice.Pack splitUniverse xclass xT.
-    Definition countType := Eval hnf in @Countable.Pack splitUniverse xclass xT.
-    Definition ctor := Eval hnf in @Constructor.Pack splitUniverse xclass.
+    Definition eqType := Eval hnf in @Equality.Pack splitUniverse xclass.
+    Definition choiceType := Eval hnf in  @Choice.Pack splitUniverse xclass.
+    Definition countType := Eval hnf in @Countable.Pack splitUniverse xclass.
+    Definition preOrdered := Eval hnf in @PreOrdered.Pack splitUniverse xclass.
   End ClassDef.
 
   Module Import Exports.
-    Coercion base : class_of >-> Constructor.class_of.
+    Coercion base : class_of >-> PreOrdered.class_of.
     Coercion mixin: class_of >-> mixin_of.
     Coercion sort : type >-> Sortclass.
     Coercion eqType : type >-> Equality.type.
@@ -467,8 +468,8 @@ Module SplitTypeUniverse.
     Canonical choiceType.
     Coercion countType : type >-> Countable.type.
     Canonical countType.
-    Coercion ctor : type >-> Constructor.type.
-    Canonical ctor.
+    Coercion preOrdered : type >-> PreOrdered.type.
+    Canonical preOrdered.
 
     Notation splitTypeUniverse := type.
     Notation SplitTypeUniverseMixin := Mixin.
@@ -530,7 +531,7 @@ Module SplitContextPair.
       Class {
           combinator_base: Finite.class_of Combinator;
           universe_base: SplitTypeUniverse.class_of Constructor;          
-          mixin: mixin_of (@Finite.Pack Combinator combinator_base Combinator)
+          mixin: mixin_of (@Finite.Pack Combinator combinator_base)
                           (SplitTypeUniverse.Pack Constructor universe_base)
         }.
     Local Coercion combinator_base : class_of >-> Finite.class_of.
@@ -544,27 +545,27 @@ Module SplitContextPair.
     Let xCombinator := (let: Pack Combinator _ _ := splitCtxts in Combinator).
     Let xConstructor := (let: Pack _ Constructor _ := splitCtxts in Constructor).
     Notation xclass := (class : class_of xCombinator xConstructor).
-    Definition pack b0 b1 (m0: mixin_of (@Finite.Pack Combinator b0 Combinator) (SplitTypeUniverse.Pack Constructor b1)) :=
+    Definition pack b0 b1 (m0: mixin_of (@Finite.Pack Combinator b0) (SplitTypeUniverse.Pack Constructor b1)) :=
       fun bCombinator bcomb & phant_id (Finite.class bCombinator) bcomb =>
         fun bConstructor bctor & phant_id (SplitTypeUniverse.class bConstructor) bctor =>
           fun m & phant_id m0 m => Pack Combinator Constructor (@Class Combinator Constructor bcomb bctor m).
 
-    Definition combEqType := Eval hnf in @Equality.Pack xCombinator xclass xCombinator.
-    Definition combChoiceType := Eval hnf in  @Choice.Pack xCombinator xclass xCombinator.
-    Definition combCountType := Eval hnf in  @Countable.Pack xCombinator xclass xCombinator.
-    Definition finType := Eval hnf in  @Finite.Pack xCombinator xclass xCombinator.
+    Definition combEqType := Eval hnf in @Equality.Pack xCombinator xclass.
+    Definition combChoiceType := Eval hnf in  @Choice.Pack xCombinator xclass.
+    Definition combCountType := Eval hnf in  @Countable.Pack xCombinator xclass.
+    Definition finType := Eval hnf in  @Finite.Pack xCombinator xclass.
 
-    Definition ctorEqType := Eval hnf in @Equality.Pack xConstructor (SplitTypeUniverse.base _ xclass) xConstructor.
-    Definition ctorCountType := Eval hnf in @Countable.Pack xConstructor (SplitTypeUniverse.base _ xclass) xConstructor.
-    Definition ctor := Eval hnf in  @Constructor.Pack xConstructor xclass.
+    Definition ctorEqType := Eval hnf in @Equality.Pack xConstructor (SplitTypeUniverse.base _ xclass).
+    Definition ctorCountType := Eval hnf in @Countable.Pack xConstructor (SplitTypeUniverse.base _ xclass).
+    Definition preOrdered := Eval hnf in  @PreOrdered.Pack xConstructor xclass.
     Definition splitTypeUniverse := (SplitTypeUniverse.Pack xConstructor xclass).
   End ClassDef.
 
   Module Import Exports.
     Coercion universe_base : class_of >-> SplitTypeUniverse.class_of.
     Coercion mixin: class_of >-> mixin_of.
-    Coercion ctor : type >-> Constructor.type.
-    Canonical ctor.
+    Coercion preOrdered : type >-> PreOrdered.type.
+    Canonical preOrdered.
     Coercion splitTypeUniverse: type >-> SplitTypeUniverse.type.
     Canonical splitTypeUniverse.
     Coercion finType: type >-> Finite.type.
@@ -596,26 +597,6 @@ Lemma pure_context2:
   forall (Gammas: splitCtxtPair),
       SplitContextPair.pure_context _ _ (ctxt2 Gammas) (@inPartition2 Gammas).
 Proof. by case => [] ? ? [] ? ? []. Qed.
-
-Section DiagCountTypeCtor.
-  Variable Constructor: countType.  
-
-  Lemma eqop_refl: Constructor.preorder_reflexive Constructor eq_op.
-  Proof.
-    move => x.
-      by rewrite eq_refl.
-  Qed.
-
-  Lemma eqop_trans: Constructor.preorder_transitive Constructor eq_op.
-  Proof.
-    move => x y z.
-    apply /implyP.
-      by move => /andP [] /eqP ->.
-  Qed.
-
-  Definition diag_ctorMixin := Constructor.Mixin Constructor eq_op eqop_refl eqop_trans.
-  Definition diag_ctorType := Eval hnf in CtorType Constructor diag_ctorMixin.
-End DiagCountTypeCtor.
 
 Fixpoint isArrow {C: ctor} (A: @IT C): bool :=
   match A with
@@ -652,10 +633,10 @@ Module ITHomomorphism.
   Section ClassDef.
     Structure class_of (Domain Range: Type) :=
       Class {
-          dom_base: Constructor.class_of Domain;
-          rng_base: Constructor.class_of Range;
-          mixin: mixin_of (Constructor.Pack Domain dom_base)
-                          (Constructor.Pack Range rng_base)
+          dom_base: PreOrdered.class_of Domain;
+          rng_base: PreOrdered.class_of Range;
+          mixin: mixin_of (PreOrdered.Pack Domain dom_base)
+                          (PreOrdered.Pack Range rng_base)
         }.
     Structure type := Pack { domain_sort : Type; range_sort: Type; _ : class_of domain_sort range_sort }.
     Variables (Domain Range: Type) (itHom: type).
@@ -666,13 +647,13 @@ Module ITHomomorphism.
     Let xDomain := let: Pack Domain _ _ := itHom in Domain.
     Let xRange := let: Pack _ Range _ := itHom in Range.
     Notation xclass := (class : class_of xDomain xRange).
-    Definition pack b0 b1 (m0: mixin_of (@Constructor.Pack Domain b0) (Constructor.Pack Range b1)) :=
-      fun bDomain bdom & phant_id (Constructor.class bDomain) bdom =>
-        fun bRange brng & phant_id (Constructor.class bRange) brng =>
+    Definition pack b0 b1 (m0: mixin_of (@PreOrdered.Pack Domain b0) (@PreOrdered.Pack Range b1)) :=
+      fun bDomain bdom & phant_id (PreOrdered.class bDomain) bdom =>
+        fun bRange brng & phant_id (PreOrdered.class bRange) brng =>
           fun m & phant_id m0 m => Pack Domain Range (@Class Domain Range bdom brng m).
 
-    Definition domain := Eval hnf in @Constructor.Pack xDomain (dom_base _ _ xclass).
-    Definition range := Eval hnf in @Constructor.Pack xRange (rng_base _ _ xclass).
+    Definition domain := Eval hnf in @PreOrdered.Pack xDomain (dom_base _ _ xclass).
+    Definition range := Eval hnf in @PreOrdered.Pack xRange (rng_base _ _ xclass).
   End ClassDef.
 
   Module Import Exports.
@@ -694,9 +675,9 @@ End ITHomomorphism.
 Export ITHomomorphism.Exports.
 
 Definition domain_base (f: itHom): ctor :=
-  @Constructor.Pack _ (@ITHomomorphism.dom_base _ _ (@ITHomomorphism.class f)).
+  @PreOrdered.Pack _ (@ITHomomorphism.dom_base _ _ (@ITHomomorphism.class f)).
 Definition range_base (f: itHom): ctor :=
-  @Constructor.Pack _ (@ITHomomorphism.rng_base _ _ (@ITHomomorphism.class f)).
+  @PreOrdered.Pack _ (@ITHomomorphism.rng_base _ _ (@ITHomomorphism.class f)).
 Lemma subtype_hom: forall (f: itHom), @ITHomomorphism.subtype_hom _ _ f.
 Proof. by move => [] ? ? [] ? ? []. Qed.
 Lemma arrow_hom: forall (f: itHom), @ITHomomorphism.arrow_hom _ _ f.
@@ -710,11 +691,12 @@ Proof. by move => [] ? ? [] ? ? []. Qed.
 
 Section ContextCoproduct.
   Variables (Constructor1 Constructor2: ctor).
-  Definition LiftedConstructor: ctor := sum_ctorType (diag_ctorType [countType of bool])
-                                                     (sum_ctorType Constructor1 Constructor2).
+  Definition LiftedConstructor: ctor := sum_preOrderedType
+                                          (diag_preOrderedType [countType of bool])
+                                          (sum_preOrderedType Constructor1 Constructor2).
 
   Fixpoint lift {C: ctor}
-             (lift_ctor: C -> sum_ctorType Constructor1 Constructor2)
+             (lift_ctor: C -> sum_preOrderedType Constructor1 Constructor2)
              (isLeft: bool)
              (A: @IT C) {struct A}: @IT LiftedConstructor :=
     match A with
@@ -747,7 +729,7 @@ Section ContextCoproduct.
   Proof. done. Qed.
 
   Fixpoint unlift {C: ctor}
-           (unlift_ctor: sum_ctorType Constructor1 Constructor2 -> option C)
+           (unlift_ctor: sum_preOrderedType Constructor1 Constructor2 -> option C)
            (A: @IT LiftedConstructor) {struct A}: option (@IT C) :=
     match A with
     | Omega => Some Omega
@@ -779,11 +761,11 @@ Section ContextCoproduct.
     - by move => /= ? -> ? ->.
   Qed.
 
-  Definition unlift_ctor1: sum_ctorType Constructor1 Constructor2 -> option Constructor1 :=
+  Definition unlift_ctor1: sum_preOrderedType Constructor1 Constructor2 -> option Constructor1 :=
     (fun c => if c is inl x then Some x else None).
   Definition unlift1 := unlift unlift_ctor1.
 
-  Definition unlift_ctor2: sum_ctorType Constructor1 Constructor2 -> option Constructor2 :=
+  Definition unlift_ctor2: sum_preOrderedType Constructor1 Constructor2 -> option Constructor2 :=
     (fun c => if c is inr x then Some x else None).
   Definition unlift2 := unlift unlift_ctor2.
 
@@ -1581,9 +1563,10 @@ End ContextCoproduct.
 
 
 Definition sum1_itHomMixin (Constructor1 Constructor2: ctor):
-    ITHomomorphism.mixin_of (Constructor.Pack Constructor1 (Constructor.class Constructor1))
-                            (Constructor.Pack (LiftedConstructor Constructor1 Constructor2)
-                                              (Constructor.class (LiftedConstructor Constructor1 Constructor2))).
+    ITHomomorphism.mixin_of (PreOrdered.Pack Constructor1 (PreOrdered.class Constructor1))
+                            (PreOrdered.Pack (LiftedConstructor Constructor1 Constructor2)
+                                             (PreOrdered.class
+                                                (LiftedConstructor Constructor1 Constructor2))).
 Proof.
   move: (ITHomomorphism.Mixin _ _ (lift1 _ _) (lift1_subtype_hom _ _)
                               (@lift_arrow_hom _ Constructor2 Constructor1 inl true)
@@ -1597,9 +1580,10 @@ Canonical sum1_ITHomType {Constructor1 Constructor2: ctor} :=
   Eval hnf in ITHomType _ _ (sum1_itHomMixin Constructor1 Constructor2).
 
 Definition sum2_itHomMixin (Constructor1 Constructor2: ctor):
-    ITHomomorphism.mixin_of (Constructor.Pack Constructor2 (Constructor.class Constructor2))
-                            (Constructor.Pack (LiftedConstructor Constructor1 Constructor2)
-                                              (Constructor.class (LiftedConstructor Constructor1 Constructor2))).
+    ITHomomorphism.mixin_of (PreOrdered.Pack Constructor2 (PreOrdered.class Constructor2))
+                            (PreOrdered.Pack (LiftedConstructor Constructor1 Constructor2)
+                                             (PreOrdered.class
+                                                (LiftedConstructor Constructor1 Constructor2))).
 Proof.
   move: (ITHomomorphism.Mixin _ _ (lift2 _ _) (lift2_subtype_hom _ _)
                               (@lift_arrow_hom Constructor1 Constructor2 Constructor2 inr false)
@@ -1624,21 +1608,21 @@ Definition sum_splitTypeUniverseMixin (Constructor1 Constructor2: ctor):
 Canonical sum_splitTypeUniverseType {Constructor1 Constructor2: ctor} :=
   Eval hnf in SplitTypeUniverseType (LiftedConstructor Constructor1 Constructor2)
                                     (sum_splitTypeUniverseMixin Constructor1 Constructor2).
-                          
+
 Definition sum_splitCtxtPairMixin {Combinator: finType} {Constructor1 Constructor2: ctor}
            (Ctxt1: Ctxt Combinator Constructor1) (Ctxt2: Ctxt Combinator Constructor2):
-  SplitContextPair.mixin_of (Finite.Pack (Finite.class Combinator) (let: Finite.Pack T _ _ := Combinator in T))
+  SplitContextPair.mixin_of (Finite.Pack (Finite.class Combinator))
                             (SplitTypeUniverse.Pack
                                (LiftedConstructor Constructor1 Constructor2)
                                (SplitTypeUniverse.class (@sum_splitTypeUniverseType Constructor1 Constructor2))).
 Proof.
   move: Ctxt1 Ctxt2.
-  case: Combinator => T1 c T2.
+  case: Combinator => T c.
   move => Ctxt1 Ctxt2.
-  move: (SplitContextPair.Mixin (Finite.Pack c T1)
+  move: (SplitContextPair.Mixin (Finite.Pack c)
                                 (@sum_splitTypeUniverseType Constructor1 Constructor2)
-                                (LiftedCtxt1 _ _ _ [ffun c: Finite.Pack c T1 => Ctxt1 c])
-                                (LiftedCtxt2 _ _ _ [ffun c : Finite.Pack c T1 => Ctxt2 c])
+                                (LiftedCtxt1 _ _ _ [ffun c: Finite.Pack c => Ctxt1 c])
+                                (LiftedCtxt2 _ _ _ [ffun c : Finite.Pack c => Ctxt2 c])
                                 (pure_LiftedCtxt1 _ _ _ _) (pure_LiftedCtxt2 _ _ _ _)).
     by rewrite /LiftedConstructor /sum_splitTypeUniverseType.
 Defined.
@@ -4637,6 +4621,7 @@ Section InhabitationMachineProperties.
   Definition FCL_complete stable targets :=
     forall A, (A \in targetTypes stable) ->
          forall M, [FCL Gamma |- M : A] -> truncated_word stable targets A M.
+  (*
 
   Lemma inhabit_step_complete:
     forall stable targets,
@@ -4718,9 +4703,11 @@ Section InhabitationMachineProperties.
              
 
 
-      
+   *)
+End InhabitationMachineProperties.
 
 
+(** Archive
 
   Definition FCL_complete stable targets :=
     forall A, (A \in targetTypes stable) ->
@@ -5905,3 +5892,5 @@ Arguments ContinueCover [Constructor].
 Arguments CheckCover [Constructor].
 Arguments CheckContinueCover [Constructor].
 Hint Constructors Instruction.
+
+**)

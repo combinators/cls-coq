@@ -2,6 +2,7 @@ Require Import PeanoNat.
 Require Import Coq.Arith.Wf_nat.
 Require Import Coq.Relations.Relation_Operators.
 From mathcomp Require Import all_ssreflect.
+Require Import PreOrders.
 Require Import Types.
 
 Set Bullet Behavior "Strict Subproofs".
