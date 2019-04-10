@@ -433,20 +433,21 @@ Section FCLAlgebra.
               | inr o => Gamma__Sigma o
               end].
 
-  Definition C__FCL (s: sort Sigma) := { M : @Term Combinator | [FCL Gamma |- M : embed s] }.
+  Definition C__FCL (s: sort Sigma) := { M : @Term Combinator | (typeCheck Gamma M (embed s)) }.
 
   Definition termAction__FCL (s: sort Sigma) (x: F Sigma C__FCL s): @Term Combinator :=
     let: mkF i o args rangeprf := x in
     revApply (Var (inr o) @ (Var (inl i)))
              (rev (map (fun n => sval (args n)) (enum ('I_(arity Sigma i o))))).
 
-  Lemma proofAction__FCL: forall s x, [FCL Gamma |- termAction__FCL s x : embed s].
+  Lemma proofAction__FCL: forall s x, typeCheck Gamma (termAction__FCL s x) (embed s).
   Proof.
     move => s [] i o args range_prf.
     have size_eq: (seq.size (rev (map (fun n => sval (args n)) (enum 'I_(arity Sigma i o)))) =
                    seq.size (rev (map embed (dom Sigma i o)))).
     { do 2 rewrite size_rev size_map.
         by rewrite -cardE card_ord size_tuple. }
+    apply /fclP.
     apply: (FCL__Sub (embed (range Sigma i o))); last by apply: embed_le.    
     apply: (FCL__App Gamma (@Var Combinator (inr o) @ Var (inl i))
                    (rev (map (fun n => sval (args n)) (enum ('I_(arity Sigma i o)))))
@@ -472,7 +473,7 @@ Section FCLAlgebra.
       rewrite (@nth_enum_ord _ (Ordinal arity0) ((seq.size (enum 'I_(arity Sigma i o)) - n.+1))); last first.
       { by rewrite -cardE card_ord -subn_gt0 subnBA // addnC -addnBA // subnn. }
       move: size_eq.
-        by rewrite size_rev size_rev size_map => ->.
+        by rewrite size_rev size_rev size_map => -> /fclP.
     - rewrite nth_default; last first.
       { by rewrite size_rev size_map -cardE card_ord leqNgt arity0. }
       rewrite nth_default; last first.
@@ -510,7 +511,7 @@ Section FCLAlgebra.
   Proof.
     move => s [] M.
     rewrite -(unapply_revapply M) /= revapply_unapply.
-    move => /FCL__invApp [] srcs [] size__eq /(fun prf => prf (seq.size srcs)).
+    move => /fclP /FCL__invApp [] srcs [] size__eq /(fun prf => prf (seq.size srcs)).
     rewrite nth_default; last by rewrite size__eq.
     rewrite nth_default //.
     case: (unapply M).1 => //.

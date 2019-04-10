@@ -383,6 +383,7 @@ Arguments  minimalArrowType_le [Constructor].
 Arguments minimalType_sound [Combinator Constructor].
 Arguments  minimalArrowType_minimal [Constructor].
 Arguments minimalType_minimal [Combinator Constructor].
+Arguments typeCheck [Combinator Constructor].
 
 Section ConstructorSum.
   Variable Constructor1 Constructor2: ctor.
