@@ -1,4 +1,6 @@
 Require Import Coq.Relations.Relation_Operators.
+Require Import Coq.Relations.Operators_Properties.
+Require Import Coq.Logic.Eqdep_dec.
 From mathcomp Require Import all_ssreflect.
 Require Import PreOrders.
 Require Import Algebra.
@@ -55,7 +57,7 @@ Section AutomatonSpec.
   Definition Trace : Config -> Config -> Prop :=
     clos_refl_trans _ Step.
 
-  Variables start stop: State.
+  Variables stop: State.
 
   Section TransitionMathcompInstances.
     Definition Transition2o (t: Transition): (State * bool * State) + (State * bool * State) + (State * bool * State * State) :=
@@ -225,7 +227,8 @@ Section AutomatonSpec.
                                               (rew <- [fun n => 'I_n] transition_arity1 (index x) o in
                                                   (Ordinal (ltn0Sn 0))))
                               else True) ->
-                             {ffun forall n : 'I_(arity Sigma__Aut (index x) o), C__Aut (tnth (dom Sigma__Aut (index x) o) n)} ->
+                             {ffun forall n : 'I_(arity Sigma__Aut (index x) o),
+                                   C__Aut (tnth (dom Sigma__Aut (index x) o) n)} ->
                              C__Aut s with
       | inl tt => fun eqprf _ _ => rew eqprf in exist _ (index x) (rt_refl _ _ (stop, (index x)))
       | inr o => fun eqprf step_prf args =>
@@ -247,7 +250,387 @@ Section AutomatonSpec.
 
   
   Definition AutAlg : sigAlg Sigma__Aut := sigAlg_Type AutAction.
+
+  Variable start: Config.
+
+  Lemma sound: C__Aut start -> { i : nat * nat | Trace start (stop, i) }.
+  Proof. done. Qed.
+
+  Lemma complete:
+    forall i, Trace start (stop, i) -> exists (trace: C__Aut start), AlgGen Sigma__Aut AutAlg start trace.
+  Proof.
+    move => i /(@clos_rt_rt1n _ _ _ _) trace.
+    have: exists j, (stop, j) = (stop, i) by (exists i => //).
+    elim: trace; clear start i.
+    - move => [] start i [] j <-.
+      exists (action AutAlg (stop, j) (@mkF I Sigma__Aut C__Aut (stop, j) j (inl tt)
+                                      [ffun n => False_rect _ (notF (@ltn_ord 0 n))]
+                                      (preorder_reflexive _))).
+      constructor => /=.
+      rewrite /Sigma__Aut /arity /=.
+        by case.
+    - move => c1 c2 c3 /hasP [] t.
+      case: t.
+      + move => from useSecond to inprf step_prf prfs IH /IH [] [] i__stop steps steps__gen.
+        have @x: F Sigma__Aut C__Aut c1.
+        { apply: (fun inprf =>
+                    (@mkF I Sigma__Aut C__Aut c1 (c1.2)
+                          (inr (inr (inr (@SeqSub _ _ (Add from useSecond to) inprf)))))).
+          - by rewrite mem_filter inprf.
+          - move => inprf__o.
+            apply finfun.
+            rewrite /Sigma__Aut /arity /dom /=.
+            case; case => //= ?.
+            rewrite /tnth /=.
+            exists i__stop.
+            rewrite /Trace.
+            suff: (((to, if useSecond then (c1.2.1, c1.2.2.+1) else (c1.2.1.+1, c1.2.2))) = c2)
+              by (move => ->; exact steps).
+            move: step_prf.
+            rewrite /=.
+              by case: (from == c1.1) => // /eqP [] <-.
+          - move => ?.
+            rewrite /range /=.
+            move: step_prf.
+            rewrite /=.
+            case from__eq: (from == c1.1) => //.
+            rewrite (eqP from__eq).
+            move => _.
+            clear...
+            case: c1 => * /=.
+              by apply preorder_reflexive. }
+        exists (action AutAlg c1 x).
+        constructor.
+        move => n.
+        rewrite /x /= ffunE /dom /tnth /=.
+        case: n; case => //= _.
+        move: x => _.
+        move: step_prf.
+        rewrite /step.
+        case: (from == c1.1) => //= step_prf.
+        rewrite /ssr_suff /eq_ind_r /eq_ind.
+        move: (elimTF eqP step_prf).
+        move: (eqP step_prf) => [] -> eq_prf.
+        have: (eq_prf = erefl _).
+        { apply: UIP_dec.
+          move => x y.
+          case xy__eq: (x == y).
+          - left; by exact (eqP xy__eq).
+          - right.
+            apply /eqP.
+              by rewrite xy__eq. }
+        move => ->.
+          by rewrite /=.
+      + move => from useSecond to inprf step_prf prfs IH /IH [] [] i__stop steps steps__gen.
+        have @x: F Sigma__Aut C__Aut c1.
+        { apply: (fun inprf =>
+                    (@mkF I Sigma__Aut C__Aut c1 (if useSecond then (c1.2.1, c1.2.2.-1) else (c1.2.1.-1, c1.2.2))
+                          (inr (inr (inr (@SeqSub _ _ (Sub from useSecond to) inprf)))))).
+          - by rewrite mem_filter inprf.
+          - move => inprf__o.
+            apply finfun.
+            rewrite /Sigma__Aut /arity /dom /=.
+            case; case => //= ?.
+            rewrite /tnth /=.
+            move: inprf__o inprf => _ _.
+            exists i__stop.
+            rewrite /Trace.
+            suff: (((to, if useSecond then (c1.2.1, c1.2.2.-1) else (c1.2.1.-1, c1.2.2))) = c2)
+              by (move => ->; exact steps).
+            move: step_prf => /eqP.
+            rewrite /step /=.
+            case: (from == c1.1) => //.
+            case: useSecond.
+            + by case: (0 < c1.2.2) => //= [] [] ->.
+            + by case: (0 < c1.2.1) => //= [] [] ->.
+          - move => ?.
+            rewrite /range /=.
+            move: step_prf.
+            rewrite /=.
+            case from__eq: (from == c1.1) => //.
+            case: (useSecond) => //.
+            + move: from__eq => /eqP.
+              case c122__lt: (0 < c1.2.2) => //=.
+              move: c122__lt.
+              case: c1 => c11 [] c111 c112 /ltn_predK -> -> /= _.
+                by apply preorder_reflexive.
+            + move: from__eq => /eqP.
+              case c121__lt: (0 < c1.2.1) => //=.
+              move: c121__lt.
+              case: c1 => c11 [] c111 c112 /ltn_predK -> -> /= _.
+                by apply preorder_reflexive. }
+        exists (action AutAlg c1 x).
+        constructor.
+        move => n.
+        rewrite /x /= ffunE /dom /tnth /=.
+        case: n; case => //= _.
+        move: x => _.
+        move: step_prf.
+        rewrite /step.
+        case: (from == c1.1) => //= step_prf.
+        rewrite /ssr_suff /eq_ind_r /eq_ind.
+        move: (elimTF eqP step_prf).
+        move: (eqP step_prf) => [].
+        move: step_prf inprf => _ _.
+        case: useSecond => /=.
+        * case: (0 < c1.2.2) => //.
+          move => [] -> eq_prf.
+          have: (eq_prf = erefl _).
+          { apply: UIP_dec.
+            move => x y.
+            case xy__eq: (x == y).
+            - left; by exact (eqP xy__eq).
+            - right.
+              apply /eqP.
+                by rewrite xy__eq. }
+          move => ->.
+            by rewrite /=.
+        * case: (0 < c1.2.1) => //.
+          move => [] -> eq_prf.
+          have: (eq_prf = erefl _).
+          { apply: UIP_dec.
+            move => x y.
+            case xy__eq: (x == y).
+            - left; by exact (eqP xy__eq).
+            - right.
+              apply /eqP.
+                by rewrite xy__eq. }
+          move => ->.
+            by rewrite /=.
+      + move => from useSecond to_zero to_succ inprf step_prf prfs IH /IH [] [] i__stop steps steps__gen.
+        have @x: F Sigma__Aut C__Aut c1.
+        { apply: (fun inprf =>
+                    (@mkF I Sigma__Aut C__Aut c1
+                          (if useSecond
+                           then if c1.2.2 == 0
+                                then c1.2
+                                else (c1.2.1, c1.2.2.-1)
+                           else if c1.2.1 == 0
+                                then c1.2
+                                else (c1.2.1.-1, c1.2.2))
+                          (if useSecond
+                           then if c1.2.2 == 0
+                                then inr (inl (@SeqSub _ _ (Tst from useSecond to_zero to_succ) inprf))
+                                else inr (inr (inl (@SeqSub _ _ (Tst from useSecond to_zero to_succ) inprf)))
+                           else if c1.2.1 == 0
+                                then inr (inl (@SeqSub _ _ (Tst from useSecond to_zero to_succ) inprf))
+                                else inr (inr (inl (@SeqSub _ _ (Tst from useSecond to_zero to_succ) inprf)))))).
+          - by rewrite mem_filter inprf.
+          - move: inprf step_prf => _.
+            rewrite /step.
+            case: useSecond.
+            + case c122__eq: (c1.2.2 == 0).
+              * case from__eq: (from == c1.1) => // /eqP [] c2__eq.
+                rewrite /Sigma__Aut /arity /dom /=.
+                move => _.
+                apply: finfun.
+                case; case => //= ?.
+                exists i__stop.
+                rewrite /tnth /= -(eqP c122__eq).
+                clear IH prfs steps__gen.
+                move: c2__eq steps.
+                  by case: c2 => ? [] ? ? [] -> ->.
+              * case from__eq: (from == c1.1) => // /eqP [] c2__eq.
+                rewrite /Sigma__Aut /arity /dom /=.
+                move => _.
+                apply: finfun.
+                case; case => //= ?.
+                exists i__stop.
+                rewrite /tnth /=.
+                move: c122__eq => /neq0_lt0n /ltn_predK ->.
+                clear IH prfs steps__gen.
+                move: c2__eq steps.
+                  by case: c2 => ? [] ? ? [] -> ->.
+            + case c121__eq: (c1.2.1 == 0).
+              * case from__eq: (from == c1.1) => // /eqP [] c2__eq.
+                rewrite /Sigma__Aut /arity /dom /=.
+                move => _.
+                apply: finfun.
+                case; case => //= ?.
+                exists i__stop.
+                rewrite /tnth /= -(eqP c121__eq).
+                clear IH prfs steps__gen.
+                move: c2__eq steps.
+                  by case: c2 => ? [] ? ? [] -> ->.
+              * case from__eq: (from == c1.1) => // /eqP [] c2__eq.
+                rewrite /Sigma__Aut /arity /dom /=.
+                move => _.
+                apply: finfun.
+                case; case => //= ?.
+                exists i__stop.
+                rewrite /tnth /=.
+                move: c121__eq => /neq0_lt0n /ltn_predK ->.
+                clear IH prfs steps__gen.
+                move: c2__eq steps.
+                  by case: c2 => ? [] ? ? [] -> ->.
+          - move => inprf__o.
+            rewrite /range /=.
+            move: step_prf.
+            rewrite /=.
+            case from__eq: (from == c1.1) => //.
+            move: inprf__o.
+            case: (useSecond).
+            + case c122__eq: (c1.2.2 == 0).
+              * rewrite /=.
+                move => _ _.
+                rewrite -(eqP c122__eq) (eqP from__eq).
+                clear...
+                case: c1 => ? [] ? ? /=.
+                  by apply: preorder_reflexive.
+              * rewrite /=.
+                move => _ _.
+                move: c122__eq => /neq0_lt0n /ltn_predK ->.
+                rewrite (eqP from__eq).
+                clear...
+                case: c1 => ? [] ? ? /=.
+                  by apply: preorder_reflexive.
+            + case c121__eq: (c1.2.1 == 0).
+              * rewrite /=.
+                move => _ _.
+                rewrite -(eqP c121__eq) (eqP from__eq).
+                clear...
+                case: c1 => ? [] ? ? /=.
+                  by apply: preorder_reflexive.
+              * rewrite /=.
+                move => _ _.
+                move: c121__eq => /neq0_lt0n /ltn_predK ->.
+                rewrite (eqP from__eq).
+                clear...
+                case: c1 => ? [] ? ? /=.
+                  by apply: preorder_reflexive. }
+        exists (action AutAlg c1 x).
+        constructor.
+        rewrite /x /=.
+        move: step_prf inprf x.
+        case: useSecond.
+        * rewrite /eq_ind_r /= /eq_ind /=.
+          case: (from == c1.1) => //=.
+          case: c1 => c11 [] c121 [].
+          ** rewrite /=.
+             move => step_prf inprf _.
+             rewrite /arity /=.
+             case; case => //= ?.
+             rewrite ffunE /=.
+             have: (eqP (erefl (0 == 0)) = erefl _).
+             { apply: UIP_dec.
+               move => n m.
+               case nm__eq: (n == m).
+               + by left; rewrite (eqP nm__eq).
+               + right.
+                 move => /eqP.
+                   by rewrite nm__eq. }
+             move => -> /=.
+             rewrite /dom /= /tnth /=.
+             move: (elimTF eqP step_prf).
+             move: step_prf => /eqP [].
+             move: steps steps__gen.
+             clear prfs IH.
+             case: c2 => c21 [] c221 c222 steps steps_gen [] -> -> -> eq_prf.
+             have: (eq_prf = erefl _).
+             { apply: UIP_dec.
+               move => x y.
+               case xy__eq: (x == y).
+               - left; by rewrite (eqP xy__eq).
+               - right.
+                 move => /eqP.
+                   by rewrite xy__eq. }
+               by move => -> /=.
+          ** rewrite /=.
+             move => c122 step_prf inprf _.
+             rewrite /arity /=.
+             case; case => //= ?.
+             rewrite ffunE /=.
+             have: (Logic.eq_sym
+                      (ltn_predK (m:=0) (n:=c122.+1)
+                                 (neq0_lt0n (n:=c122.+1)
+                                            (erefl (c122.+1 == 0)))) = erefl _).
+             { apply: UIP_dec.
+               move => n m.
+               case nm__eq: (n == m).
+               + by left; rewrite (eqP nm__eq).
+               + right.
+                 move => /eqP.
+                   by rewrite nm__eq. }
+             move => -> /=.
+             rewrite /dom /= /tnth /=.
+             move: (elimTF eqP step_prf).
+             move: step_prf => /eqP [].
+             move: steps steps__gen.
+             clear prfs IH.
+             case: c2 => c21 [] c221 c222 steps steps_gen [] -> -> -> eq_prf.
+             have: (eq_prf = erefl _).
+             { apply: UIP_dec.
+               move => x y.
+               case xy__eq: (x == y).
+               - left; by rewrite (eqP xy__eq).
+               - right.
+                 move => /eqP.
+                   by rewrite xy__eq. }
+               by move => -> /=.
+        * rewrite /eq_ind_r /= /eq_ind /=.
+          case: (from == c1.1) => //=.
+          case: c1 => c11 [] [].
+          ** rewrite /=.
+             move => c122 step_prf inprf _.
+             rewrite /arity /=.
+             case; case => //= ?.
+             rewrite ffunE /=.
+             have: (eqP (erefl (0 == 0)) = erefl _).
+             { apply: UIP_dec.
+               move => n m.
+               case nm__eq: (n == m).
+               + by left; rewrite (eqP nm__eq).
+               + right.
+                 move => /eqP.
+                   by rewrite nm__eq. }
+             move => -> /=.
+             rewrite /dom /= /tnth /=.
+             move: (elimTF eqP step_prf).
+             move: step_prf => /eqP [].
+             move: steps steps__gen.
+             clear prfs IH.
+             case: c2 => c21 [] c221 c222 steps steps_gen [] -> -> -> eq_prf.
+             have: (eq_prf = erefl _).
+             { apply: UIP_dec.
+               move => x y.
+               case xy__eq: (x == y).
+               - left; by rewrite (eqP xy__eq).
+               - right.
+                 move => /eqP.
+                   by rewrite xy__eq. }
+               by move => -> /=.
+          ** rewrite /=.
+             move => c121 c122 step_prf inprf _.
+             rewrite /arity /=.
+             case; case => //= ?.
+             rewrite ffunE /=.
+             have: (Logic.eq_sym
+                      (ltn_predK (m:=0) (n:=c121.+1)
+                                 (neq0_lt0n (n:=c121.+1)
+                                            (erefl (c121.+1 == 0)))) = erefl _).
+             { apply: UIP_dec.
+               move => n m.
+               case nm__eq: (n == m).
+               + by left; rewrite (eqP nm__eq).
+               + right.
+                 move => /eqP.
+                   by rewrite nm__eq. }
+             move => -> /=.
+             rewrite /dom /= /tnth /=.
+             move: (elimTF eqP step_prf).
+             move: step_prf => /eqP [].
+             move: steps steps__gen.
+             clear prfs IH.
+             case: c2 => c21 [] c221 c222 steps steps_gen [] -> -> -> eq_prf.
+             have: (eq_prf = erefl _).
+             { apply: UIP_dec.
+               move => x y.
+               case xy__eq: (x == y).
+               - left; by rewrite (eqP xy__eq).
+               - right.
+                 move => /eqP.
+                   by rewrite xy__eq. }
+               by move => -> /=.
+  Qed.
   
 End AutomatonSpec.
-
-
