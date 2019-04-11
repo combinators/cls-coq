@@ -208,6 +208,9 @@ Definition action {I: Type} {Sigma: sigFam I} (alg: sigAlg Sigma): forall s, F S
 
 Coercion action: sigAlg >-> Funclass.
 
+Definition sigAlg_Type {I: Type} {Sigma: sigFam I} {C: (sort Sigma) -> Type} (m: forall s, F Sigma C s -> C s): sigAlg Sigma :=
+  AlgebraType I Sigma C (SigmaAlgebra.Mixin I Sigma C m).
+
 Module SigmaCoAlgebra.
   Record mixin_of (I: Type) (Sigma: sigFam I) (C: (sort Sigma) -> Type): Type :=
     Mixin { coaction: forall s, C s -> F Sigma C s }.
@@ -249,6 +252,9 @@ Definition coaction {I: Type} {Sigma: sigFam I} (coAlg: sigCoAlg Sigma):
   SigmaCoAlgebra.coaction I (Sigma) (cocarrier coAlg) (SigmaCoAlgebra.class I Sigma coAlg).
 
 Coercion coaction: sigCoAlg >-> Funclass.
+
+Definition sigCoAlg_Type {I: Type} {Sigma: sigFam I} {C: (sort Sigma) -> Type} (m: forall s, C s -> F Sigma C s): sigCoAlg Sigma :=
+  CoAlgebraType I Sigma C (SigmaCoAlgebra.Mixin I Sigma C m).
 
 Inductive AlgGen {I: Type} (Sigma: sigFam I) (h: sigAlg Sigma) (s: sort Sigma): carrier h s -> Prop :=
 | Gen : forall (x: F Sigma (carrier h) s),
@@ -544,7 +550,7 @@ Section FCLAlgebra.
     | inl _ => False_rect _
     | inr o => fun _ => o
     end (unapplyNotIndex s x).
-
+(*
   Lemma 
 
   Lemma indexType_sound: forall M i, [FCL Gamma |- M : @Ctor Constructor (inl i) Omega] -> M = (@Var Combinator (inl i)).
@@ -636,7 +642,8 @@ Section FCLAlgebra.
     let: mkF i o args rangeprf := x in
     revApply (Var (inr o) @ (Var (inl i)))
              (rev (map (fun n => sval (args n)) (enum ('I_(arity Sigma i o))))).
-
+ *)
+End FCLAlgebra. 
 
 
 

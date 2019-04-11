@@ -4,3 +4,4 @@
 ./Cover.v
 ./FCL.v
 ./DependentFixpoint.v
+./Algebra.v
