@@ -503,15 +503,7 @@ Section FCLAlgebra.
     exist _ (termAction__FCL s x) (proofAction__FCL s x).
 
   Definition termCoAction__FCL (s: sort Sigma) (x: C__FCL s): seq (@Term Combinator) :=
-    behead (unapply (sval x)).2.
-
-  Lemma mkArrow__Omega {C: ctor}: forall srcs (A: @IT C), isOmega (mkArrow (srcs, A)) = isOmega A.
-  Proof.
-    elim /last_ind => // srcs src IH.
-    move => A /=.
-    rewrite mkArrow_rcons /=.
-      by apply: IH.
-  Qed.
+    behead (rev ((unapply (sval x)).2)).
 
   Lemma unapplyNotIndex: forall s (x: C__FCL s), if (unapply (sval x)).1 is (inl _) then False else True.
   Proof.
@@ -536,11 +528,11 @@ Section FCLAlgebra.
       suff: false by done.
       apply: res.
       move => Delta r'.
-      rewrite /cast /= mkArrow__Omega /=.
+      rewrite /cast /= omega_mkArrow_tgt /=.
       move => /emptyDoneTgt -> /=.
       case: r' => //.
       move => /Omega__subty.
-      rewrite mkArrow__Omega /=.
+      rewrite omega_mkArrow_tgt /=.
       move => res.
         by apply: res.
   Qed.
@@ -550,8 +542,71 @@ Section FCLAlgebra.
     | inl _ => False_rect _
     | inr o => fun _ => o
     end (unapplyNotIndex s x).
-(*
-  Lemma 
+
+  Lemma arrow_le {C: ctor}: forall srcs1 srcs2 c1 c2 A1 A2,
+      [bcd (mkArrow (srcs2, @Ctor C c2 A2)) <= (mkArrow (srcs1, Ctor c1 A1))] ->
+      (seq.size srcs2 = seq.size srcs1) /\
+      all (fun AB => checkSubtypes AB.1 AB.2) (zip srcs1 srcs2) /\
+      [bcd (Ctor c2 A2) <= (Ctor c1 A1)].
+  Proof.
+    elim /last_ind.
+    - elim /last_ind => // srcs2 src _ c1 c2 A1 A2.
+      move => /subty_complete /SubtypeMachine_inv /=.
+      rewrite mkArrow_rcons.
+      move => /(fun prf => prf (fun i r => if (i, r) is ([subty A -> B of Ctor c C], Return true) then false else true)) res.
+      suff: false by done.
+        by apply: res.
+    - move => // srcs1 src1 IH.
+      elim /last_ind.
+      + move => c1 c2 A1 A2 /subty_complete /SubtypeMachine_inv.
+        rewrite mkArrow_rcons /(mkArrow ([::], _)) /=.
+        move => /(fun prf => prf (fun i r => if (i, r) is ([subty Ctor c A of B -> C], Return true) then false else true)) res.
+        suff: false by done.
+        apply: res.
+        move => Delta.
+        rewrite /cast /= omega_mkArrow_tgt /=.
+        case => //.
+        move => /emptyDoneTgt ->.
+        move => /Omega__subty /= /(fun prf => prf isT).
+          by rewrite omega_mkArrow_tgt.
+      + move => srcs2 src2 _ c1 c2 A1 A2.
+        do 2 rewrite mkArrow_rcons.
+        do 2 rewrite size_rcons.
+        move => /subty_complete /SubtypeMachine_inv prf.
+        have: (checkSubtypes src1 src2 /\ [bcd (mkArrow (srcs2, Ctor c2 A2)) <= mkArrow (srcs1, Ctor c1 A1)]).
+        { apply: (prf (fun i r => if (i, r) is ([subty A -> B of C -> D], Return true)
+                               then (checkSubtypes C A /\ [bcd B <= D])
+                               else true)).
+          rewrite /cast /= omega_mkArrow_tgt /=.
+          move => Delta.
+          case => //.
+          move => args_prf.
+          move: (check_tgt_subseq _ _ _ _ args_prf).
+          move: args_prf.
+          case: Delta.
+          - move => _ _ /= /Omega__subty /(fun prf => prf isT).
+              by rewrite omega_mkArrow_tgt.
+          - move => A Delta /=.
+            case A__eq: (A == mkArrow (srcs2, Ctor c2 A2)) => //.
+            move => args_prf /eqP Delta__eq.
+            move: args_prf.
+            rewrite Delta__eq (eqP A__eq) /=.
+            move => /SubtypeMachine_inv /(fun prf => prf (fun i r =>
+                                                        if (i, r) is ([tgt_for_srcs_gte A in [:: (B1, B2)]], [check_tgt [:: C]])
+                                                        then checkSubtypes A B1
+                                                        else true)) res.
+            move => /subty__sound restprf.
+            split => //.
+            apply: res.
+            move => Delta2.
+            case.
+            * move => /subty__sound /subtypeMachineP ->.
+                by case: Delta2.
+            * by move => _ /emptyDoneTgt ->. }
+        move => [] prf1 /IH [] size_prf.
+        rewrite zip_rcons; last by rewrite size_prf.
+          by rewrite all_rcons /= prf1 andTb size_prf.
+  Qed.
 
   Lemma indexType_sound: forall M i, [FCL Gamma |- M : @Ctor Constructor (inl i) Omega] -> M = (@Var Combinator (inl i)).
   Proof.
@@ -592,25 +647,55 @@ Section FCLAlgebra.
         rewrite slow_cast_cast.
         elim: (enum I) => // idx idxs.
           by case: idxs => [].
-    - 
-
-
-      
-
-
-
-  Lemma indexType_src: forall o N Ns A, ~~isOmega A -> [FCL Gamma |- revApply (Var (inr o)) Ns : A] -> 
-
-  Lemma unapplyIsIndex: forall s (x: C__FCL s), if (unapply (sval x)).2 is [:: (Var (inl _)) & _] then True else False.
+    - move => M N A B devil _ _ _ i B__eq.
+      move: devil.
+      rewrite -B__eq.
+      rewrite -(unapply_revapply M).
+      move => /FCL__invApp prf.
+      suff: false by done.
+      move: prf.
+      case: (unapply M).
+      move: M => _ c Ns.
+      rewrite [(_, _).2]/=.
+      move => [] srcs [] size_eq.
+      move => /(fun prf => prf (seq.size srcs)).
+      rewrite nth_default; last by rewrite size_eq.
+      rewrite nth_default => //.
+      move /minimalType_minimal.
+      rewrite /= /Gamma ffunE.
+      have: (mkArrow (srcs, (A -> @Ctor Constructor (inl i) Omega)) =
+             mkArrow ([:: A & srcs], @Ctor Constructor (inl i) Omega)) by reflexivity.
+      move => ->.
+      clear size_eq.
+      case: c.
+      + move => index.
+        rewrite /Gamma__I ffunE.
+          by move => /(arrow_le _ [::]) [].
+      + move => o.
+        rewrite /Gamma__Sigma ffunE.
+        move => /primeComponentPrime_seq /=.
+        rewrite omega_mkArrow_tgt /=.
+        move => /(fun prf x => prf isT (isPrimeComponentP x)) /=.
+        rewrite mkArrow_prime //=.
+        move => /(fun prf => prf isT).
+        move => /hasP [] x /mapP [] idx inprf__idx ->.
+        move => /subtypeMachineP.
+        rewrite /typeAtIndex -mkArrow_rcons.
+        move => /arrow_le [] _ [] _ /subty_complete /SubtypeMachine_inv.
+        move => /(fun prf => prf (fun i r => if r is Return true then false else true)) res.
+          by apply: res.
+  Qed.
+   
+  Lemma unapplyIsIndex: forall s (x: C__FCL s), if rev (unapply (sval x)).2 is [:: (Var (inl _)) & _] then True else False.
   Proof.
     move => s x.
     move: (unapplyNotIndex s x).
     case x => M.
     rewrite -(unapply_revapply M) /= revapply_unapply.
-    move => /FCL__invApp [] srcs [] size__eq.
+    move => /fclP /FCL__invApp [] srcs [] size__eq.
     case: (unapply M).1 => // o.
     move: size__eq.
-    case: (unapply M).2.
+    elim /last_ind: (unapply M).2.
     - case: srcs => // _.
       move => /(fun prf => prf 0) /=.
       move => /minimalType_minimal /=.
@@ -622,27 +707,309 @@ Section FCLAlgebra.
       rewrite slow_cast_cast.
       elim (enum I) => // idx idxs.
         by case: idxs.
-    - case: srcs => // src srcs.
-      move => N Ns _ prf.
-      have src__geq: [src 
+    - elim /last_ind: srcs => // srcs src _; first by rewrite size_rcons.
+      move => Ns N _ /= size__eq prf.
+      have: [FCL Gamma |- N : src].
+      { move: (prf (seq.size srcs)).
+        move: size__eq => /eqP.
+        rewrite size_rcons size_rcons eqSS => /eqP size__eq.
+        rewrite nth_rcons.
+        case lt_prf: (seq.size srcs < seq.size Ns); first by move: lt_prf; rewrite size__eq ltnn.
+        rewrite size__eq eq_refl.
+          by rewrite nth_rcons ltnn eq_refl. }
+      suff: exists i, [bcd src <= @Ctor Constructor (inl i) Omega].
+      { move => [] i le_prf.
+        move => /(fun prf => FCL__Sub _ prf le_prf) /indexType_sound ->.
+          by rewrite rev_rcons. }
+      move: (prf (seq.size (rcons srcs src))).
+      rewrite nth_default; last by rewrite /= size__eq.
+      rewrite nth_default //.
+      move => /minimalType_minimal.
+      rewrite /minimalType /Gamma ffunE /Gamma__Sigma ffunE.
+      move => /primeComponentPrime_seq.
+      rewrite omega_mkArrow_tgt /=.
+      move => /(fun prf x => prf isT (isPrimeComponentP x)).
+      rewrite mkArrow_prime //.
+      move => /(fun prf => prf isT) /hasP [] A /mapP [] i inprf__i -> /subtypeMachineP le_prf.
+      exists i.
+      move: le_prf => /subty_complete.
+      rewrite mkArrow_rcons /typeAtIndex.
+      move => /SubtypeMachine_inv /(fun prf => prf (fun i r => if (i, r) is ([subty A -> B of C -> D], Return true)
+                                                        then  [bcd C <= A]
+                                                        else True)).
+      rewrite /Gamma__I ffunE.
+      move => res.
+      apply: res.
+      rewrite /cast /= omega_mkArrow_tgt /=.
+      move => Delta [] // check_prf.
+      move: (check_prf) => /check_tgt_subseq.
+      move: check_prf.
+      case: Delta.
+      + move => _ _ /= /Omega__subty /(fun prf => prf isT).
+          by rewrite omega_mkArrow_tgt.
+      + move => B ? /=.
+        case B__eq: (B == mkArrow (rev (map embed (dom Sigma i o)), embed (range Sigma i o))) => // check_prf /eqP eq_prf.
+        move: check_prf.
+        rewrite eq_prf /= (eqP B__eq).
+        move => /SubtypeMachine_inv /(fun prf => prf (fun i r => if (i, r) is ([tgt_for_srcs_gte A in [:: (B, _)]], [check_tgt [:: _ ]])
+                                                          then  [bcd A <= B]
+                                                          else True)) res.
+        move => _.
+        apply: res.
+        move => Delta2 r res_prf /emptyDoneTgt ->.
+        move: res_prf.
+        case: r => //.
+          by move => /subty__sound.
+  Qed.
 
-      
-      
+  Definition indexCoAction__FCL (s: sort Sigma) (x: C__FCL s): I :=
+    match rev (unapply (sval x)).2 as args return (if args is [:: (Var (inl _)) & _] then True else False) -> I with
+    | [:: Var (inl i) & _] => fun _ => i
+    | _ => False_rect _
+    end (unapplyIsIndex s x).
 
 
-      
+  Lemma termCoAction_size:
+    forall s x, seq.size (termCoAction__FCL s x) == arity Sigma (indexCoAction__FCL s x) (opCoAction__FCL s x).
+  Proof.
+    move => s [] M.
+    rewrite /opCoAction__FCL /= /termCoAction__FCL /indexCoAction__FCL.
+    move: (unapply_revapply M) => <-.
+    move: (unapply M).1 => c.
+    move: (unapply M).2 => Ns.
+    move: M => _ prf.
+    move: (unapplyNotIndex s
+                           (exist (fun M : Term => typeCheck Gamma M (embed s))
+                                  (revApply (Var c) Ns) prf)).
+    move: (unapplyIsIndex s
+                          (exist (fun M : Term => typeCheck Gamma M (embed s))
+                                  (revApply (Var c) Ns) prf)).
+    rewrite (revapply_unapply (c, Ns)) /=.
+    move: prf => /fclP /FCL__invApp.
+    case: c => //= o [] srcs [].
+    elim /last_ind: Ns => // Ns N _.
+    rewrite rev_rcons.
+    case: N => // [].
+    case => // i.
+    rewrite size_rcons.
+    elim /last_ind: srcs => // srcs src _.
+    rewrite size_rcons.
+    move => /eqP.
+    rewrite eqSS.
+    move => /eqP size__eq prf _ _.
+    rewrite /= size_rev size__eq /=.
+    move: (prf (seq.size srcs).+1).
+    rewrite nth_default; last by rewrite size_rcons size__eq.
+    rewrite nth_default; last by rewrite size_rcons.
+    move => /minimalType_minimal /=.
+    rewrite /Gamma ffunE /Gamma__Sigma ffunE.
+    move => /primeComponentPrime_seq.
+    rewrite omega_mkArrow_tgt /=.
+    move => /(fun prf x => prf isT (isPrimeComponentP x)).
+    rewrite mkArrow_prime //.
+    move => /(fun prf => prf isT) /hasP [] ? /mapP [] idx _ -> /subtypeMachineP.
+    rewrite /typeAtIndex -mkArrow_rcons.
+    move => /arrow_le.
+    do 2 rewrite size_rcons.
+    move => [] /eqP.
+    rewrite eqSS => /eqP size_eq.
+    rewrite -size_eq size_rev size_map size_tuple.
+    move => [].
+    rewrite zip_rcons // all_rcons /=.
+    move => /andP [] /subtypeMachineP src_le.
+    suff: (idx = i) by move => ->.
+    move: (prf (seq.size Ns)).
+    rewrite nth_rcons nth_rcons size__eq ltnn eq_refl.
+    move => /minimalType_minimal.
+    move => /(fun prf => BCD__Trans _ prf src_le).
+    rewrite /= /Gamma ffunE /Gamma__I ffunE ffunE.
+    move => /subty_complete /SubtypeMachine_inv.
+    move => /(fun prf => prf (fun i r => if (i, r) is ([subty Ctor (inl i1) _ of Ctor (inl i2) _], Return true) return Prop
+                                  then  i2 = i1
+                                  else true)) res.
+    apply: res.
+    case; last by rewrite andbF.
+    rewrite /cast /= /[sort _ <= _] /= /[sort _ <= _] /=.
+    case idx__eq: (i == idx) => //=.
+      by rewrite (eqP idx__eq).
+  Qed.
 
+  Lemma proofCoAction__FCL:
+    forall (s: sort Sigma) (x: C__FCL s) n,
+      typeCheck Gamma
+                (tnth (Tuple (termCoAction_size s x)) n)
+                (embed (tnth (dom Sigma (indexCoAction__FCL s x) (opCoAction__FCL s x)) n)).
+  Proof.
+    move => s x [] n n_lt.
+    rewrite (@tnth_nth _ _ (projT1 x)) (@tnth_nth _ _ s).
+    apply /fclP.
+    move: n_lt.
+    move: x => [] M.
+    rewrite /opCoAction__FCL /= /termCoAction__FCL /indexCoAction__FCL.
+    move: (unapply_revapply M) => <-.
+    move: (unapply M).1 => c.
+    move: (unapply M).2 => Ns.
+    move: M => _ prf.
+    move: (unapplyNotIndex s
+                           (exist (fun M : Term => typeCheck Gamma M (embed s))
+                                  (revApply (Var c) Ns) prf)).
+    move: (unapplyIsIndex s
+                          (exist (fun M : Term => typeCheck Gamma M (embed s))
+                                  (revApply (Var c) Ns) prf)).
+    rewrite (revapply_unapply (c, Ns)).
+    move: prf => /fclP /FCL__invApp.
+    case: c => //= o [] srcs [].
+    elim /last_ind: Ns => // Ns N _.
+    rewrite rev_rcons.
+    case: N => // [].
+    case => // i.
+    rewrite size_rcons.
+    elim /last_ind: srcs => // srcs src _.
+    rewrite size_rcons.
+    move => /eqP.
+    rewrite eqSS.
+    move => /eqP size__eq prf _ _.
+    move: (prf (seq.size srcs).+1).
+    rewrite nth_default; last by rewrite size_rcons size__eq.
+    rewrite nth_default; last by rewrite size_rcons.
+    move => /minimalType_minimal /=.
+    rewrite /Gamma ffunE /Gamma__Sigma ffunE.
+    move => /primeComponentPrime_seq.
+    rewrite omega_mkArrow_tgt /=.
+    move => /(fun prf x => prf isT (isPrimeComponentP x)).
+    rewrite mkArrow_prime //.
+    move => /(fun prf => prf isT) /hasP [] ? /mapP [] idx _ -> /subtypeMachineP.
+    rewrite /typeAtIndex -mkArrow_rcons.
+    move => /arrow_le.
+    do 2 rewrite size_rcons.
+    move => [] /eqP.
+    rewrite eqSS => /eqP size_eq.
+    rewrite zip_rcons // all_rcons.
+    move => [] /andP [] /subtypeMachineP src_le.
+    move: size_eq.
+    have: (idx = i).
+    { move: (prf (seq.size Ns)).
+      rewrite nth_rcons nth_rcons size__eq ltnn eq_refl.
+      move => /minimalType_minimal.
+      move => /(fun prf => BCD__Trans _ prf src_le).
+      rewrite /= /Gamma ffunE /Gamma__I ffunE ffunE.
+      move => /subty_complete /SubtypeMachine_inv.
+      move => /(fun prf => prf (fun i r => if (i, r) is ([subty Ctor (inl i1) _ of Ctor (inl i2) _], Return true) return Prop
+                                    then  i2 = i1
+                                    else true)) res.
+      apply: res.
+      case; last by rewrite andbF.
+      rewrite /cast /= /[sort _ <= _] /= /[sort _ <= _] /=.
+      case idx__eq: (i == idx) => //=.
+        by rewrite (eqP idx__eq). }
+    move => -> size_eq prfs _ n_lt.
+    apply: (FCL__Sub (nth (mkArrow (rcons srcs src, embed s)) (rev srcs) n)); last first.
+    { apply /subtypeMachineP.
+      move: prfs.
+      rewrite -all_rev rev_zip; last by rewrite size_eq.
+      move => /allP prfs.
+      apply: (prfs (nth (mkArrow (rcons srcs src, embed s)) (rev srcs) n, embed (nth s (dom Sigma i o) n))).
+      rewrite -(nth_map s (embed s)); last by rewrite size_tuple.
+      rewrite -[X in X \in _]nth_zip; last by rewrite size_rev -size_eq size_rev.
+      rewrite revK.
+      apply: mem_nth.
+        by rewrite size_zip size_rev -size_eq size_rev minnn size_tuple. }
+    rewrite nth_rev; last by rewrite size__eq -size_eq size_tuple.
+    rewrite nth_rev; last by rewrite -size_eq size_tuple.
+    move: (prf (seq.size srcs - n.+1)).
+    do 2 rewrite nth_rcons.
+    rewrite size__eq.
+    rewrite subnSK; last by rewrite -size_eq size_tuple.
+    rewrite leq_subr.
+    move => res.
+    erewrite set_nth_default; first by exact res.
+    rewrite size__eq subnSK; last by rewrite -size_eq size_tuple.
+      by rewrite leq_subr.
+  Qed.
+
+  Lemma range_coAction:
+    forall (s: sort Sigma) (x: C__FCL s),
+      [sort (range Sigma (indexCoAction__FCL s x) (opCoAction__FCL s x)) <= s].
+  Proof.
+    move => s [] M.
+    rewrite /opCoAction__FCL /= /indexCoAction__FCL.
+    move: (unapply_revapply M) => <-.
+    move: (unapply M).1 => c.
+    move: (unapply M).2 => Ns.
+    move: M => _ prf.
+    move: (unapplyNotIndex s
+                           (exist (fun M : Term => typeCheck Gamma M (embed s))
+                                  (revApply (Var c) Ns) prf)).
+    move: (unapplyIsIndex s
+                          (exist (fun M : Term => typeCheck Gamma M (embed s))
+                                  (revApply (Var c) Ns) prf)).
+    rewrite (revapply_unapply (c, Ns)).
+    move: prf => /fclP /FCL__invApp.
+    case: c => //= o [] srcs [].
+    elim /last_ind: Ns => // Ns N _.
+    rewrite rev_rcons.
+    case: N => // [].
+    case => // i.
+    rewrite size_rcons.
+    elim /last_ind: srcs => // srcs src _.
+    rewrite size_rcons.
+    move => /eqP.
+    rewrite eqSS.
+    move => /eqP size__eq prf _ _.
+    move: (prf (seq.size srcs).+1).
+    rewrite nth_default; last by rewrite size_rcons size__eq.
+    rewrite nth_default; last by rewrite size_rcons.
+    move => /minimalType_minimal /=.
+    rewrite /Gamma ffunE /Gamma__Sigma ffunE.
+    move => /primeComponentPrime_seq.
+    rewrite omega_mkArrow_tgt /=.
+    move => /(fun prf x => prf isT (isPrimeComponentP x)).
+    rewrite mkArrow_prime //.
+    move => /(fun prf => prf isT) /hasP [] ? /mapP [] idx _ -> /subtypeMachineP.
+    rewrite /typeAtIndex -mkArrow_rcons.
+    move => /arrow_le.
+    do 2 rewrite size_rcons.
+    move => [] /eqP.
+    rewrite eqSS => /eqP size_eq.
+    rewrite zip_rcons // all_rcons.
+    move => [] /andP [] /subtypeMachineP src_le.
+    move: size_eq.
+    have: (idx = i).
+    { move: (prf (seq.size Ns)).
+      rewrite nth_rcons nth_rcons size__eq ltnn eq_refl.
+      move => /minimalType_minimal.
+      move => /(fun prf => BCD__Trans _ prf src_le).
+      rewrite /= /Gamma ffunE /Gamma__I ffunE ffunE.
+      move => /subty_complete /SubtypeMachine_inv.
+      move => /(fun prf => prf (fun i r => if (i, r) is ([subty Ctor (inl i1) _ of Ctor (inl i2) _], Return true) return Prop
+                                    then  i2 = i1
+                                    else true)) res.
+      apply: res.
+      case; last by rewrite andbF.
+      rewrite /cast /= /[sort _ <= _] /= /[sort _ <= _] /=.
+      case idx__eq: (i == idx) => //=.
+        by rewrite (eqP idx__eq). }
+    move => -> _ _ /subty_complete /SubtypeMachine_inv.
+    move => /(fun prf => prf (fun i r => if (i, r) is ([subty (Ctor c A) of (Ctor d B)], Return true)
+                                  then [sort c <= d]
+                                  else true)) res.
+    apply: res.
+    case; last by rewrite andbF.
+    rewrite /cast /=.
+      by case: [ sort (inr (range Sigma i o) : Constructor) <= (inr s : Constructor)].
+  Qed.
+
+  Definition coaction__FCL: forall s, C__FCL s -> F Sigma C__FCL s :=
+    fun s c =>
+      @mkF I Sigma C__FCL s
+        (indexCoAction__FCL s c) (opCoAction__FCL s c)
+        [ffun n => exist _ (tnth (Tuple (termCoAction_size s c)) n) (proofCoAction__FCL s c n)]
+        (range_coAction s c).
+    
   
+      
 
-  Lemma proofCoAction__FCL (s: sort Sigma) (x: C__FCL s):
-    forall n, [FCL Gamma |- (nth (opCoAction__FCL s x) (termCoAction__FCL s x) n) :
-                       (nth (Gamma (opCoAction__FCL s x)) (dom Sigma )
-                                                                                                                                  
-
-    let: mkF i o args rangeprf := x in
-    revApply (Var (inr o) @ (Var (inl i)))
-             (rev (map (fun n => sval (args n)) (enum ('I_(arity Sigma i o))))).
- *)
+      
 End FCLAlgebra. 
 
 
