@@ -1,3 +1,5 @@
+Require Import Coq.Logic.Eqdep_dec.
+Require Import Coq.Bool.Bool.
 From mathcomp Require Import all_ssreflect.
 Require Import PreOrders.
 Require Import Types.
@@ -999,16 +1001,265 @@ Section FCLAlgebra.
       by case: [ sort (inr (range Sigma i o) : Constructor) <= (inr s : Constructor)].
   Qed.
 
-  Definition coaction__FCL: forall s, C__FCL s -> F Sigma C__FCL s :=
+  Definition coAction__FCL: forall s, C__FCL s -> F Sigma C__FCL s :=
     fun s c =>
       @mkF I Sigma C__FCL s
         (indexCoAction__FCL s c) (opCoAction__FCL s c)
         [ffun n => exist _ (tnth (Tuple (termCoAction_size s c)) n) (proofCoAction__FCL s c n)]
         (range_coAction s c).
-    
-  
-      
 
+  Section Measure.
+    Definition measure__FCL: forall s, C__FCL s -> Term := fun s => sval.
+    Definition IsChild: @Term Combinator -> @Term Combinator -> Prop := fun M N => M \in (unapply N).2.
+    Lemma revApply_rcons: forall (M N: @Term Combinator) Ns, revApply M (rcons Ns N) = revApply (M @ N) Ns.
+    Proof.
+      move => M N Ns.
+        by rewrite /revApply -cats1 (foldr_cat _ _ Ns [:: N]).
+    Qed.
+
+    Lemma revApply_nil: forall (M: @Term Combinator), revApply M [::] = M.
+    Proof. by move => M. Qed.    
+    Definition Term_unapply_ind:
+      forall (P : @Term Combinator -> Prop) (f: forall c Ns, (forall N, N \in Ns -> P N) -> P (revApply (Var c) Ns)) M, P M :=
+      fun P f M =>
+        (fix rec (M: Term): forall (Ns: seq Term), (forall N, N \in Ns -> P N) -> P (revApply M Ns) :=
+           match M with
+           | Var c => f c
+           | M @ N => fun Ns prfs =>
+                       rew revApply_rcons M N Ns in
+                         (rec M (rcons Ns N)
+                              (fun N2 inprf =>
+                                 match orP (rew (in_cons N Ns N2)
+                                             in rew (mem_rcons Ns N N2) in inprf) with
+                                 | or_introl N__eq =>
+                                   rew <- [P] (eqP N__eq) in
+                                       rew (revApply_nil N) in
+                                       rec N [::] (fun N inprf => False_rect _ (not_false_is_true inprf))
+                                 | or_intror inprf => prfs N2 inprf
+                                 end))
+           end) M [::] (fun N inprf => False_rect _ (not_false_is_true inprf)).
+    
+    Lemma IsChild_wf: well_founded IsChild.
+    Proof.
+      elim /Term_unapply_ind.
+      move => c Ns IH.
+      apply: Acc_intro.
+      move => N.
+      rewrite /IsChild.
+      rewrite (revapply_unapply (c, Ns)).
+        by move => /IH.
+    Qed.
+
+    Lemma dec_coAction__FCL:
+      forall (s : sort Sigma) (x : C__FCL s)
+        (n : 'I_(arity Sigma (index (coAction__FCL s x)) (op (coAction__FCL s x)))),
+        IsChild (measure__FCL (tnth (dom Sigma (index (coAction__FCL s x)) (op (coAction__FCL s x))) n)
+                            ((args (coAction__FCL s x)) n)) (measure__FCL s x).
+    Proof.
+      move => s x n.
+      rewrite /= ffunE /= /measure__FCL (tnth_nth (sval x)) /IsChild /= /termCoAction__FCL.
+      have n_lt: (n.+1 < seq.size (unapply (sval x)).2).
+      { move: n => [] /= n.
+        move: (termCoAction_size s x) => /eqP <-.
+          by rewrite /termCoAction__FCL size_behead size_rev -subn1 ltn_subRL add1n. }
+      rewrite nth_behead nth_rev //.
+      apply mem_nth.
+        by rewrite subnSK // leq_subr.
+    Qed.
+  End Measure.
+
+  Lemma cancel_action_coAction__FCL: forall s, cancel (action__FCL s) (coAction__FCL s).
+  Proof.
+    move => s [] /= i op args range_cond.
+    rewrite /action__FCL /coAction__FCL.
+    move: (proofCoAction__FCL s _) => prf_action.
+    have i__eq: (indexCoAction__FCL s
+                                (exist (fun M : Term => typeCheck Gamma M (embed s))
+                                       (termAction__FCL s
+                                                      {|
+                                                        index := i;
+                                                        op := op;
+                                                        args := args;
+                                                        range_cond := range_cond |})
+                                       (proofAction__FCL s
+                                                       {|
+                                                         index := i;
+                                                         op := op;
+                                                         args := args;
+                                                         range_cond := range_cond |})) = i).
+    { rewrite /indexCoAction__FCL /=.
+      move: (unapplyIsIndex s _).
+        by rewrite /= -revApply_rcons (revapply_unapply (inr op: Combinator, _)) /= rev_rcons. }
+    have op__eq: (opCoAction__FCL s
+          (exist (fun M : Term => typeCheck Gamma M (embed s))
+             (termAction__FCL s
+                {|
+                index := i;
+                op := op;
+                args := args;
+                range_cond := range_cond |})
+             (proofAction__FCL s
+                {|
+                index := i;
+                op := op;
+                args := args;
+                range_cond := range_cond |})) = op).
+    { rewrite /opCoAction__FCL /=.
+      move: (unapplyNotIndex s _).
+        by rewrite /= -revApply_rcons (revapply_unapply (inr op: Combinator, _)) /=. }    
+    move: (range_coAction s _).
+    move: prf_action.
+    move: (termCoAction_size s _).
+    rewrite i__eq op__eq.
+    move => termCoAction_size prf_action  range_coAction.
+    apply: f_equal2.
+    - apply ffunP.
+      move => x.
+      rewrite ffunE.
+      move: termCoAction_size prf_action.
+      rewrite  /termCoAction__FCL /= -revApply_rcons.
+      rewrite (revapply_unapply (inr op : Combinator, _)) /= rev_rcons revK /=.
+      clear...
+      move rhs__eq: (args x) => rhs.
+      move: rhs__eq.
+      case: rhs => [] m args_prf termCoAction_size.
+      move: args args_prf termCoAction_size.
+      move: (arity Sigma i op) x (dom Sigma i op).
+      move => arity x dom args args_prf rhs__eq prf.
+      move: (prf) (args_prf) (rhs__eq).
+      move: (x) (dom) (args).
+      rewrite -(eqP prf) size_map size_enum_ord.
+      clear x dom args rhs__eq args_prf prf.
+      move => x dom args prf args_prf rhs__eq.
+      have lhs__eq: (tnth (Tuple (n:=arity) (tval:=[seq sval (args n) | n <- enum 'I_arity]) prf) x = m).
+      { rewrite (tnth_nth m) /=.
+        rewrite (nth_map x); last by rewrite size_enum_ord ltn_ord.
+          by rewrite -(tnth_nth x (ord_tuple arity) x) tnth_ord_tuple rhs__eq. }
+      clear rhs__eq.
+      move: args_prf.
+      rewrite -lhs__eq.
+      move => args_prf prf_action.
+      apply: f_equal.
+      move: (prf_action x).
+      clear prf_action.
+      move: args_prf.
+      move: (@UIP_dec bool bool_dec) => res prf1 prf2.
+        by apply: res.
+    - apply: (@UIP_dec bool bool_dec).
+  Qed.
+
+  Lemma cancel_coAction__FCL_action: forall s, cancel (coAction__FCL s) (action__FCL s).
+  Proof.
+    move => s x.
+    rewrite /coAction__FCL /action__FCL /= /indexCoAction__FCL.
+    case: x => M prf.
+    rewrite /=.
+    move: (proofAction__FCL s _).
+    rewrite /= -revApply_rcons /=.
+    move: (proofCoAction__FCL s _).
+    move: (termCoAction_size s _).
+    rewrite  /opCoAction__FCL /=.
+    move: (unapplyNotIndex s
+                           (exist
+                              (fun M0 : Term =>
+                                 typeCheck Gamma M0 (embed s)) M
+                              prf)).
+    rewrite /=.
+    rewrite /indexCoAction__FCL /=.
+    move: (unapplyIsIndex s (exist (fun M0 : Term => typeCheck Gamma M0 (embed s)) M prf)).
+    rewrite /termCoAction__FCL /=.
+    move M__eq: (unapply M) => cNs.
+    move: M__eq.
+    case: cNs => c Ns.
+    elim /last_ind: Ns => //= Ns idx _.
+    rewrite rev_rcons.
+    case: idx; case => //.
+    case: c => // o i.
+    move: (unapply_revapply M) => M__eq unapply__eq.
+    move: M__eq.
+    rewrite unapply__eq /=.
+    move => M__eq _ _ termCoAction_size proofCoAction__FCL.
+    have: (rev
+             [seq sval
+                    ([ ffun n0 : 'I_(arity Sigma i o) =>
+                     exist (fun M0 : Term => typeCheck Gamma M0 (embed (tnth (dom Sigma i o) n0)))
+                       (tnth (Tuple (n:=arity Sigma i o) (tval:=rev Ns) termCoAction_size) n0)
+                       (proofCoAction__FCL n0)] n)
+             | n <- enum 'I_(arity Sigma i o)] = Ns).
+    { rewrite -map_rev.
+      apply: (@eq_from_nth _ M).
+      - by rewrite size_map size_rev size_enum_ord -(eqP termCoAction_size) size_rev.
+      - move => n.
+        rewrite size_map size_rev size_enum_ord.
+        move => lt_n.
+        rewrite (nth_map (Ordinal lt_n)); last by rewrite size_rev size_enum_ord.
+        rewrite ffunE /=.
+        rewrite (tnth_nth M) /=.
+        rewrite nth_rev; last first.
+        { rewrite nth_rev; last by rewrite size_enum_ord.
+          have size_prf: (seq.size (enum 'I_(arity Sigma i o)) - n.+1 < arity Sigma i o).
+          { by rewrite size_enum_ord subnSK // leq_subr. }
+          rewrite nth_enum_ord //.
+          clear proofCoAction__FCL.
+          move: termCoAction_size.
+            by rewrite size_rev => /eqP ->. }
+        apply: f_equal.
+        rewrite nth_rev; last by rewrite size_enum_ord.
+        rewrite nth_enum_ord; last first.
+        { by rewrite size_enum_ord subnSK // leq_subr. }
+        rewrite -subSn; last by rewrite size_enum_ord.
+        rewrite subSS.
+        rewrite size_enum_ord -(eqP termCoAction_size) size_rev subKn //.
+        clear proofCoAction__FCL.
+        move: termCoAction_size.
+        rewrite size_rev => /eqP ->.
+          by apply: ltnW. }
+    move => ->.
+    rewrite M__eq.
+    move => proofAction__FCL.
+    apply: f_equal.
+      by apply: (@UIP_dec bool bool_dec).
+  Qed.
+    
+  Definition algebra_morphism__FCL (g: sigAlg Sigma): forall s, C__FCL s -> carrier g s :=
+    canonical_morphism I Sigma (sigAlg_Type action__FCL) g coAction__FCL
+                       Term measure__FCL IsChild IsChild_wf
+                       dec_coAction__FCL.
+
+  Lemma commutes_algebra_morphism__FCL:
+    forall (g: sigAlg Sigma) (s: sort Sigma) (x: C__FCL s),
+       algebra_morphism__FCL g s x =
+       action g s (fmap (algebra_morphism__FCL g) s (coAction__FCL s x)).
+  Proof.
+    move => g s x.
+      by apply: canonical_morphism_commutes.
+  Qed.
+
+  Theorem unique_algebra_morphism__FCL:
+    forall (g: sigAlg Sigma) (m : forall s : sort Sigma, C__FCL s -> carrier g s),
+      (forall s : sort Sigma, m s \o action__FCL s =1 action g s \o fmap m s) ->
+      forall s : sort Sigma, algebra_morphism__FCL g s =1 m s.
+  Proof.
+    move => g m mC s x.
+    rewrite /algebra_morphism__FCL.    
+    apply: canonical_morphism_unique => //.
+      by exact cancel_coAction__FCL_action.
+  Qed.
+
+  Theorem sound_algebra_morphism__FCL:
+    forall (g: sigAlg Sigma) s x, AlgGen Sigma g s (algebra_morphism__FCL g s x).
+  Proof.
+    move => g s x.
+      by apply: canonical_morphism_sound.
+  Qed.
+
+  Theorem complete_algebra_morphism__FCL:
+    forall (g: sigAlg Sigma) s x, AlgGen Sigma g s x -> exists y, (algebra_morphism__FCL g s y) = x.
+  Proof.
+    move => g s x /canonical_morphism_complete prf.
+    apply: (prf (sigAlg_Type action__FCL)).
+      by apply: cancel_action_coAction__FCL.
+  Qed.
       
 End FCLAlgebra. 
 
