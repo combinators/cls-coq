@@ -4637,10 +4637,244 @@ Section InhabitationMachineProperties.
         by rewrite IH__M IH__N.
   Qed.
 
+  Lemma truncated_word_weaken: forall G11 G12 G21 G22,
+      {subset G11 <= G12} ->
+      {subset G21 <= G22} ->
+      forall A M, truncated_word G11 G21 A M -> truncated_word G12 G22 A M.
+  Proof.
+    move => G11 G12 G21 G22 subset1 subset2 A M.
+    move: A.
+    elim: M.
+    - move => c A /orP.
+      case.
+      + move => /hasP [] r /subset1 inprf__r r__eq.
+        apply /orP; left.
+        apply /hasP.
+          by (exists r).
+      + move => /hasP [] r /subset2 inprf__r r__eq.
+        apply /orP; right.
+        apply /hasP.
+          by (exists r).
+    - move => M IH__M N IH__N A /orP.
+      case.
+      + move => /hasP [] [] // B C D /subset1 inprf__r /andP [] /andP [] /eqP -> /IH__M prf__M /IH__N prf__N.
+        apply /orP; left.
+        apply /hasP.
+        eexists; first by exact inprf__r.
+          by rewrite /= eq_refl -/(truncated_word _ _) -/(truncated_word _ _) prf__M prf__N.
+      + move => /hasP [] [] // B C D /subset2 inprf__r /andP [] /eqP -> /IH__M prf__M.
+        apply /orP; right.
+        apply /hasP.
+        eexists; first by exact inprf__r.
+          by rewrite /= eq_refl -/(truncated_word _ _) prf__M.
+  Qed.
+
+  Lemma rule_absorbl: forall A M G1 G2 B c,
+      (RuleCombinator B c) \in G1 ->
+            truncated_word G1 [:: (RuleCombinator B c) & G2] A M -> truncated_word G1 G2 A M.
+  Proof.
+    move => A M.
+    move: A.
+    elim: M.
+    - move => c A G1 G2 B d inprf__r /orP.
+      rewrite /truncated_word.
+      case.
+      + by move => ->.
+      + move => /orP.
+        case.
+        * move => /andP [] /eqP -> /eqP ->.
+          apply /orP; left.
+          apply /hasP.
+          exists (RuleCombinator B d) => //.
+            by do 2  rewrite eq_refl.
+        * move => prf2.
+          apply /orP.
+            by right.
+    - move => M IH__M N IH__N A G1 G2 B d inprf__r /orP.
+      case.
+      + move => /hasP [].
+        case => // C D E inprf__r2.
+        move => /andP [] /andP [] /eqP ->.
+        move => /(IH__M D G1 G2 _ _ inprf__r) prf__M.
+        move => /(IH__N E G1 G2 _ _ inprf__r) prf__N.
+        rewrite /truncated_word.
+        apply /orP; left.
+        apply /hasP.
+        exists (RuleApply C D E) => //.
+          by rewrite eq_refl -/(truncated_word _ _ _) -/(truncated_word _ _ _) prf__M prf__N.
+      + move => /orP.
+        case => //.
+        move => /hasP [].
+        case => // C D E inprf__r2.
+        move => /andP [] /eqP ->.
+        move => /(IH__M D G1 G2 _ _ inprf__r) prf__M.
+        rewrite /truncated_word.
+        apply /orP; right.
+        apply /hasP.
+        exists (RuleApply C D E) => //.
+          by rewrite eq_refl -/(truncated_word _ _ _) prf__M.
+  Qed.
+
+  Lemma rule_shiftr:  forall A M G1 G2 r,
+      truncated_word [:: r & G1] G2 A M -> truncated_word G1 [:: r & G2] A M.
+  Proof.
+    move => A M.
+    move: A.
+    elim: M.
+    - move => c A G1 G2.
+      case => // d B /orP.
+      case.
+      + move => /orP.
+        case.
+        * rewrite /truncated_word /= => ->.
+            by rewrite orbT.
+        * by rewrite /truncated_word /= -/(has _ _) => ->.
+      + rewrite /truncated_word /= -/(has _ _) => ->.
+          by do 2 rewrite orbT.
+    - move => M IH__M N IH__N A G1 G2 /=.
+      case => /=.
+      + move => B /orP.
+        case.
+        * move => /hasP [] r.
+          case: r => // C D E inprf__r /andP [] /andP [] /eqP -> /IH__M prf1 /IH__N prf2.
+          apply /orP; left.
+          apply /hasP.
+          eexists; first by exact inprf__r.
+            by rewrite /= eq_refl prf1 prf2.
+        * move => /hasP [] r.
+          case: r => // C D E inprf__r /andP [] /eqP -> /IH__M prf1.
+          apply /orP; right.
+          apply /hasP.
+          eexists; first by exact inprf__r.
+            by rewrite /= eq_refl prf1.
+      + move => B d /orP.
+        case.
+        * move => /hasP [] r.
+          case: r => // C D E inprf__r /andP [] /andP [] /eqP -> /IH__M prf1 /IH__N prf2.
+          apply /orP; left.
+          apply /hasP.
+          eexists; first by exact inprf__r.
+            by rewrite /= eq_refl prf1 prf2.
+        * move => /hasP [] r.
+          case: r => // C D E inprf__r /andP [] /eqP -> /IH__M prf1.
+          apply /orP; right.
+          apply /hasP.
+          eexists; first by exact inprf__r.
+            by rewrite /= eq_refl prf1.
+      + move => B C D /orP.
+        case.
+        * move => /orP.
+          case.
+          ** move => /andP [] /andP [] /eqP -> /IH__M ->.
+               by rewrite eq_refl orbT.
+          ** move => /hasP [] r.
+             case: r => // E F G inprf__r /andP [] /andP [] /eqP -> /IH__M prf1 /IH__N prf2.
+             apply /orP; left.
+             apply /hasP.
+             eexists; first by exact inprf__r.
+               by rewrite /= eq_refl prf1 prf2.
+        * move => /hasP [] r.
+          case: r => // E F G inprf__r /andP [] /eqP -> /IH__M prf1.
+          apply /orP; right; apply /orP; right.
+          apply /hasP.
+          eexists; first by exact inprf__r.
+            by rewrite /= eq_refl prf1.
+  Qed.
+
+  Definition FailSound (stable targets : TreeGrammar): Prop :=
+    forall A, (RuleFail A \in stable) || (RuleFail A \in targets) -> forall M, truncated_word stable targets A M -> False.
+
+  Lemma FailSound_subset:
+    forall G11 G12 G21 G22,
+      {subset G11 <= G12} ->
+      {subset G21 <= G22} ->
+      FailSound G12 G22 -> FailSound G11 G21.
+  Proof.
+    move => G11 G12 G21 G22 subset1 subset2 prf2 A /orP.
+    case.
+    - move => /subset1 inprf.
+      move: (prf2 A).
+      rewrite inprf /=.
+      move => /(fun prf => prf isT) disprf M wordprf.
+      apply: (disprf M).
+        by apply: truncated_word_weaken; last by exact wordprf.
+    - move => /subset2 inprf.
+      move: (prf2 A).
+      rewrite inprf orbT /=.
+      move => /(fun prf => prf isT) disprf M wordprf.
+      apply: (disprf M).
+        by apply: truncated_word_weaken; last by exact wordprf.
+  Qed.
+
+  Lemma updatedExisting_FailSound:
+    forall stable targets A,
+      FailSound stable targets ->
+      FailSound (updatedExisting stable A).2 targets.
+  Proof.
+    move => stable targets A.
+    rewrite /updatedExisting.
+    elim: stable => // r stable IH.
+    case: r.
+    - move => B /=.
+      case AB__eq: (A == B) => //.
+      case le__AB: (checkSubtypes A B).
+      + case inprf: (RuleFail A \in stable) => //.
+        rewrite /=.
+        move => fsprf C.
+        rewrite in_cons.
+        * 
+        rewrite /FailSound.
+
+
+
+
+  Lemma inhabit_step_FailSound:
+    forall stable targets,
+      FailSound stable targets ->
+      FailSound (inhabitation_step (SplitCtxt Gamma) stable targets).1
+                (inhabitation_step (SplitCtxt Gamma) stable targets).2.
+  Proof.
+    move => stable.
+    case => // r targets.
+    case: r.
+    - rewrite /=.
+      move => A fsprf.
+      apply: FailSound_subset; last by exact fsprf.
+      + done.
+      + move => x.
+        rewrite in_cons.
+        move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP targets__eq inprf.
+          by rewrite targets__eq mem_cat inprf orbT orbT.
+    - move => A c fsprf B /=.
+      case inprf__Ac: (RuleCombinator A c \in stable).
+      + move: (fsprf B).
+        rewrite in_cons /=.
+        move => prf1 /prf1 prf2 M inprf__B.
+        apply: (prf2 M).
+        apply: truncated_word_weaken; last by exact inprf__B.
+        * done.
+        * by move => x; rewrite in_cons => ->; rewrite orbT.
+      + rewrite /=.
+        move: (fsprf B).
+        rewrite in_cons in_cons /=.
+        move => prf1 /prf1 prf2 M inprf__B.
+        apply: (prf2 M).
+          by apply: rule_shiftr.
+    - move => A B C fsprf.
+      rewrite /=.
+
+
+
+
+
+      
+
+
   Definition FCL_complete stable targets :=
-    forall A, (A \in targetTypes stable) ->
+    forall A, (A \in targetTypes stable) || (A \in targetTypes targets) ->
          forall M, [FCL Gamma |- M : A] -> truncated_word stable targets A M.
-  (*
+
+  
 
   Lemma inhabit_step_complete:
     forall stable targets,
@@ -4653,76 +4887,41 @@ Section InhabitationMachineProperties.
     case: r.
     - rewrite /=.
       admit.
-    - move => A c prf_complete /= B.
-      case inprf__Ac: (RuleCombinator A c \in stable).
-      + move => inprf__B M prf__MA.
-        move: (prf_complete B inprf__B M prf__MA).
-        move: inprf__Ac.
-        clear ...
-        move => inprf__Ac.
-        move: B.
-        elim: M.
-        * move => d B /=.
-          case r__eq: ((B == A) && (d == c)).
-          ** move: r__eq => /andP [] /eqP -> /eqP -> _.
-             apply /orP.
-             left.
-             apply /hasP.
-             exists (RuleCombinator A c) => //.
-               by do 2 rewrite eq_refl.
-          ** by rewrite orbA orbF.
-        * move => M IH__M N IH__N B /=.
-          move => /orP.
-          case.
-          ** move => /hasP [] [] // C D E inprf__r /andP [] /andP [] BC__eq /IH__M prf__M /IH__N prf__N.
-             apply /orP.
-             left.
-             apply /hasP.
-             exists (RuleApply C D E) => //.
-               by rewrite BC__eq prf__M prf__N.
-          ** move => /hasP [] [] // C D E inprf__r /andP [] BC__eq /IH__M prf__M.
-             apply /orP.
-             right.
-             apply /hasP.
-             exists (RuleApply C D E) => //.
-               by rewrite BC__eq prf__M.
-      + rewrite 
-
-        move => inprf__B M prf__MA.
-        move: (prf_complete B inprf__B M prf__MA).
-        move: inprf__Ac.
-        clear ...
-        move => inprf__Ac.
-        move: B.
-        elim: M.
-        * move => d B /=.
-          case r__eq: ((B == A) && (d == c)).
-          ** move: r__eq => /andP [] /eqP -> /eqP -> _.
-             apply /orP.
-             left.
-             apply /hasP.
-             exists (RuleCombinator A c) => //.
-               by do 2 rewrite eq_refl.
-          ** by rewrite orbA orbF.
-        * move => M IH__M N IH__N B /=.
-          move => /orP.
-          case.
-          ** move => /hasP [] [] // C D E inprf__r /andP [] /andP [] BC__eq /IH__M prf__M /IH__N prf__N.
-             apply /orP.
-             left.
-             apply /hasP.
-             exists (RuleApply C D E) => //.
-               by rewrite BC__eq prf__M prf__N.
-          ** move => /hasP [] [] // C D E inprf__r /andP [] BC__eq /IH__M prf__M.
-             apply /orP.
-             right.
-             apply /hasP.
-             exists (RuleApply C D E) => //.
-               by rewrite BC__eq prf__M.
-             
+    - move => A c prf_complete /= B /orP.
+      case.
+      + case inprf__Ac: (RuleCombinator A c \in stable).
+        * move => in_stable M prf__MB.
+          move: (fun inprf => prf_complete B inprf M prf__MB).
+          rewrite in_stable orTb.
+          move => /(fun prf => prf isT).
+            by apply: rule_absorbl.
+        * move => in_stable M prf__MB /=.
+          apply: (rule_absorbl _ _ _ _ A c); first by apply: mem_head.
+          apply: (truncated_word_weaken stable _ [:: RuleCombinator A c & targets]) => //.
+          { move => x; rewrite in_cons => ->; by rewrite orbT. }
+          apply: prf_complete => //.
+          move: in_stable.
+          rewrite /= in_cons in_cons.
+          move => /orP [] -> //.
+            by rewrite orbT.
+      + case inprf__Ac: (RuleCombinator A c \in stable).
+        * move => in_targets M prf__MB.
+          move: (fun inprf => prf_complete B inprf M prf__MB).
+          rewrite in_cons in_targets orbT orbT.
+          move => /(fun prf => prf isT).
+            by apply: rule_absorbl.
+        * move => in_targets M prf__MB /=.
+          apply: (rule_absorbl _ _ _ _ A c); first by apply: mem_head.
+          apply: (truncated_word_weaken stable _ [:: RuleCombinator A c & targets]) => //.
+          { move => x; rewrite in_cons => ->; by rewrite orbT. }
+          apply: prf_complete => //.
+          move: in_targets.
+          rewrite /= in_cons => ->.
+            by do 2 rewrite orbT.
+    - admit.
+  Qed.
 
 
-   *)
 End InhabitationMachineProperties.
 
 
