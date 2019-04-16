@@ -5153,78 +5153,22 @@ Section InhabitationMachineProperties.
     apply: IH.
     move: prf.
     case: newTargets.
-
-    rewrite commitMultiArrow_append targetsToMultiArrows_concat_isSome.
-
-    targetsToMultiArrows_eq.
-    
-
-    split.
-    - 
-      move: prf.
-      case: newTargets.
-      + rewrite /= cats0.
-        move => _.
-        
-
-      apply: targetsToMultiArrows_prefix.
-
-
-    move: C newTargets prf.
-    clear ...
-
-
-    elim: srcs.
-    + move => C newTargets /=.
-      case: newTargets => //.
-      case => //.
-      * by move => ? ? [].
-      * move => A d newTargets [] prf _.
-        split => //.
-          by apply: (targetsToMultiArrows_concat_isSome [:: RuleCombinator C c] A d newTargets).
-      * by move => ? ? ? ? [].
-    + move => src srcs IH C newTargets prf /=.
+    - move => _.
       split.
-      * move: prf.
-        case: newTargets.
-        ** move => _.
-           rewrite commitMultiArrow_append.
-           apply: (fun C newTargets prf => proj1 (IH C newTargets prf)).
-           rewrite /= eq_refl.
-
-
-        move: prf IH.
-        case: srcs.
-        ** rewrite /= eq_refl /=.
-           move => [].
-           case: newTargets => //.
-           case => //.
-           move =>  A d newTargets prf _ _.
-           move: (fun r => targetsToMultiArrows_concat_isSome [:: RuleApply C (src -> C) src] A d _ r prf).
-           rewrite /= eq_refl.
-             by move => /(fun prf => prf isT).
-        ** move => src1 srcs [].
-           case: newTargets.
-           *** rewrite /=.
-               move => _ _ IH.
-               rewrite 
-
-
-           rewrite -cat_rcons.
-           rewrite targetsToMultiArrows_concat_isSome.
-
-           move: (IH [::]) => /(fun prf_rec => prf_rec (conj isT isT)) /=.
-           rewrite (commitMultiArrow_rcons).
-           
-
-           
-
-      
-
-
-
-     
-
+      + by rewrite targetsToMultiArrows_eq.
+      + rewrite commitMultiArrow_slow_commitMultiArrow cats0.
+          by move: (commitMultiArrow_slow_split c srcs C) => [] targets [] ->.
+    - move => r newTargets prf.
+      split.
+      + rewrite commitMultiArrow_append.
+        move: prf => [].
+        case: r => //.
+        move => A d prf _.
+        rewrite targetsToMultiArrows_concat_isSome => //.
+          by rewrite targetsToMultiArrows_eq.
+      + rewrite commitMultiArrow_append commitMultiArrow_slow_commitMultiArrow cats0.
+          by move: (commitMultiArrow_slow_split c srcs C) => [] ? [] ->.
+  Qed.
 
   Lemma inhabit_step_multiArrows:
     forall stable targets,
@@ -5246,11 +5190,11 @@ Section InhabitationMachineProperties.
         * move => nextStable /targetsToMultiArrows_behead_isSome /(targetsToMultiArrows_suffix_isSome _ (dropTargets targets)).
             by move => /(fun prf => prf (dropTargets_suffix targets)).
         * by move => nextStable /targetsToMultiArrows_behead_isSome.
-      + move => _ _.
-
-          
-    
-
+      + move => _ _ /targetsToMultiArrows_behead_isSome /(inhabit_cover_multiArrows targets C).
+        case: (inhabit_cover (SplitCtxt Gamma) targets C).
+        case => //.
+          by move => nextTargets /(targetsToMultiArrows_suffix_isSome _ _ (dropTargets_suffix nextTargets)).
+  Qed.
 
 
   Lemma rule_absorbl: forall A M stable targets B c,
