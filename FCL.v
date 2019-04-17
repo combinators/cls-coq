@@ -4862,6 +4862,146 @@ Section InhabitationMachineProperties.
           by apply: dropTargets_suffix.
   Qed.
 
+  Definition updateGroups (groups: seq (@TreeGrammar Combinator Constructor)) (r: Rule) :=
+    if r is RuleCombinator A c
+    then [:: [:: RuleCombinator A c] & groups]
+    else if groups is [:: g1 & groups]
+         then [:: rcons g1 r & groups]
+         else [:: [:: r] ].
+
+  Definition group (targets: @TreeGrammar Combinator Constructor): seq (@TreeGrammar Combinator Constructor) :=
+    rev (foldl updateGroups [::] targets).
+
+  Lemma cancel_group_flatten: cancel group flatten.
+  Proof.
+    move => targets.
+    rewrite /group.
+    have: (flatten (rev [::]: seq (@TreeGrammar Combinator Constructor)) = [::]) by done.
+    rewrite -[X in (_ -> _ = X)%type]cat0s.
+    move: [::] [::].
+    elim: targets.
+    - move => targets2 groups /=.
+        by rewrite cats0.
+    - move => r targets IH targets2 groups eq_prf /=.
+      rewrite (IH (targets2 ++ [:: r])).
+      + by rewrite -catA cat_cons cat0s.
+      + case: r.
+        * move => A.
+          move: eq_prf.
+          case: groups.
+          ** by move => <- /=.
+          ** move => /= targets3 groups.
+             rewrite /= rev_cons rev_cons => <-.
+               by rewrite -cats1 flatten_cat -cats1 /= -cats1 flatten_cat /= cats0 cats0 catA.
+        * move => A c.
+            by rewrite /= rev_cons -cats1 flatten_cat /= eq_prf.
+        * move => A B C.
+          move: eq_prf.
+          case: groups.
+          ** by move => <- /=.
+          ** move => /= targets3 groups.
+             rewrite /= rev_cons rev_cons => <-.
+               by rewrite -cats1 flatten_cat -cats1 /= -cats1 flatten_cat /= cats0 cats0 catA.
+  Qed.
+
+  Fixpoint future_word stable targets A M : Prop :=
+    match M with
+    | Var c =>
+      (RuleCombinator A c \in stable)
+      \/ (exists g, (g \in (group targets)) /\
+              (RuleCombinator A c \in g) /\
+              (forall B, (B \in parameterTypes g) -> exists M, [FCL Gamma |- M : B]))
+    | M @ N =>
+      exists B C, (RuleApply A B C \in stable /\ future_word stable targets B M /\ future_word stable targets C N) \/
+               (exists g, (g \in (group targets)) /\
+                     (RuleApply A B C \in g) /\
+                     (future_word stable targets B M) /\
+                     (forall B, (B \in parameterTypes g) -> exists M, [FCL Gamma |- M : B]))
+    end.
+                                              
+  Lemma future_word_word: forall stable A M, future_word stable [::] A M -> word stable A M.
+  Proof.
+    move => stable A M.
+    move: A.
+    elim: M.
+    - move => c A /=.
+      case.
+      + move => inprf.
+        apply /hasP.
+        exists (RuleCombinator A c) => //.
+          by do 2 rewrite eq_refl.
+      + by case => ? [].
+    - move => M IH__M N IH__N A /=.
+      case => B [] C.
+      case.
+      + move => [] inprf [] /IH__M prf__M /IH__N prf__N.
+        apply /hasP.
+        * exists (RuleApply A B C) => //.
+            by rewrite eq_refl prf__M prf__N.
+      + by move => [] ? [].
+  Qed.
+
+  Lemma future_word_weaken:
+    forall stable1 targets stable2,
+      {subset stable1 <= stable2} ->
+      forall A M,
+        future_word stable1 targets A M ->
+        future_word stable2 targets A M.
+  Proof.
+    move => stable1 targets stable2 subset_prf A M.
+    move: A.
+    elim: M.
+    - move => c A /=.
+      case.
+      + move => /subset_prf result.
+          by left.
+      + move => result.
+          by right.
+    - move => M IH__M N IH__N A /= [] B [] C.
+      case.
+      + move => [] /subset_prf inprf [] /IH__M prf__M /IH__N prf__N.
+        exists B, C.
+          by left.
+      + move => [] g [] inprf [] inprf__g [] /IH__M prf__M inhab_prf.
+        exists B, C.
+        right.
+          by (exists g).
+  Qed.
+
+
+        
+
+
+
+
+
+  
+
+
+
+    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   Fixpoint targetsToMultiArrows_rec (m: @MultiArrow Constructor) (targets: @TreeGrammar Combinator Constructor):
     option (seq (@MultiArrow Constructor)) :=
     match targets with
@@ -4890,7 +5030,8 @@ Section InhabitationMachineProperties.
     end.
 
   Definition potentialDerivation (stable: @TreeGrammar Combinator Constructor) (m: @MultiArrow Constructor): Prop :=
-    (exists M, word stable m.2 M) /\ (forall src, src \in m.1 -> exists M, [FCL Gamma |- M : src]).
+    (forall M, [FCL Gamma |- M : mkArrow m] -> word stable (mkArrow m) M) /\
+    (forall M src, src \in m.1 -> [FCL Gamma |- M : src] -> word stable src M).
 
   Definition truncated_word stable targets A M : Prop :=
     if (targetsToMultiArrows targets) is Some ms
@@ -5263,12 +5404,11 @@ Section InhabitationMachineProperties.
                by rewrite ok_prf.
   Qed.
 
-  Lemma rule_absorbl: forall A M stable targets r,
+  Lemma rule_drop: forall A M stable targets r,
       isSome (targetsToMultiArrows targets) ->
-      (r \in stable) ->
       truncated_word stable [:: r & targets] A M -> truncated_word stable (dropTargets targets) A M.
   Proof.
-    move => A M stable targets r targetsOk inprf.
+    move => A M stable targets r targetsOk.
     rewrite /truncated_word.
     move: (targetsToMultiArrows_dropTarget r targets).
     case: (targetsToMultiArrows (r :: targets)) => //.
@@ -5279,15 +5419,44 @@ Section InhabitationMachineProperties.
         by move => ? ? ? /(fun prf => prf isT).
     - move: (targetsToMultiArrows_suffix_isSome _ _ (dropTargets_suffix targets) targetsOk).
       case: (targetsToMultiArrows (dropTargets targets)) => //.
+      move: (dropTargets_suffix targets) => /suffixP [] prefix targets__eq.
+      move => ms _ m ? /(fun prf => prf prefix targets__eq) [] rprefix__eq [] <- /= res prf.
+      apply: res.
+        by right.
+  Qed.
+
+  Lemma rule_absorbl: forall A M stable targets c B,
+      isSome (targetsToMultiArrows targets) ->
+      (RuleCombinator c B \in stable) ->
+      truncated_word stable [:: RuleCombinator c B & targets] A M -> truncated_word stable targets A M.
+  Proof.
+    move => A M stable targets B c targetsOk inprf.
+    rewrite /truncated_word.
+    move: (targetsToMultiArrows_dropTarget (RuleCombinator B c) targets).
+    case: (targetsToMultiArrows (RuleCombinator B c :: targets)) => //.
+    case.
+    - rewrite /=.
+      move: targetsOk.
+      case: (targetsToMultiArrows targets) => //.
+        by move => ? ? _ /(fun prf => prf isT).
+    - move => m ms /=.
+      move: (targetsToMultiArrows_suffix_isSome _ _ (dropTargets_suffix targets) targetsOk).
+      move drop__eq: (targetsToMultiArrows (dropTargets targets)) => ms2.
+      move: drop__eq.
+      case: ms2 => //.
+      move: (dropTargets_suffix targets) => /suffixP [] prefix targets__eq.
+      move => ms2 drop__eq _ /(fun prf => prf prefix targets__eq) [] rprefix__eq [] ms__eq.
+      move: drop__eq.
+      rewrite ms__eq.
+      clear ms__eq ms2.
+
+
+      apply: res.
+        by right.
+  Qed.
 
       
-
-
-
-    move => A M stable targets B c res _.
-    apply: res.
-      by left.
-  Qed.
+  (*
 
   Lemma rule_shiftr:  forall A M G1 G2 r,
       truncated_word [:: r & G1] G2 A M -> truncated_word G1 [:: r & G2] A M.
@@ -5361,7 +5530,7 @@ Section InhabitationMachineProperties.
     forall A, (A \in targetTypes stable) || (A \in targetTypes targets) ->
          forall M, [FCL Gamma |- M : A] -> truncated_word stable targets A M.
 
-  Lemma computeUpdates_failedFailed:
+  (*Lemma computeUpdates_failedFailed:
     forall stable C,
       (computeUpdates stable C).1 ->
       RuleFail C \in if (computeUpdates stable C).2 is Some updates then updates else stable.
@@ -5502,7 +5671,7 @@ Section InhabitationMachineProperties.
     - 
     
 
-    
+    *)
     
 
   
@@ -5511,6 +5680,7 @@ Section InhabitationMachineProperties.
     forall stable targets,
       {subset OmegaRules <= stable} ->
       noTargetFailures targets ->
+      isSome (targetsToMultiArrows targets) ->
       FCL_complete stable targets ->
       FCL_complete (inhabitation_step (SplitCtxt Gamma) stable targets).1
                    (inhabitation_step (SplitCtxt Gamma) stable targets).2.
@@ -5519,13 +5689,14 @@ Section InhabitationMachineProperties.
     case: targets => // r targets.
     case: r.
     - done.
-    - move => A c _ prf_complete /= B /orP.
+    - move => A c _ prf_some prf_complete /= B /orP.
       case.
       + case inprf__Ac: (RuleCombinator A c \in stable).
         * move => in_stable M prf__MB.
           move: (fun inprf => prf_complete B inprf M prf__MB).
           rewrite in_stable orTb.
-          move => /(fun prf => prf isT).
+          move => /(fun prf => prf isT) res.
+          rewrite /= /truncated_word.
             by apply: rule_absorbl.
         * move => in_stable M prf__MB /=.
           apply: (rule_absorbl _ _ _ _ A c); first by apply: mem_head.
