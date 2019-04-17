@@ -4904,6 +4904,101 @@ Section InhabitationMachineProperties.
                by rewrite -cats1 flatten_cat -cats1 /= -cats1 flatten_cat /= cats0 cats0 catA.
   Qed.
 
+  Lemma updateGroups0:
+    forall r, updateGroups [::] r = [:: [:: r]].
+  Proof. by case. Qed.
+
+  Lemma group_notComb:
+    forall group groups targets,
+      all (fun r => if r is RuleCombinator _ _ then false else true) targets ->
+      foldl updateGroups [:: group & groups] targets = [:: group ++ targets & groups].
+  Proof.
+    move => group groups targets.
+    move: group groups.
+    elim: targets.
+    - move => group groups _ /=.
+        by rewrite cats0.
+    - move => r targets IH group groups /andP [] notcomb prfs /=.
+      move: notcomb.
+      case: r => //=.
+      + move => A _.
+          by rewrite (IH _ _ prfs) -cats1 -catA.
+      + move => A B C _.
+          by rewrite (IH _ _ prfs) -cats1 -catA.
+  Qed.
+
+  Lemma group_comb:
+    forall groups A c targets,
+      foldl updateGroups groups [:: RuleCombinator A c & targets] = (foldl updateGroups [::] [:: RuleCombinator A c & targets]) ++ groups.
+  Proof.
+    move => groups A c targets /=.
+    have: (forall r, updateGroups [:: [:: RuleCombinator A c] & groups ] r = updateGroups [:: [:: RuleCombinator A c]] r ++ groups)
+      by case.
+    move: groups [:: [:: RuleCombinator A c] & groups] [:: [:: RuleCombinator A c]].
+    elim: targets.
+    - by move => groups gs1 gs2 /= /(fun prf => prf (RuleCombinator A c)) /= [].
+    - move => r targets IH groups gs1 gs2 prf.
+      rewrite /=.
+      apply: IH.
+      rewrite (prf r).
+      clear prf.
+      case: r.
+      + move => B r.
+        case: gs2; by case: r.
+      + move => B d r.
+        case: gs2; by case: r.
+      + move => B C D r.
+        case: gs2; by case: r.
+  Qed.
+
+  Lemma dropTargets_notCombinator:
+    forall targets prefix,
+      targets = prefix ++ dropTargets targets ->
+      all (fun r => if r is RuleCombinator _ _ then false else true) prefix.
+  Proof.
+    elim.
+    - by case.
+    - move => r.
+      case r__eq: r.
+      + move => targets IH /=.
+        case => //.
+        case => //= A prefix.
+          by case => _ /IH.
+      + move => targets _ /=.
+        case => // r2 prefix.
+        rewrite -[X in X = _]cat0s => /(f_equal seq.size) /eqP.
+        do 2 rewrite size_cat.
+          by rewrite eqn_add2r /= -addn1 eq_sym addn_eq0 andbF.
+      + move => targets IH /=.
+        case => //.
+        case => //= A B C prefix.
+          by case => _ _ _ /IH.
+  Qed.
+
+  Lemma dropTargets_combinatorOrEmpty:
+    forall targets,
+      if dropTargets targets is [:: RuleCombinator A c & _]
+      then true
+      else if dropTargets targets is [::]
+           then true
+           else false.
+  Proof. elim => //; by case. Qed.
+
+  Lemma group_split: forall r targets prefix,
+      targets = prefix ++ dropTargets targets ->
+      group [:: r & targets] = [:: [:: r & prefix] & group (dropTargets targets)].
+  Proof.
+    move => r targets prefix eq_prf.
+    rewrite /group /= [X in foldl _ _ X]eq_prf.
+    rewrite updateGroups0.
+    rewrite foldl_cat (group_notComb [:: r] [::] prefix (dropTargets_notCombinator targets prefix eq_prf)).
+    move: (dropTargets_combinatorOrEmpty targets).
+    move: eq_prf => _.
+    case: (dropTargets targets) => //.
+    case => // A c rest _.
+      by rewrite group_comb rev_cat.
+  Qed.
+
   Fixpoint future_word stable targets A M : Prop :=
     match M with
     | Var c =>
@@ -4967,6 +5062,239 @@ Section InhabitationMachineProperties.
         right.
           by (exists g).
   Qed.
+
+  Lemma rule_absorbl:
+    forall stable targets A c,
+      (RuleCombinator A c \in stable) ->
+      forall B M, future_word stable [:: RuleCombinator A c & targets] B M ->
+             future_word stable targets B M.
+  Proof.
+    move => stable targets A c inprf B M.
+    move: B.
+    elim: M.
+    - move => d B /=.
+      case.
+      + by move => ?; left.
+      + case r__eq: (RuleCombinator A c == RuleCombinator B d).
+        * rewrite -(eqP r__eq).
+            by move => _; left.
+        * move => [] g [] /=.
+          move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP eq_prf.
+          rewrite (group_split (RuleCombinator A c) targets prefix eq_prf) in_cons.
+          case /orP.
+          ** move => /eqP ->.
+             move: (dropTargets_notCombinator _ _ eq_prf) r__eq => /allP disprf.
+               by rewrite eq_sym in_cons => -> /= [] /disprf.
+          ** move => inprf__g props.
+             right.
+             exists g; split => //.
+             rewrite eq_prf /group.
+             move: eq_prf => /(dropTargets_notCombinator).
+             case: prefix => //= r prefix /andP [] _ notCombinators.
+             rewrite updateGroups0 foldl_cat group_notComb //.
+             move: (dropTargets_combinatorOrEmpty targets) inprf__g.
+             case: (dropTargets targets) => //; case => // C e dropped _.
+             rewrite group_comb rev_cat -/(group _) mem_cat => ->.
+               by rewrite orbT.
+    - move => M IH__M N IH__N B /= [] C [] D.
+      case.
+      + move => [] inprf__r [] /IH__M prf__M /IH__N prf__N.
+        exists C, D.
+          by left.
+      + move => [] g [].
+        move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP eq_prf.
+        rewrite (group_split _ _ _ eq_prf) in_cons.
+        case /orP.
+        * move => /eqP -> [].
+          rewrite in_cons /=.
+          move => inprf__BCD [] /IH__M prf__M params_prf.
+          exists C, D.
+          right.
+          exists prefix.
+          split; last split => //.
+          rewrite eq_prf /group.
+          move: eq_prf => /dropTargets_notCombinator.
+          rewrite foldl_cat.
+          clear params_prf.
+          move: inprf__BCD.
+          case: prefix => //.
+          move => r prefix _ /andP [] _ notCombinators.
+          rewrite /= updateGroups0 group_notComb //.
+          move: (dropTargets_combinatorOrEmpty targets).
+          case: (dropTargets targets).
+          ** move => _ /=.
+               by apply: mem_head.
+          ** case => // E d dropped _.
+               by rewrite group_comb rev_cat mem_cat /= mem_head.
+        * move => inprf__g [] inprf__BCD [] /IH__M prf__M param_prfs.
+          exists C, D.
+          right.
+          exists g.
+          split => //.
+          rewrite eq_prf.
+          move: eq_prf => /dropTargets_notCombinator.
+          move: inprf__g.
+          clear...
+          case: prefix => //.
+          move => r prefix inprf__g /andP [] _ notCombinators.
+          rewrite /group foldl_cat /= updateGroups0 group_notComb //.
+          move: (dropTargets_combinatorOrEmpty targets) inprf__g.
+          case: (dropTargets targets) => //; case => // A c dropped _.
+          rewrite group_comb rev_cat mem_cat -/(group _) => ->.
+            by rewrite orbT.
+  Qed.
+          
+  Definition FCL_complete stable targets :=
+    forall A, (A \in targetTypes stable) || (A \in targetTypes targets) ->
+         forall M, [FCL Gamma |- M : A] -> future_word stable targets A M.
+
+  Lemma computeUpdates_failedFailed:
+    forall stable C,
+      (computeUpdates stable C).1 ->
+      RuleFail C \in if (computeUpdates stable C).2 is Some updates then updates else stable.
+  Proof.
+    move => stable C.
+    elim: stable => // r stable IH.
+    case: r => /=.
+    - move => A.
+      case CA__eq: (C == A).
+      + by rewrite /= (eqP CA__eq) mem_head.
+      + case: (checkSubtypes C A).
+        * move => _ /=.
+          case inprf: (RuleFail C \in stable).
+          ** by rewrite in_cons inprf orbT.
+          ** by apply: mem_head.
+        * move => /IH.
+          case: (computeUpdates stable C).2 => //.
+          rewrite in_cons => ->.
+            by rewrite orbT.
+    - move => A c.
+      case C__eq: (C == A) => //.
+      move: IH.
+      case: (computeUpdates stable C) => [].
+      case.
+      + move => updated /(fun prf => prf isT) res _ /=.
+        move: res.
+          by case: updated => //.
+      + move => updated _.
+        case: updated => //.
+          by case: (checkSubtypes C A && checkSubtypes A C).
+    - move => A B D.
+      case: ((C == A) || (C == D)) => //.
+      move: IH.
+      case: (computeUpdates stable C) => [].
+      case.
+      + move => updated /(fun prf => prf isT) res _ /=.
+        move: res.
+          by case: updated => //.
+      + move => updated _.
+        case: updated => //.
+          by case: (checkSubtypes C A && checkSubtypes A C).
+  Qed.
+
+  Lemma updatedExisting_failed_complete:
+    forall stable targets A B C,
+      {subset OmegaRules <= stable} ->
+      FailSound stable ->
+      (updatedExisting stable C).1.2 ->
+      FCL_complete stable [:: RuleApply A B C & targets] ->
+      FCL_complete (updatedExisting stable C).2
+                   (if (updatedExisting stable C).1.2 then dropTargets targets else targets).
+  Proof.
+    move => stable targets A B C omega_subset fsprf.
+    move: (computeUpdates_FailSound stable C fsprf).
+    move: (computeUpdates_lhs stable C).
+    move: (computeUpdates_failedFailed stable C).
+    rewrite /updatedExisting.
+    case: (computeUpdates stable C) => failed updates.
+    case: updates.
+    - move => updates.
+      case: failed => // /(fun prf => prf isT).
+      case: (updates != [::]).
+      + rewrite /=.
+        move => inprf updates_lhs_eq fsprf_updates _ complete_prf D.
+        rewrite /targetTypes map_cat.
+        do 3 rewrite -/(targetTypes _).
+        rewrite mem_cat.
+        case /orP; first case /orP.
+        * move => inprf__D.
+          have: (D = C).
+          { move: updates_lhs_eq => /allP.
+            move: inprf__D.
+            rewrite /targetTypes.
+            move => /mapP [] r inprf__r D__eq.
+            move => /(fun prf => prf r inprf__r).
+              by rewrite D__eq => /eqP. }
+          move => -> M /fsprf_updates.
+            by move => /(fun prf => prf inprf).
+        * move => inprf__D M prf.
+          move: (complete_prf D (introT orP (or_introl inprf__D)) M prf).
+          move => truncprf.
+          apply: (future_word_weaken stable).
+          { move => x; rewrite mem_cat => ->; by rewrite orbT. }
+          admit.
+        * admit.
+      + rewrite /=.
+
+    - rewrite /=.
+
+
+
+  Lemma inhabit_step_complete:
+    forall stable targets,
+      {subset OmegaRules <= stable} ->
+      noTargetFailures targets ->
+      FCL_complete stable targets ->
+      FCL_complete (inhabitation_step (SplitCtxt Gamma) stable targets).1
+                   (inhabitation_step (SplitCtxt Gamma) stable targets).2.
+  Proof.
+    move => stable targets omega_subset.
+    case: targets => // r targets.
+    case: r.
+    - done.
+    - move => A c _ prf_complete B /= /orP.
+      case.
+      + case inprf__Ac: (RuleCombinator A c \in stable).
+        * move => in_stable M prf__MB.
+          move: (fun inprf => prf_complete B inprf M prf__MB).
+          rewrite in_stable orTb.
+          move => /(fun prf => prf isT) res.
+          rewrite /=.
+            by apply: (rule_absorbl _ _ _ _ inprf__Ac).
+        * move => in_stable M prf__MB /=.
+          apply: (rule_absorbl _ _ A c); first by apply: mem_head.
+          apply: (future_word_weaken stable) => //.
+          { move => x; rewrite in_cons => ->; by rewrite orbT. }
+          apply: prf_complete => //.
+          move: in_stable.
+          rewrite /= in_cons in_cons.
+          move => /orP [] -> //.
+            by rewrite orbT.
+      + case inprf__Ac: (RuleCombinator A c \in stable).
+        * move => in_targets M prf__MB.
+          move: (fun inprf => prf_complete B inprf M prf__MB).
+          rewrite in_cons in_targets orbT orbT.
+          move => /(fun prf => prf isT).
+            by apply: rule_absorbl.
+        * move => in_targets M prf__MB /=.
+          apply: (rule_absorbl _ _ A c); first by apply: mem_head.
+          apply: (future_word_weaken stable) => //.
+          { move => x; rewrite in_cons => ->; by rewrite orbT. }
+          apply: prf_complete => //.
+          move: in_targets.
+          rewrite /= in_cons => ->.
+            by do 2 rewrite orbT.
+    - move => A B C noFail prf_complete /= D.
+
+      
+  Qed.
+
+
+
+
+
+
+
 
 
         
