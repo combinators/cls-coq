@@ -4890,7 +4890,7 @@ Section InhabitationMachineProperties.
     end.
 
   Definition potentialDerivation (stable: @TreeGrammar Combinator Constructor) (m: @MultiArrow Constructor): Prop :=
-    (exists M, word stable m.2 M) /\ (forall src, src \in m.1 -> exists M, word stable src M).
+    (exists M, word stable m.2 M) /\ (forall src, src \in m.1 -> exists M, [FCL Gamma |- M : src]).
 
   Definition truncated_word stable targets A M : Prop :=
     if (targetsToMultiArrows targets) is Some ms
@@ -5105,7 +5105,7 @@ Section InhabitationMachineProperties.
     rewrite /=.
     move => apply_prfs prf.
       by apply: (split_targetsToMultiArrows_rec targets src C ([::], mkArrow (srcs, src -> C)) [::] (srcs, src -> C)) => //.
-  Qed.    
+  Qed.
 
   Lemma inhabit_cover_multiArrows:
     forall targets C,
@@ -5196,22 +5196,100 @@ Section InhabitationMachineProperties.
           by move => nextTargets /(targetsToMultiArrows_suffix_isSome _ _ (dropTargets_suffix nextTargets)).
   Qed.
 
-
-  Lemma rule_absorbl: forall A M stable targets B c,
-      isSome (targetsToMultiArrows 
-      ((RuleCombinator B c) \in stable) ->
-      truncated_word stable [:: (RuleCombinator B c) & targets] A M -> truncated_word stable targets A M.
+  Lemma targetsToMultiArrows_dropTarget:
+    forall target targets,
+      if targetsToMultiArrows [:: target & targets] is Some [:: m & ms] return Prop
+      then
+        forall prefix, targets == prefix ++ dropTargets targets ->
+                  targetsToMultiArrows [:: target & prefix] = Some [:: m] /\
+                  targetsToMultiArrows (dropTargets targets) = Some ms
+      else true.
   Proof.
-    move => A M stable targets B c inprf.
-    rewrite /truncated_word /=.
-    case: 
+    case => //.
+    - move => A c targets /=.
+      move: [::] A.
+      elim: targets.
+      + move => srcs A prefix /=.
+          by case: prefix.
+      + move => r targets IH srcs A /=.
+        case: r => //.
+        * move => B d /=.
+          case: (targetsToMultiArrows_rec ([::], B) targets) => //.
+          move => ms.
+          case => // r nextTargets /eqP /(f_equal (seq.size)) /=.
+          rewrite size_cat /= => /eqP.
+            by rewrite eqSS eqn_leq [seq.size _ + _ <= _]leqNgt ltn_addl // andbF.
+        * move => B C D /=.
+          case ok_prf: ((C == A) && ((D -> B) == C)) => //.
+          move: (IH [:: D & srcs] B).
+          case: (targetsToMultiArrows_rec (D :: srcs, B) targets) => //.
+          case => // m ms prf.
+          case.
+          ** rewrite /=.
+             move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP eq_prf.
+             rewrite [X in ([:: _ & X] == _ -> _)%type]eq_prf.
+             move => /eqP /(f_equal (seq.size)) /eqP /=.
+             rewrite size_cat.
+               by rewrite -addn1 eqn_leq -addnA (addn1 (seq.size _)) [(_ + _) <= _]leqNgt ltn_addl.
+          ** move => r prefix /= /eqP [] <- /eqP /prf.
+               by rewrite ok_prf.
+    - move => A B C targets /=.
+      case: ((C -> A) == B) => //.
+      move: [:: C] A.
+      elim: targets.
+      + move => srcs A prefix /=.
+          by case: prefix.
+      + move => r targets IH srcs A /=.
+        case: r => //.
+        * move => E d /=.
+          case: (targetsToMultiArrows_rec ([::], E) targets) => //.
+          move => ms.
+          case => // r nextTargets /eqP /(f_equal (seq.size)) /=.
+          rewrite size_cat /= => /eqP.
+            by rewrite eqSS eqn_leq [seq.size _ + _ <= _]leqNgt ltn_addl // andbF.
+        * move => E F G /=.
+          case ok_prf: ((F == A) && ((G -> E) == F)) => //.
+          move: (IH [:: G & srcs] E).
+          case: (targetsToMultiArrows_rec (G :: srcs, E) targets) => //.
+          case => // m ms prf.
+          case.
+          ** rewrite /=.
+             move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP eq_prf.
+             rewrite [X in ([:: _ & X] == _ -> _)%type]eq_prf.
+             move => /eqP /(f_equal (seq.size)) /eqP /=.
+             rewrite size_cat.
+               by rewrite -addn1 eqn_leq -addnA (addn1 (seq.size _)) [(_ + _) <= _]leqNgt ltn_addl.
+          ** move => r prefix /= /eqP [] <- /eqP /prf.
+               by rewrite ok_prf.
+  Qed.
+
+  Lemma rule_absorbl: forall A M stable targets r,
+      isSome (targetsToMultiArrows targets) ->
+      (r \in stable) ->
+      truncated_word stable [:: r & targets] A M -> truncated_word stable (dropTargets targets) A M.
+  Proof.
+    move => A M stable targets r targetsOk inprf.
+    rewrite /truncated_word.
+    move: (targetsToMultiArrows_dropTarget r targets).
+    case: (targetsToMultiArrows (r :: targets)) => //.
+    case.
+    - rewrite /=.
+      move: (targetsToMultiArrows_suffix_isSome _ _ (dropTargets_suffix targets) targetsOk).
+      case: (targetsToMultiArrows (dropTargets targets)) => //.
+        by move => ? ? ? /(fun prf => prf isT).
+    - move: (targetsToMultiArrows_suffix_isSome _ _ (dropTargets_suffix targets) targetsOk).
+      case: (targetsToMultiArrows (dropTargets targets)) => //.
+
+      
+
+
 
     move => A M stable targets B c res _.
     apply: res.
       by left.
   Qed.
 
-  (*Lemma rule_shiftr:  forall A M G1 G2 r,
+  Lemma rule_shiftr:  forall A M G1 G2 r,
       truncated_word [:: r & G1] G2 A M -> truncated_word G1 [:: r & G2] A M.
   Proof.
     move => A M.
