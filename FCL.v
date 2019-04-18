@@ -2298,12 +2298,17 @@ Section InhabitationMachine.
   Definition inhabitation_step (stable: TreeGrammar) (targets: TreeGrammar): TreeGrammar * TreeGrammar :=
     match targets with
     | [:: RuleApply A B currentTarget & targets] =>
-      if updatedExisting stable currentTarget is (true, failed, updated)
-      then (updated, if failed then dropTargets targets else targets)
-      else let: (failed, nextTargets) := inhabit_cover targets currentTarget in
-           if failed
-           then ([:: RuleFail currentTarget & stable], dropTargets nextTargets)
-           else ([:: RuleApply A B currentTarget & stable], nextTargets)
+      if RuleApply A B currentTarget \in stable
+      then (stable, targets)
+      else if updatedExisting stable currentTarget is (true, failed, updated)
+           then
+             if failed
+             then (updated, dropTargets targets)
+             else ([:: RuleApply A B currentTarget & updated], targets)
+           else let: (failed, nextTargets) := inhabit_cover targets currentTarget in
+                if failed
+                then ([:: RuleFail currentTarget & stable], dropTargets nextTargets)
+                else ([:: RuleApply A B currentTarget & stable], nextTargets)
     | [:: RuleCombinator A c & targets] =>
       if RuleCombinator A c \in stable
       then (stable, targets)
@@ -3538,6 +3543,7 @@ Section InhabitationMachineProperties.
       split => //.
         by apply /andP.
     - move => A B C targets /=.
+      case: (RuleApply A B C \in stable); first by move => /andP [].
       move: (updatedExisting_sound stable C stable_sound).
       move: (updatedExisting_true stable C).
       case: (updatedExisting stable C) => [] [] hasExisting failed updated.
@@ -3547,7 +3553,9 @@ Section InhabitationMachineProperties.
           split => //.
           apply: suffix_sound; first by apply: dropTargets_suffix.
             by move: targets_sound => /andP [].
-        * by move => _ ? /andP [].
+        * move => _ updated_sound /andP [] rule_sound targets_sound.
+          split => //.
+            by apply /andP.
       + move => omega_updated updated_sound /andP [] le_prf targets_sound.
         case isOmega__C: (isOmega C).
         * suff: false by done.
@@ -4148,6 +4156,13 @@ Section InhabitationMachineProperties.
         move => inprf__D.
         apply: all_targets_subset.
           by rewrite mem_undup in_cons inprf__D orbT. }
+      have target_parametersSubset: {subset undup (parameterTypes targets) <= maxParameterTypes initialTarget}.
+      { move => D.
+        rewrite mem_undup.
+        move => inprf__D.
+        apply: all_target_parameterSubset.
+          by rewrite mem_undup in_cons inprf__D orbT. }
+      case: (RuleApply A B C \in stable) => //.
       have dropTargets_subset: {subset undup (targetTypes (dropTargets targets)) <= maxTypes initialTarget}.
       { move => D.
         rewrite mem_undup.
@@ -4155,12 +4170,6 @@ Section InhabitationMachineProperties.
         apply: targets_subset.
         move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP ->.
           by rewrite mem_undup /targetTypes map_cat mem_cat inprf orbT. }
-      have target_parametersSubset: {subset undup (parameterTypes targets) <= maxParameterTypes initialTarget}.
-      { move => D.
-        rewrite mem_undup.
-        move => inprf__D.
-        apply: all_target_parameterSubset.
-          by rewrite mem_undup in_cons inprf__D orbT. }
       have dropTargets_parametersSubset: {subset undup (parameterTypes (dropTargets targets)) <= maxParameterTypes initialTarget}.
       { move => D.
         rewrite mem_undup.
@@ -4174,14 +4183,31 @@ Section InhabitationMachineProperties.
       have inprf__C: C \in maxParameterTypes initialTarget.
       { apply: all_target_parameterSubset.
           by rewrite mem_undup in_cons /= eq_refl. }
-      have: {subset (undup (targetTypes (updatedExisting stable C).2)) <= maxTypes initialTarget} /\
-            {subset (undup (parameterTypes (updatedExisting stable C).2)) <= maxParameterTypes initialTarget}.
+      have updated_subset: {subset (undup (targetTypes (updatedExisting stable C).2)) <= maxTypes initialTarget} /\
+                           {subset (undup (parameterTypes (updatedExisting stable C).2)) <= maxParameterTypes initialTarget}.
       { by apply: updatedExisting_subset. }
+      have: {subset (undup (targetTypes [:: RuleApply A B C & (updatedExisting stable C).2])) <= maxTypes initialTarget} /\
+            {subset (undup (parameterTypes [:: RuleApply A B C & (updatedExisting stable C).2])) <= maxParameterTypes initialTarget}.
+      { split.
+        - move => D.
+          rewrite mem_undup in_cons.
+          case /orP.
+          + by move => /= /eqP ->.
+          + rewrite -mem_undup.
+              by apply (proj1 updated_subset).
+        - move => D.
+          rewrite mem_undup in_cons.
+          case /orP.
+          + by move => /= /eqP ->.
+          + rewrite -mem_undup.
+              by apply (proj2 updated_subset). }
+      move => [].
+      move: updated_subset.
       move => [].
       case: (updatedExisting stable C) => [] [].
       case.
       + by case.
-      + move => _ _ _ _.
+      + move => _ _ _ _ _ _.
         move: (inhabit_cover_targetTypes_subset targets C initialTarget targets_subset inprf__C) => nextTargets_subset.
         move: (inhabit_cover_parameterTypes_subset targets C initialTarget target_parametersSubset) => nextTarget_parametersSubset.
         have: {subset (undup (targetTypes [:: RuleFail C & stable])) <= maxTypes initialTarget}.
@@ -4420,6 +4446,7 @@ Section InhabitationMachineProperties.
           rewrite subn_gt0.
             by apply: (@leq_trans ((seq.size (maxTypes initialTarget)).+1)).
     - move => A B C /= targets_subset target_parametersSubset.
+      case: (RuleApply A B C \in stable); first by right; right.
       move: (updatedExisting_fresh stable C).
       rewrite /updatedExisting.
       case: (computeUpdates stable C).
@@ -4471,6 +4498,9 @@ Section InhabitationMachineProperties.
                         by apply: undup_uniq.
                  **** by rewrite /= inprf__A.
         * move => r updated /=.
+          case failed.
+          ** 
+
           case stable_targets_eq: (undup (targetTypes stable) == undup (targetTypes [:: r & updated ++ stable])).
           ** rewrite /inhabit_step_rel (eqP stable_targets_eq).
              right.
