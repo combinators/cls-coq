@@ -4286,6 +4286,129 @@ Section InhabitationMachineProperties.
           by exact: well_founded_ltof.
   Qed.
 
+  Lemma inhabit_step_rel_cons:
+    forall initialTarget stable1 targets1 stable2 targets2 r,
+      {subset (undup (targetTypes stable1)) <= maxTypes initialTarget} ->
+      {subset (undup (parameterTypes stable1)) <= maxParameterTypes initialTarget} ->
+      inhabit_step_rel initialTarget (stable1, targets1) (stable2, targets2) ->
+      inhabit_step_rel initialTarget ([:: r & stable1], targets1) (stable2, targets2).
+  Proof.
+    move => initialTarget stable1 targets1 stable2 targets2 r subset_targets subset_params.
+    rewrite /inhabit_step_rel.
+    set (exleft :=
+           (existT (fun _ : seq IT => {_ : seq IT & TreeGrammar})
+                   (undup (targetTypes (stable1, targets1).1))
+                   (existT (fun _ : seq IT => TreeGrammar)
+                           (undup
+                              [seq r0 <- parameterTypes (stable1, targets1).1
+                              | r0 \notin undup (targetTypes (stable1, targets1).1)])
+                           (stable1, targets1).2))).
+    rewrite -/exleft.
+    have: (projT2 (projT2 exleft) = (stable1, targets1).2) by done.
+    have: (projT1 (projT2 exleft) = (undup
+                                       [seq r0 <- parameterTypes (stable1, targets1).1
+                                       | r0 \notin undup (targetTypes (stable1, targets1).1)])) by done.
+    have: (projT1 exleft = (undup (targetTypes (stable1, targets1).1))) by done.
+    move: exleft => exleft p1 p2 p3 prf.
+    move: prf p1 p2 p3.
+    rewrite [maxTypes initialTarget]lock [maxParameterTypes]lock.
+    case.
+    + move => ? ? ? ? lt_prf /= p1 _ _.
+      move: lt_prf.
+      rewrite p1.
+      move => lt_prf.
+      left.
+      case: (lhs r \in targetTypes stable1) => //.
+      rewrite /ltof /=.
+      apply /leP.
+      apply: leq_ltn_trans; last by move: lt_prf => /leP lt_prf; exact lt_prf.
+        by apply: leq_sub2r.
+    + move => x ? ? prf x__eq.
+      case inprf__r: (lhs r \in targetTypes stable1).
+      * have: (undup (targetTypes ([:: r & stable1], targets1).1) = x).
+        { by rewrite /= inprf__r. }
+        move => ->.
+        move: prf.
+        case.
+        ** move => ? ? ? ? lt_prf /= p2 _.
+           move: x__eq lt_prf.
+           rewrite /= p2 => ->.
+           move => lt_prf.
+           right; left.
+           clear inprf__r.
+           case: r => //= _ _ C.
+           case: (C \notin undup (targetTypes stable1)) => //=.
+           case: (C \in [seq r <- parameterTypes stable1 | r \notin undup (targetTypes stable1)]) => //.
+           rewrite /ltof /=.
+           apply /leP.
+           apply: leq_ltn_trans; last by move: lt_prf => /leP lt_prf; exact lt_prf.
+             by apply: leq_sub2r.
+        ** case inprf__r2: (if r is RuleApply _ _ C
+                          then C \in undup
+                                       [seq r0 <- parameterTypes (stable1, targets1).1
+                                       | r0 \notin undup (targetTypes (stable1, targets1).1)]
+                          else true).
+           *** move => y ? ? lt_prf /= y__eq.
+               have: ((undup [seq r0 <- parameterTypes (r :: stable1, targets1).1 | r0 \notin x]) = y).
+               { rewrite /=.
+                 move: x__eq inprf__r2.
+                 clear inprf__r.
+                 rewrite /= => ->.
+                 case: r => //; try by rewrite y__eq.
+                 move => /= _ _ C.
+                 rewrite mem_undup mem_filter => /andP [] prf1 prf2 /=.
+                   by rewrite prf1 /= mem_filter prf1 prf2 y__eq. }
+               move => ->.
+               right; right.
+                 by rewrite -p3.
+           *** move => y ? ? lt_prf /= y__eq.
+               case r__eq: (if r is RuleApply _ _ C then C \in (undup (targetTypes stable1)) else false).
+               **** move => p3.
+                    have: ((undup
+                               [seq r0 <- oapp (cons^~ (parameterTypes stable1))
+                                   (parameterTypes stable1)
+                                   match r with
+                                   | RuleApply _ _ C => Some C
+                                   | _ => None
+                                   end
+                               | r0 \notin x]) = y).
+                    { move: r__eq inprf__r2.
+                      clear inprf__r.
+                      case: r => //.
+                      move: x__eq => /= -> _ _ C -> /=.
+                        by rewrite y__eq. }
+                    move => ->.
+                    right; right.
+                      by rewrite -p3.
+               **** move => p3.
+                    right; left.
+                    rewrite /ltof.
+                    apply /leP.
+                    rewrite y__eq.
+                    rewrite ltn_sub2l //.
+                    { apply: (@leq_ltn_trans (seq.size (undup (parameterTypes stable1)))).
+                      - rewrite uniq_leq_size //; first by rewrite undup_uniq.
+                        move => C.
+                        rewrite mem_undup mem_filter => /andP [] _.
+                          by rewrite mem_undup.
+                      - rewrite ltnS uniq_leq_size //; first by rewrite undup_uniq.
+                          by rewrite -lock. }
+                    { move: r__eq.
+                      clear inprf__r.
+                      move: inprf__r2.
+                      case: r => //= _ _ C.
+                      move: x__eq => /= -> prf1 -> /=.
+                      move: prf1.
+                        by rewrite mem_undup => ->. }
+      * move => p2 p3.
+        left.
+        rewrite /ltof.
+        apply /leP.
+        move: x__eq => //= ->.
+        rewrite inprf__r ltn_sub2l // ltnS uniq_leq_size //; first by rewrite undup_uniq.
+          by rewrite -lock.
+  Qed.
+
   Lemma dropTargets_size: forall targets, seq.size (dropTargets targets) <= seq.size targets.
   Proof.
     elim => // r targets IH.
@@ -4411,6 +4534,7 @@ Section InhabitationMachineProperties.
       {subset (undup (targetTypes s.1)) <= maxTypes initialTarget} ->
       {subset (undup (targetTypes s.1)) <= maxTypes initialTarget} ->
       {subset (undup (parameterTypes s.1)) <= maxParameterTypes initialTarget} ->
+      {subset (undup (parameterTypes s.2)) <= maxParameterTypes initialTarget} ->
       inhabit_step_rel initialTarget (inhabitation_step (SplitCtxt Gamma) s.1 s.2) s.
   Proof.
     move => initialTarget [] stable targets /= omega_subset.
@@ -4423,7 +4547,7 @@ Section InhabitationMachineProperties.
       apply /leP.
       rewrite ltnS /=.
         by apply: dropTargets_size.
-    - move => A c _ _ /=.
+    - move => A c _ _ _ /=.
       case: (RuleCombinator A c \in stable).
       + right.
         right.
@@ -4445,16 +4569,25 @@ Section InhabitationMachineProperties.
               by apply: undup_uniq. }
           rewrite subn_gt0.
             by apply: (@leq_trans ((seq.size (maxTypes initialTarget)).+1)).
-    - move => A B C /= targets_subset target_parametersSubset.
+    - move => A B C /= targets_subset target_parametersSubset targets_parametersSubset.
       case: (RuleApply A B C \in stable); first by right; right.
       move: (updatedExisting_fresh stable C).
+      have: ({subset undup (targetTypes (updatedExisting stable C).2)
+              <= maxTypes initialTarget} /\
+             {subset undup (parameterTypes (updatedExisting stable C).2)
+              <= maxParameterTypes initialTarget}).
+      { apply: (updatedExisting_subset stable C initialTarget stable_subset target_parametersSubset).
+        apply: targets_parametersSubset.
+        case inprf__C: (C \in parameterTypes targets).
+        - by rewrite mem_undup.
+        - by apply: mem_head. }
       rewrite /updatedExisting.
       case: (computeUpdates stable C).
       move => failed.
       case.
       + case.
         * rewrite eq_refl /=.
-          move => /(fun prf => prf isT) notinprf__C.
+          move => _ /(fun prf => prf isT) notinprf__C.
           case: (inhabit_cover (SplitCtxt Gamma) targets C) => [].
           case.
           ** move => nextTargets.
@@ -4497,137 +4630,300 @@ Section InhabitationMachineProperties.
                       apply: uniq_leq_size => //.
                         by apply: undup_uniq.
                  **** by rewrite /= inprf__A.
-        * move => r updated /=.
+        * move => r updated subset_prfs /= _.
+          move: subset_prfs.
           case failed.
-          ** 
-
-          case stable_targets_eq: (undup (targetTypes stable) == undup (targetTypes [:: r & updated ++ stable])).
-          ** rewrite /inhabit_step_rel (eqP stable_targets_eq).
-             right.
-             case stable_parameters_eq: ((undup (filter (fun D => D \notin (undup (targetTypes [:: r & updated ++ stable])))
-                                                       (parameterTypes stable))) ==
-                                         (undup (filter (fun D => D \notin (undup (targetTypes [:: r & updated ++ stable])))
-                                                        (parameterTypes [:: r & updated ++ stable])))).
-             *** rewrite [_.1]/= [_.1]/= (eqP stable_parameters_eq).
+          ** move => _.
+             case stable_targets_eq: (undup (targetTypes stable) ==
+                                     undup (targetTypes [:: r & updated ++ stable])).
+             *** rewrite /inhabit_step_rel (eqP stable_targets_eq).
                  right.
-                 rewrite /=.
-                 case: failed => //=.
-                 apply /leP.
-                 rewrite ltnS /=.
-                   by apply: dropTargets_size.
-             *** left.
-                 apply /leP.
-                 apply: ltn_sub2l.
-                 **** apply: uniq_leq_size; first by apply: undup_uniq.
-                      move => r2 inprf.
-                      apply: target_parametersSubset.
-                      move: inprf.
-                      rewrite mem_undup mem_filter => /andP [] _.
-                        by rewrite mem_undup.
-                 **** rewrite [_.1]/= [_.1]/=.
-                      have: (exists D, D \in parameterTypes [:: r & updated] /\
-                                        D \notin parameterTypes stable /\
-                                        D \notin undup (targetTypes [:: r & updated ++ stable])).
-                      { move: stable_parameters_eq.
-                        rewrite -cat_cons /parameterTypes pmap_cat -/(parameterTypes stable) -/(parameterTypes [:: r & updated]).
-                        move: [:: r & updated].
-                        clear ...
-                        move => G.
-                        move: (G ++ stable).
-                        elim: G.
-                        - move => ? /=.
-                            by rewrite eq_refl.
-                        - move => r G.
-                          case: r => // A B C IH G2.
-                          rewrite /=.
-                          case notinprf__C: (C \notin (undup (targetTypes G2))).
-                          + rewrite /=.
-                            case inprf__C: (C \in (filter (fun D => D \notin (undup (targetTypes G2)))
-                                                        (parameterTypes G ++ parameterTypes stable))).
-                            * move => /IH [] D [] inprf__D notinprf__D.
+
+                 case stable_parameters_eq: ((undup (filter (fun D => D \notin (undup (targetTypes [:: r & updated ++ stable])))
+                                                            (parameterTypes stable))) ==
+                                             (undup (filter (fun D => D \notin (undup (targetTypes [:: r & updated ++ stable])))
+                                                            (parameterTypes [:: r & updated ++ stable])))).
+                 **** rewrite [_.1]/= [_.1]/= (eqP stable_parameters_eq).
+                      right.
+                      rewrite /=.
+                      apply /leP.
+                      rewrite ltnS /=.
+                        by apply: dropTargets_size.
+                 **** left.
+                      apply /leP.
+                      apply: ltn_sub2l.
+                      { apply: uniq_leq_size; first by apply: undup_uniq.
+                        move => r2 inprf.
+                        apply: target_parametersSubset.
+                        move: inprf.
+                        rewrite mem_undup mem_filter => /andP [] _.
+                          by rewrite mem_undup. }
+                      { rewrite [_.1]/= [_.1]/=.
+                        have: (exists D, D \in parameterTypes [:: r & updated] /\
+                                          D \notin parameterTypes stable /\
+                                          D \notin undup (targetTypes [:: r & updated ++ stable])).
+                        { move: stable_parameters_eq.
+                          rewrite -cat_cons /parameterTypes pmap_cat -/(parameterTypes stable)
+                                            -/(parameterTypes [:: r & updated]).
+                          move: [:: r & updated].
+                          clear ...
+                          move => G.
+                          move: (G ++ stable).
+                          elim: G.
+                          - move => ? /=.
+                              by rewrite eq_refl.
+                          - move => r G.
+                            case: r => // A B C IH G2.
+                            rewrite /=.
+                            case notinprf__C: (C \notin (undup (targetTypes G2))).
+                            + rewrite /=.
+                              case inprf__C: (C \in (filter (fun D => D \notin (undup (targetTypes G2)))
+                                                          (parameterTypes G ++ parameterTypes stable))).
+                              * move => /IH [] D [] inprf__D notinprf__D.
+                                exists D; split => //.
+                                rewrite in_cons inprf__D.
+                                  by apply /orbT.
+                              * move => _.
+                                exists C; split; last split => //.
+                                ** by apply: mem_head.
+                                ** apply /negP.
+                                   move => inprf.
+                                   move: inprf__C.
+                                     by rewrite filter_cat mem_cat [X in _ || X]mem_filter inprf notinprf__C orbT.
+                            + move => /IH [] D [] inprf__D notinprf__D.
                               exists D; split => //.
                               rewrite in_cons inprf__D.
-                                by apply /orbT.
-                            * move => _.
-                              exists C; split; last split => //.
-                              ** by apply: mem_head.
-                              ** apply /negP.
-                                 move => inprf.
-                                 move: inprf__C.
-                                   by rewrite filter_cat mem_cat [X in _ || X]mem_filter inprf notinprf__C orbT.
+                                by apply /orbT. }
+                        move => [] D D_prfs.
+                        apply: (@leq_trans (seq.size (undup (filter (fun D => D \notin undup (targetTypes [:: r & updated ++ stable]))
+                                                                  ([:: D & parameterTypes stable]))))).
+                        { rewrite [(targetTypes _)]lock [X in _ < X]/= -lock.
+                          move: D_prfs => [] inprf__D [] notinprf__D ->.
+                            by rewrite [targetTypes _]lock [undup [:: D & _]]/= mem_filter (negbTE notinprf__D) andbF. }
+                        { apply: uniq_leq_size; first by apply: undup_uniq.
+                          move => E.
+                          rewrite mem_undup mem_filter.
+                          move => /andP [] notinprf__E.
+                          rewrite in_cons.
+                          move => /orP.
+                          case.
+                          - move => /eqP E__eq.
+                            move: notinprf__E.
+                            rewrite E__eq.
+                            rewrite [_ \in undup (filter _ _)]mem_undup mem_filter => ->.
+                            rewrite /parameterTypes -cat_cons pmap_cat mem_cat.
+                              by move: D_prfs => [] ->.
+                          - rewrite mem_undup mem_filter notinprf__E -cat_cons /parameterTypes pmap_cat mem_cat => ->.
+                              by rewrite orbT. } }
+             *** left.
+                 rewrite /ltof [_.1]/= [_.1]/=.
+                 apply /leP.
+                 apply: ltn_sub2l.
+                 **** rewrite ltnS.
+                      apply: uniq_leq_size => //.
+                        by apply: undup_uniq.
+                 **** have: (exists D, (D \in targetTypes [:: r & updated ++ stable]) /\
+                                  (D \notin targetTypes stable)).
+                      { move: stable_targets_eq.
+                        rewrite -cat_cons.
+                        move: [:: r & updated].
+                        clear...
+                        elim.
+                        - by rewrite /= eq_refl.
+                        - move => r G IH /=.
+                          case inprf__lhs: (lhs r \in targetTypes (G ++ stable)).
                           + move => /IH [] D [] inprf__D notinprf__D.
                             exists D; split => //.
-                            rewrite in_cons inprf__D.
-                              by apply /orbT. }
+                              by rewrite in_cons inprf__D orbT.
+                          + move => _.
+                            exists (lhs r); split.
+                            * by apply: mem_head.
+                            *  apply /negP.
+                               move => inprf.
+                               move: inprf__lhs.
+                                 by rewrite /targetTypes map_cat mem_cat inprf orbT. }
                       move => [] D D_prfs.
-                      apply: (@leq_trans (seq.size (undup (filter (fun D => D \notin undup (targetTypes [:: r & updated ++ stable]))
-                                                                  ([:: D & parameterTypes stable]))))).
-                      { rewrite [(targetTypes _)]lock [X in _ < X]/= -lock.
-                        move: D_prfs => [] inprf__D [] notinprf__D ->.
-                          by rewrite [targetTypes _]lock [undup [:: D & _]]/= mem_filter (negbTE notinprf__D) andbF. }
+                      apply: (@leq_trans (seq.size (undup [:: D & targetTypes stable]))).
+                      { rewrite /=.
+                          by move: D_prfs => [] _ /negbTE ->. }
                       { apply: uniq_leq_size; first by apply: undup_uniq.
                         move => E.
-                        rewrite mem_undup mem_filter.
-                        move => /andP [] notinprf__E.
-                        rewrite in_cons.
+                        rewrite mem_undup in_cons.
                         move => /orP.
                         case.
-                        - move => /eqP E__eq.
-                          move: notinprf__E.
-                          rewrite E__eq.
-                          rewrite [_ \in undup (filter _ _)]mem_undup mem_filter => ->.
-                          rewrite /parameterTypes -cat_cons pmap_cat mem_cat.
-                            by move: D_prfs => [] ->.
-                        - rewrite mem_undup mem_filter notinprf__E -cat_cons /parameterTypes pmap_cat mem_cat => ->.
-                            by rewrite orbT. }
-          ** left.
-             rewrite /ltof [_.1]/= [_.1]/=.
-             apply /leP.
-             apply: ltn_sub2l.
-             *** rewrite ltnS.
-                 apply: uniq_leq_size => //.
-                   by apply: undup_uniq.
-             *** have: (exists D, (D \in targetTypes [:: r & updated ++ stable]) /\
-                             (D \notin targetTypes stable)).
-                 { move: stable_targets_eq.
-                   rewrite -cat_cons.
-                   move: [:: r & updated].
-                   clear...
-                   elim.
-                   - by rewrite /= eq_refl.
-                   - move => r G IH /=.
-                     case inprf__lhs: (lhs r \in targetTypes (G ++ stable)).
-                     + move => /IH [] D [] inprf__D notinprf__D.
-                       exists D; split => //.
-                         by rewrite in_cons inprf__D orbT.
-                     + move => _.
-                       exists (lhs r); split.
-                       * by apply: mem_head.
-                       *  apply /negP.
-                          move => inprf.
-                          move: inprf__lhs.
-                            by rewrite /targetTypes map_cat mem_cat inprf orbT. }
-                 move => [] D D_prfs.
-                 apply: (@leq_trans (seq.size (undup [:: D & targetTypes stable]))).
+                        - move => /eqP ->.
+                          move: D_prfs => [].
+                            by rewrite mem_undup.
+                        - rewrite mem_undup /targetTypes -cat_cons map_cat mem_cat => ->.
+                            by apply /orbT. }
+          ** move => /= [] prf1 prf2.
+             apply: inhabit_step_rel_cons => //.
+             clear prf1 prf2.
+             case stable_targets_eq: (undup (targetTypes stable) ==
+                                               undup (targetTypes [:: r & updated ++ stable])).
+             *** rewrite /inhabit_step_rel (eqP stable_targets_eq).
+                 right.
+                 case stable_parameters_eq: ((undup (filter (fun D => D \notin (undup (targetTypes [:: r & updated ++ stable])))
+                                                            (parameterTypes stable))) ==
+                                             (undup (filter (fun D => D \notin (undup (targetTypes [:: r & updated ++ stable])))
+                                                            (parameterTypes [:: r & updated ++ stable])))).
+                 **** rewrite [_.1]/= [_.1]/= (eqP stable_parameters_eq).
+                      right.
+                      rewrite /=.
+                      apply /leP.
+                        by rewrite ltnS /=.
+                 **** left.
+                      apply /leP.
+                      apply: ltn_sub2l.
+                      { apply: uniq_leq_size; first by apply: undup_uniq.
+                        move => r2 inprf.
+                        apply: target_parametersSubset.
+                        move: inprf.
+                        rewrite mem_undup mem_filter => /andP [] _.
+                          by rewrite mem_undup. }
+                      { rewrite [_.1]/= [_.1]/=.
+                        have: (exists D, D \in parameterTypes [:: r & updated] /\
+                                          D \notin parameterTypes stable /\
+                                          D \notin undup (targetTypes [:: r & updated ++ stable])).
+                        { move: stable_parameters_eq.
+                          rewrite -cat_cons /parameterTypes pmap_cat -/(parameterTypes stable)
+                                            -/(parameterTypes [:: r & updated]).
+                          move: [:: r & updated].
+                          clear ...
+                          move => G.
+                          move: (G ++ stable).
+                          elim: G.
+                          - move => ? /=.
+                              by rewrite eq_refl.
+                          - move => r G.
+                            case: r => // A B C IH G2.
+                            rewrite /=.
+                            case notinprf__C: (C \notin (undup (targetTypes G2))).
+                            + rewrite /=.
+                              case inprf__C: (C \in (filter (fun D => D \notin (undup (targetTypes G2)))
+                                                          (parameterTypes G ++ parameterTypes stable))).
+                              * move => /IH [] D [] inprf__D notinprf__D.
+                                exists D; split => //.
+                                rewrite in_cons inprf__D.
+                                  by apply /orbT.
+                              * move => _.
+                                exists C; split; last split => //.
+                                ** by apply: mem_head.
+                                ** apply /negP.
+                                   move => inprf.
+                                   move: inprf__C.
+                                     by rewrite filter_cat mem_cat [X in _ || X]mem_filter inprf notinprf__C orbT.
+                            + move => /IH [] D [] inprf__D notinprf__D.
+                              exists D; split => //.
+                              rewrite in_cons inprf__D.
+                                by apply /orbT. }
+                        move => [] D D_prfs.
+                        apply: (@leq_trans (seq.size (undup (filter (fun D => D \notin undup (targetTypes [:: r & updated ++ stable]))
+                                                                    ([:: D & parameterTypes stable]))))).
+                        { rewrite [(targetTypes _)]lock [X in _ < X]/= -lock.
+                          move: D_prfs => [] inprf__D [] notinprf__D ->.
+                            by rewrite [targetTypes _]lock [undup [:: D & _]]/= mem_filter (negbTE notinprf__D) andbF. }
+                        { apply: uniq_leq_size; first by apply: undup_uniq.
+                          move => E.
+                          rewrite mem_undup mem_filter.
+                          move => /andP [] notinprf__E.
+                          rewrite in_cons.
+                          move => /orP.
+                          case.
+                          - move => /eqP E__eq.
+                            move: notinprf__E.
+                            rewrite E__eq.
+                            rewrite [_ \in undup (filter _ _)]mem_undup mem_filter => ->.
+                            rewrite /parameterTypes -cat_cons pmap_cat mem_cat.
+                              by move: D_prfs => [] ->.
+                          - rewrite mem_undup mem_filter notinprf__E -cat_cons /parameterTypes pmap_cat mem_cat => ->.
+                              by rewrite orbT. } }
+             *** left.
+                 rewrite /ltof [_.1]/= [_.1]/=.
+                 apply /leP.
+                 apply: ltn_sub2l.
+                 **** rewrite ltnS.
+                      apply: uniq_leq_size => //.
+                        by apply: undup_uniq.
+                 **** have: (exists D, (D \in targetTypes [:: r & updated ++ stable]) /\
+                                  (D \notin targetTypes stable)).
+                      { move: stable_targets_eq.
+                        rewrite -cat_cons.
+                        move: [:: r & updated].
+                        clear...
+                        elim.
+                        - by rewrite /= eq_refl.
+                        - move => r G IH /=.
+                          case inprf__lhs: (lhs r \in targetTypes (G ++ stable)).
+                          + move => /IH [] D [] inprf__D notinprf__D.
+                            exists D; split => //.
+                              by rewrite in_cons inprf__D orbT.
+                          + move => _.
+                            exists (lhs r); split.
+                            * by apply: mem_head.
+                            *  apply /negP.
+                               move => inprf.
+                               move: inprf__lhs.
+                                 by rewrite /targetTypes map_cat mem_cat inprf orbT. }
+                      move => [] D D_prfs.
+                      apply: (@leq_trans (seq.size (undup [:: D & targetTypes stable]))).
+                      { rewrite /=.
+                          by move: D_prfs => [] _ /negbTE ->. }
+                      { apply: uniq_leq_size; first by apply: undup_uniq.
+                        move => E.
+                        rewrite mem_undup in_cons.
+                        move => /orP.
+                        case.
+                        - move => /eqP ->.
+                          move: D_prfs => [].
+                            by rewrite mem_undup.
+                        - rewrite mem_undup /targetTypes -cat_cons map_cat mem_cat => ->.
+                            by apply /orbT. }
+      + case: failed.
+        * move => _ _.
+          right.
+          right.
+          apply /leP.
+          rewrite /=.
+            by apply: dropTargets_size.
+        * move => [] prf1 prf2 _.
+          case inprf__A: (A \in targetTypes stable).
+          ** have: (undup (targetTypes [:: RuleApply A B C & stable]) = undup (targetTypes stable)).
+             { by rewrite /= inprf__A. }
+             rewrite /inhabit_step_rel.
+             move => ->.
+             right.
+             case inprf__C: (C \in filter (fun D => D \notin undup (targetTypes stable)) (parameterTypes stable)).
+             *** have: (undup (filter (fun D => D \notin undup (targetTypes stable))
+                                      (parameterTypes [:: RuleApply A B C & stable])) =
+                        undup (filter (fun D => D \notin undup (targetTypes stable)) (parameterTypes stable))).
                  { rewrite /=.
-                     by move: D_prfs => [] _ /negbTE ->. }
-                 { apply: uniq_leq_size; first by apply: undup_uniq.
-                   move => E.
-                   rewrite mem_undup in_cons.
-                   move => /orP.
-                   case.
-                   - move => /eqP ->.
-                     move: D_prfs => [].
-                       by rewrite mem_undup.
-                   - rewrite mem_undup /targetTypes -cat_cons map_cat mem_cat => ->.
-                       by apply /orbT. }
-      + move => _.
-        right.
-        right.
-        apply /leP.
-        rewrite /=.
-        case: failed => //.
-          by apply: dropTargets_size.
+                   case: (C \notin (undup (targetTypes stable))) => //.
+                     by rewrite /= inprf__C. }
+                 move => /= ->.
+                   by right.
+             *** case inprf2__C: (C \notin undup (targetTypes stable)); last first.
+                 **** have: (undup (filter (fun D => D \notin undup (targetTypes stable))
+                                           (parameterTypes [:: RuleApply A B C & stable])) =
+                             undup (filter (fun D => D \notin undup (targetTypes stable)) (parameterTypes stable))).
+                      { by rewrite /= inprf2__C. }
+                      move => /= ->.
+                        by right.
+                 **** left.
+                      rewrite /ltof [maxParameterTypes]lock /=.
+                      apply /leP.
+                      rewrite /= inprf2__C /= inprf__C ltn_sub2l // ltnS.
+                      rewrite uniq_leq_size //; first by rewrite undup_uniq.
+                      move => D.
+                      rewrite mem_undup mem_filter => /andP [] _.
+                      rewrite -mem_undup => /prf2.
+                        by rewrite -lock.
+          ** left.
+             rewrite /ltof [maxTypes]lock /= inprf__A.
+             apply /leP.
+             rewrite ltn_sub2l // ltnS.
+             rewrite uniq_leq_size //; first by rewrite undup_uniq.
+               by rewrite -lock.
   Qed.
 
  
@@ -4789,33 +5085,35 @@ Section InhabitationMachineProperties.
     - move => A c targets /=.
         by case: (RuleCombinator A c \in stable).
     - move => A B C targets omega_subset fsprf__stable /=.
+      case: (RuleApply A B C \in stable) => //.
       move: (updatedExisting_FailSound stable C fsprf__stable).
       move: (updatedExisting_true stable C).
-      case: (updatedExisting stable C) => [].
-      case; case => //.
-      case isOmega__C: (isOmega C).
-      + move => /= _ _ disprf _.
-        suff: false by done.
-        apply: disprf.
-        apply /hasP.
-        exists (RuleApply Omega Omega Omega).
-        * apply: omega_subset.
-            by rewrite /OmegaRules in_cons eq_refl.
-        * rewrite /=.
-          apply /andP.
-          split; apply /subtypeMachineP => //.
-          apply: subty__sound.
-            by apply: subty__Omega.
-      + move => /= _ _ disprf _.
-        move: (inhabit_cover_FailSound targets C (negbT isOmega__C)).
-        case: (inhabit_cover (SplitCtxt Gamma) targets C) => [] [].
-        * move => nextTargets /(fun prf => prf isT) res D.
-          rewrite /FailSound in_cons.
-          case /orP.
-          ** by move => /eqP [] ->.
-          ** by move => /fsprf__stable.
-        * move => nextTargets _.
-            by exact fsprf__stable.
+      case: (updatedExisting stable C) => [] [].
+      case.
+      + by case => //.
+      + case isOmega__C: (isOmega C).
+        * move => /= _ _ disprf _.
+          suff: false by done.
+          apply: disprf.
+          apply /hasP.
+          exists (RuleApply Omega Omega Omega).
+          ** apply: omega_subset.
+               by rewrite /OmegaRules in_cons eq_refl.
+          ** rewrite /=.
+             apply /andP.
+             split; apply /subtypeMachineP => //.
+             apply: subty__sound.
+               by apply: subty__Omega.
+        * move => /= _ _ disprf _.
+          move: (inhabit_cover_FailSound targets C (negbT isOmega__C)).
+          case: (inhabit_cover (SplitCtxt Gamma) targets C) => [] [].
+          ** move => nextTargets /(fun prf => prf isT) res D.
+             rewrite /FailSound in_cons.
+             case /orP.
+             *** by move => /eqP [] ->.
+             *** by move => /fsprf__stable.
+          ** move => nextTargets _.
+               by exact fsprf__stable.
   Qed.
 
   Definition noTargetFailures targets := all (fun r => if r is RuleFail _ then false else true) targets.
@@ -4878,6 +5176,7 @@ Section InhabitationMachineProperties.
       move => A c.
         by case: (RuleCombinator A c \in stable) => //.
     - move => A B C noFail /=.
+      case: (RuleApply A B C \in stable) => //.
       move: (inhabit_cover_noTargetFailures targets C noFail).
       case: (updatedExisting stable C) => [] [] [].
       + case => //= _ _.
@@ -4892,6 +5191,7 @@ Section InhabitationMachineProperties.
           by apply: dropTargets_suffix.
   Qed.
 
+  
   Definition updateGroups (groups: seq (@TreeGrammar Combinator Constructor)) (r: Rule) :=
     if r is RuleCombinator A c
     then [:: [:: RuleCombinator A c] & groups]
@@ -4959,7 +5259,8 @@ Section InhabitationMachineProperties.
 
   Lemma group_comb:
     forall groups A c targets,
-      foldl updateGroups groups [:: RuleCombinator A c & targets] = (foldl updateGroups [::] [:: RuleCombinator A c & targets]) ++ groups.
+      foldl updateGroups groups [:: RuleCombinator A c & targets] =
+      (foldl updateGroups [::] [:: RuleCombinator A c & targets]) ++ groups.
   Proof.
     move => groups A c targets /=.
     have: (forall r, updateGroups [:: [:: RuleCombinator A c] & groups ] r = updateGroups [:: [:: RuleCombinator A c]] r ++ groups)
@@ -5041,7 +5342,8 @@ Section InhabitationMachineProperties.
                (exists g, (g \in (group targets)) /\
                      (RuleApply A B C \in g) /\
                      (future_word stable targets B M) /\
-                     (forall B, (B \in parameterTypes g) -> exists M, [FCL Gamma |- M : B]))
+                     (forall B, (B \in parameterTypes g) -> exists M, [FCL Gamma |- M : B]) /\
+                     [FCL Gamma |- N : C])
     end.
                                               
   Lemma future_word_word: forall stable A M, future_word stable [::] A M -> word stable A M.
@@ -5175,7 +5477,7 @@ Section InhabitationMachineProperties.
   Qed.
           
   Definition FCL_complete stable targets :=
-    forall A, (A \in targetTypes stable) || (A \in targetTypes targets) ->
+    forall A, (A \in targetTypes stable) || (A \in parameterTypes stable) ->
          forall M, [FCL Gamma |- M : A] -> future_word stable targets A M.
 
   Lemma computeUpdates_failedFailed:
@@ -5222,6 +5524,43 @@ Section InhabitationMachineProperties.
           by case: (checkSubtypes C A && checkSubtypes A C).
   Qed.
 
+  Lemma future_word_dropFailed:
+    forall stable targets A B C,
+      (forall M, [FCL Gamma |- M : C] -> False) ->
+      forall D M, future_word stable [:: RuleApply A B C & targets] D M ->
+             future_word stable (dropTargets targets) D M.
+  Proof.
+    move => stable targets A B C disprf__C D M.
+    move: D.
+    elim: M.
+    - move => D c.
+      case.
+      + by left.
+      + move => [] g [].
+        move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP eq_prf.
+        rewrite (group_split _ _ _ eq_prf) in_cons.
+        case /orP.
+        * by move => /eqP -> [] _ /(fun prf => prf C (mem_head _ _)) [] ? /disprf__C.
+        * move => inprf__g props.
+          right.
+            by (exists g).
+    - move => M IH__M N IH__N D [] E [] F.
+      rewrite -/future_word.
+      case.
+      + move => [] inprf__r [] /IH__M prf__M /IH__N prf__N.
+        exists E, F.
+          by left.
+      + move => [] g [].
+        move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP eq_prf.
+        rewrite (group_split _ _ _ eq_prf) in_cons.
+        case /orP.
+        * by move => /eqP -> [] _ [] _ [] /(fun prf => prf C (mem_head _ _)) [] ? /disprf__C.
+        * move => inprf__g [] inprf__r [] /IH__M prf__M props.
+          exists E, F.
+          right.
+            by exists g.
+  Qed.
+
   Lemma updatedExisting_failed_complete:
     forall stable targets A B C,
       {subset OmegaRules <= stable} ->
@@ -5229,7 +5568,7 @@ Section InhabitationMachineProperties.
       (updatedExisting stable C).1.2 ->
       FCL_complete stable [:: RuleApply A B C & targets] ->
       FCL_complete (updatedExisting stable C).2
-                   (if (updatedExisting stable C).1.2 then dropTargets targets else targets).
+                   (dropTargets targets).
   Proof.
     move => stable targets A B C omega_subset fsprf.
     move: (computeUpdates_FailSound stable C fsprf).
@@ -5262,11 +5601,128 @@ Section InhabitationMachineProperties.
           move => truncprf.
           apply: (future_word_weaken stable).
           { move => x; rewrite mem_cat => ->; by rewrite orbT. }
-          admit.
-        * admit.
-      + rewrite /=.
+          apply: future_word_dropFailed; last by exact truncprf.
+            by apply: fsprf_updates.
+        * move => inprf__D M /complete_prf prf.
+          have truncprf: (future_word (updates ++ stable) [:: RuleApply A B C & targets] D M).
+          { apply: (future_word_weaken stable).
+            - move => E.
+              rewrite mem_cat => ->.
+                by rewrite orbT.
+            - apply: prf.
+              move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP targets__eq.
+              rewrite targets__eq -cat_cons /targetTypes map_cat.
+              repeat rewrite -/(targetTypes _).
+                by rewrite mem_cat inprf__D orbT orbT. }
+          apply: future_word_dropFailed; last by exact truncprf.
+            by apply: fsprf_updates.
+      + move => /= inprf updates_lhs_eq fsprf_updates _ complete_prf D.
+        rewrite /targetTypes map_cat mem_cat.
+        repeat rewrite -/(targetTypes _).
+        rewrite -orbA.
+        case /orP.
+        * move => inprf__D.
+          have: (D = C).
+          { move: updates_lhs_eq => /allP.
+            move: inprf__D.
+            rewrite /targetTypes.
+            move => /mapP [] r inprf__r D__eq.
+            move => /(fun prf => prf r inprf__r).
+              by rewrite D__eq => /eqP. }
+          move => -> M /fsprf_updates disprf.
+          suff: False by done.
+            by apply: disprf.
+        * move => inprf__D M /complete_prf prf.
+          have truncprf: (future_word (updates ++ stable) [:: RuleApply A B C & targets] D M).
+          { apply: (future_word_weaken stable).
+            - move => E.
+              rewrite mem_cat => ->.
+                by rewrite orbT.
+            - apply: prf.
+              move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP targets__eq.
+              rewrite targets__eq -cat_cons /targetTypes map_cat.
+              repeat rewrite -/(targetTypes _).
+              rewrite mem_cat.
+              move: inprf__D => /orP [] ->; by repeat rewrite orbT. }
+          apply: future_word_dropFailed; last by exact truncprf.
+            by apply: fsprf_updates.
+    - move => /= mkInprf _ _ /mkInprf inprf complete_prf D inprf__D M /complete_prf prf.
+      have truncprf: (future_word stable [:: RuleApply A B C & targets] D M).
+      { apply: prf.
+        move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP targets__eq.
+        rewrite targets__eq -cat_cons /targetTypes map_cat.
+        repeat rewrite -/(targetTypes _).
+        rewrite mem_cat.
+        move: inprf__D => /orP [] ->; by repeat rewrite orbT. }
+      apply: future_word_dropFailed; last by exact truncprf.
+        by apply: fsprf.
+  Qed.
 
-    - rewrite /=.
+
+
+  Lemma rule_absorbl_apply:
+    forall stable targets A B C,
+      FCL_complete stable [:: RuleApply A B C & targets] ->
+      (RuleApply A B C \in stable) ->
+      forall D M, future_word stable [:: RuleApply A B C & targets] D M ->
+             future_word stable targets D M.
+  Proof.
+    move => stable targets A B C prf_complete inprf D M.
+    move: D.
+    elim: M.
+    - move => c D.
+      case.
+      + move => inprf__r.
+          by left.
+      + clear prf_complete inprf.
+        move => [] g [].
+        move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP targets__eq.
+        rewrite (group_split _ _ _ targets__eq) in_cons.
+        case /orP.
+        * move => /eqP ->.
+          move: (dropTargets_notCombinator _ _ targets__eq) => /allP disprf.
+            by rewrite in_cons /= => [] [] /disprf.
+        * move => inprf__g props.
+          right.
+          exists g; split => //.
+          rewrite targets__eq /group foldl_cat.
+          move: targets__eq.
+          case: prefix => // r prefix targets__eq.          
+          move: (dropTargets_notCombinator _ _ targets__eq) => /andP [] _ notCombinators.
+          rewrite /= updateGroups0 group_notComb //.
+          move: (dropTargets_combinatorOrEmpty targets).
+          move: inprf__g.
+          case: (dropTargets targets) => //.
+          case => // E d droppedTargets inprf__g _.
+            by rewrite group_comb rev_cat -/(group _) mem_cat inprf__g orbT.
+    - move => M IH__M N IH__N D [] E [] F.
+      repeat rewrite -/future_word.
+      case.
+      + move => [] inprf__DEF [] /IH__M prf__M /IH__N prf__N.
+        exists E, F.
+          by left.
+      + move => [] g [].
+        move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP targets__eq.
+        rewrite (group_split _ _ _ targets__eq) in_cons.
+        case /orP.
+        * move => /eqP ->.
+          rewrite in_cons => [] [].
+          case /orP.
+          ** move => /eqP [] -> -> ->.
+             clear D E F.
+             move => [] /IH__M prf__M [] prfs /prf_complete mkPrf__N.
+             have prf__N: (future_word stable targets C N).
+             { apply: IH__N.
+               apply: mkPrf__N.
+
+             
+
+
+
+
+
+  
+             
 
 
 
@@ -5315,6 +5771,7 @@ Section InhabitationMachineProperties.
           rewrite /= in_cons => ->.
             by do 2 rewrite orbT.
     - move => A B C noFail prf_complete /= D.
+      case: (RuleApply A B C \in stable).
 
       
   Qed.
