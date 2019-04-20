@@ -4476,55 +4476,49 @@ Section InhabitationMachineProperties.
         by rewrite mem_cat inprf orbT.
   Qed.
 
-  Lemma computeUpdates_FailSound:
-    forall G A, FailSound G -> FailSound (if computeUpdates G A is (_, Some updates) then updates else [::]).
+  Lemma computeFailExisting_FailSound:
+    forall G A, FailSound G -> (computeFailExisting G A).1 -> FailSound [:: RuleFail A & G].
   Proof.
-    elim => //.
-    case.
-    - move => B G IH A /=.
-      case: (A == B) => //.
-      case le__AB: (checkSubtypes A B).
-      + case: (RuleFail A \in G) => //.
-        move => /(cat_FailSound [:: _]) [] prf _.
-        move => C inprf M MC.
-        apply: (prf B (mem_head _ _) M).
-        apply: FCL__Sub; first by exact MC.
-        move: inprf.
-        rewrite mem_seq1 => /eqP [] ->.
-          by apply /subtypeMachineP.
-      + by move => /(cat_FailSound [:: _]) [] _ /(IH A).
-    - move => B c G IH A /=.
-      case: (A == B) => //.
-      move => prf.
-      move: (IH A (proj2 (cat_FailSound [:: _] _ prf))).
-      case: (computeUpdates G A).
-      case => //; case => //.
-      move => G2 G2__FailSound.
-      case AB__eq: (checkSubtypes A B && checkSubtypes B A) => //.
-        by case: (RuleCombinator A c \in G2).
-    - move => B C D G IH A /=.
-      case: (A == B) => //.
-      case: (A == D) => //=.
-      move => prf.
-      move: (IH A (proj2 (cat_FailSound [:: _] _ prf))).
-      case: (computeUpdates G A).
-      case => //; case => //.
-      move => G2 G2__FailSound.
-      case AB__eq: (checkSubtypes A B && checkSubtypes B A) => //.
-        by case: (RuleApply A C D \in G2).
-  Qed.
-
-  Lemma updatedExisting_FailSound:
-    forall G A, FailSound G -> FailSound (updatedExisting G A).2.
-  Proof.
-    move => G A prf.
-    rewrite /updatedExisting.
-    move: (computeUpdates_FailSound G A prf).
-    case: (computeUpdates G A).
-    move => ?.
-    case => //.
-    move => updated updated__FailSound.
-      by apply: FailSound_cat.
+    elim => // r G IH A.
+    case: r.
+    - move => B /=.
+      case AB__eq: (A == B).
+      + rewrite (eqP AB__eq).
+        move => fsprf _ C.
+        rewrite in_cons.
+        case /orP; last by apply: fsprf.
+        move => CB__eq.
+        apply: fsprf.
+          by rewrite in_cons CB__eq.
+      + case le_prf: (checkSubtypes A B).
+        * move => fsprf _ C.
+          rewrite in_cons.
+          case /orP; last by apply: fsprf.
+          move => /eqP [] CA__eq.
+          move: le_prf.
+          rewrite CA__eq.
+          move => /subtypeMachineP le_prf M /(fun prf => FCL__Sub _ prf le_prf).
+          apply: fsprf.
+            by rewrite mem_head.
+        * move => fsprf failprf C.
+          rewrite in_cons in_cons orbCA -in_cons.
+          case /orP.
+          ** move => /eqP CB__eq.
+             apply: fsprf.
+             rewrite CB__eq.
+               by apply: mem_head.
+          ** apply: IH => //.
+               by move: fsprf => /(cat_FailSound [:: _]) [].
+    - move => B c /=.
+      case (A == B) => //.
+      move => /(cat_FailSound [::_]) [] fsprf1 fsprf2 failedprf.
+      move: (IH A fsprf2 failedprf) => /(cat_FailSound [:: _]) [] fsprf3 _.
+        by apply (FailSound_cat [:: _]).
+    - move => B C D /=.
+      case ((A == B) || (A == D)) => //.
+      move => /(cat_FailSound [::_]) [] fsprf1 fsprf2 failedprf.
+      move: (IH A fsprf2 failedprf) => /(cat_FailSound [:: _]) [] fsprf3 _.
+        by apply (FailSound_cat [:: _]).
   Qed.
 
   Lemma accumulateCovers_FailSound:
@@ -4595,9 +4589,18 @@ Section InhabitationMachineProperties.
         by apply: (IH nextRules).
   Qed.
 
+  Lemma OmegaRules_FailSound:
+    forall A, FailSound (OmegaRules A).
+  Proof.
+    move => A.
+    rewrite /OmegaRules.
+    move => B.
+    rewrite in_cons /=.
+      by elim: (enum Combinator).
+  Qed.
+
   Lemma inhabit_step_FailSound:
     forall stable targets,
-      {subset OmegaRules <= stable} ->
       FailSound stable ->
       FailSound (inhabitation_step (SplitCtxt Gamma) stable targets).1.
   Proof.
@@ -4606,36 +4609,25 @@ Section InhabitationMachineProperties.
     case => //.
     - move => A c targets /=.
         by case: (RuleCombinator A c \in stable).
-    - move => A B C targets omega_subset fsprf__stable /=.
+    - move => A B C targets fsprf__stable /=.
       case: (RuleApply A B C \in stable) => //.
-      move: (updatedExisting_FailSound stable C fsprf__stable).
-      move: (updatedExisting_true stable C).
-      case: (updatedExisting stable C) => [] [].
-      case.
-      + by case => //.
-      + case isOmega__C: (isOmega C).
-        * move => /= _ _ disprf _.
-          suff: false by done.
-          apply: disprf.
-          apply /hasP.
-          exists (RuleApply Omega Omega Omega).
-          ** apply: omega_subset.
-               by rewrite /OmegaRules in_cons eq_refl.
-          ** rewrite /=.
-             apply /andP.
-             split; apply /subtypeMachineP => //.
-             apply: subty__sound.
-               by apply: subty__Omega.
-        * move => /= _ _ disprf _.
-          move: (inhabit_cover_FailSound targets C (negbT isOmega__C)).
-          case: (inhabit_cover (SplitCtxt Gamma) targets C) => [] [].
-          ** move => nextTargets /(fun prf => prf isT) res D.
-             rewrite /FailSound in_cons.
-             case /orP.
-             *** by move => /eqP [] ->.
-             *** by move => /fsprf__stable.
-          ** move => nextTargets _.
-               by exact fsprf__stable.
+      move: (computeFailExisting_FailSound stable C fsprf__stable).
+      case: (computeFailExisting stable C) => [] [].
+      + case => //.
+          by move => /(fun prf => prf isT).
+      + case => // _.
+        move: (OmegaRules_FailSound C) => fsprf_omega.
+        case isOmega__C: (isOmega C);
+          first by rewrite -cat_cons; apply: FailSound_cat.
+        move: (inhabit_cover_FailSound targets C (negbT isOmega__C)).
+        case: (inhabit_cover (SplitCtxt Gamma) targets C) => [] [].
+        * move => nextTargets /(fun prf => prf isT) res D.
+          rewrite /FailSound in_cons.
+          case /orP.
+          ** by move => /eqP [] ->.
+          ** by move => /fsprf__stable.
+        * move => nextTargets _.
+            by exact fsprf__stable.
   Qed.
 
   Definition noTargetFailures targets := all (fun r => if r is RuleFail _ then false else true) targets.
@@ -4698,19 +4690,17 @@ Section InhabitationMachineProperties.
       move => A c.
         by case: (RuleCombinator A c \in stable) => //.
     - move => A B C noFail /=.
+      move: (noTargetFailures_suffix _ _ noFail (dropTargets_suffix [:: RuleApply A B C & targets])) => noFail_dropped.
       case: (RuleApply A B C \in stable) => //.
+      case: (computeFailExisting stable C).
+      case; case => //.
+      case: (isOmega C) => //.
       move: (inhabit_cover_noTargetFailures targets C noFail).
-      case: (updatedExisting stable C) => [] [] [].
-      + case => //= _ _.
-        apply: (noTargetFailures_suffix _ _ noFail).
-        apply: suffix_trans; last by (apply: suffix_behead; apply: suffix_refl).
-          by apply: dropTargets_suffix.
-      + move => _ nextTargetsOk.
-        case: (inhabit_cover (SplitCtxt Gamma) targets C) => [] failed nextTargets.
-        case: failed => //.
-        move => /noTargetFailures_suffix prf.
-        apply: prf.
-          by apply: dropTargets_suffix.
+      case: (inhabit_cover (SplitCtxt Gamma) targets C) => [] failed nextTargets.
+      case: failed => //.
+      move => /noTargetFailures_suffix prf.
+      apply: prf.
+        by apply: dropTargets_suffix.
   Qed.
 
   
@@ -5013,50 +5003,6 @@ Section InhabitationMachineProperties.
       by rewrite inprf__A.
   Qed.
 
-  Lemma computeUpdates_failedFailed:
-    forall stable C,
-      (computeUpdates stable C).1 ->
-      RuleFail C \in if (computeUpdates stable C).2 is Some updates then updates else stable.
-  Proof.
-    move => stable C.
-    elim: stable => // r stable IH.
-    case: r => /=.
-    - move => A.
-      case CA__eq: (C == A).
-      + by rewrite /= (eqP CA__eq) mem_head.
-      + case: (checkSubtypes C A).
-        * move => _ /=.
-          case inprf: (RuleFail C \in stable).
-          ** by rewrite in_cons inprf orbT.
-          ** by apply: mem_head.
-        * move => /IH.
-          case: (computeUpdates stable C).2 => //.
-          rewrite in_cons => ->.
-            by rewrite orbT.
-    - move => A c.
-      case C__eq: (C == A) => //.
-      move: IH.
-      case: (computeUpdates stable C) => [].
-      case.
-      + move => updated /(fun prf => prf isT) res _ /=.
-        move: res.
-          by case: updated => //.
-      + move => updated _.
-        case: updated => //.
-          by case: (checkSubtypes C A && checkSubtypes A C).
-    - move => A B D.
-      case: ((C == A) || (C == D)) => //.
-      move: IH.
-      case: (computeUpdates stable C) => [].
-      case.
-      + move => updated /(fun prf => prf isT) res _ /=.
-        move: res.
-          by case: updated => //.
-      + move => updated _.
-        case: updated => //.
-          by case: (checkSubtypes C A && checkSubtypes A C).
-  Qed.
-
   Lemma future_word_dropFailed:
     forall stable targets A B C,
       (forall M, [FCL Gamma |- M : C] -> False) ->
@@ -5094,195 +5040,56 @@ Section InhabitationMachineProperties.
             by exists g.
   Qed.
 
-  Lemma computeUpdates_paramsInStable:
-    forall stable C updates,
-      (computeUpdates stable C).2 = Some updates ->
-      {subset (parameterTypes updates) <= parameterTypes stable}.
-  Proof.
-    elim.
-    - by move => C updates /= [] <-.
-    - move => r stable IH C updates.
-      case: r.
-      + move => A /=.
-        case: (C == A) => //.
-        case: (checkSubtypes C A) => /=.
-        * by case: (RuleFail C \in stable) => // [] [] <-.
-        * by move => /IH.
-      + move => A c /=.
-        case: (C == A) => //.
-        move: (IH C).
-        case: (computeUpdates stable C) => [].
-        case.
-        * by move => ? prf /prf.
-        * case => //.
-          move => updates_rest /(fun prf => prf updates_rest erefl) subsetprf.
-          case: (checkSubtypes C A && checkSubtypes A C).
-          ** case: (RuleCombinator C c \in updates_rest); by move => [] <-.
-          ** by move => [] <-.
-      + move => D E F /=.
-        case: ((C == D) || (C == F)) => //.
-        move: (IH C).
-        case: (computeUpdates stable C).
-        case.
-        * case => //.
-          move => ? prf /prf subsetprf A.
-          rewrite in_cons => /subsetprf ->.
-            by rewrite orbT.
-        * case => //.
-          move => updates_rest /(fun prf => prf updates_rest erefl) subsetprf.
-          case: (checkSubtypes C D && checkSubtypes D C).
-          ** case: (RuleApply C E F \in updates_rest).
-             *** move => [] <- ?.
-                 rewrite in_cons => /subsetprf ->.
-                   by rewrite orbT.
-             *** move => [] <- ?.
-                 rewrite in_cons in_cons.
-                 case /orP; first by move => ->.
-                 move => /subsetprf ->.
-                   by rewrite orbT.
-          ** move => [] <- ?.
-             rewrite in_cons => /subsetprf ->.
-               by rewrite orbT.
-  Qed.
-
-  Lemma updatedExisting_failed_complete:
+  Lemma computeFailExisting_failed_complete:
     forall stable targets A B C,
-      {subset OmegaRules <= stable} ->
       FailSound stable ->
-      (updatedExisting stable C).1.2 ->
+      (computeFailExisting stable C).1 ->
       FCL_complete stable [:: RuleApply A B C & targets] ->
-      FCL_complete (updatedExisting stable C).2
+      FCL_complete (if ~~(computeFailExisting stable C).1 then [:: RuleFail C & stable] else stable)
                    (dropTargets targets).
   Proof.
-    move => stable targets A B C omega_subset fsprf.
-    move: (computeUpdates_FailSound stable C fsprf).
-    move: (computeUpdates_lhs stable C).
-    move: (computeUpdates_paramsInStable stable C).
-    move: (computeUpdates_failedFailed stable C).
-    rewrite /updatedExisting.
-    case: (computeUpdates stable C) => failed updates.
-    case: updates.
-    - move => updates.
-      case: failed => // /(fun prf => prf isT).
-      case: (updates != [::]).
-      + rewrite /=.
-        move => inprf instable_updates updates_lhs_eq fsprf_updates _ complete_prf D.
-        rewrite /targetTypes map_cat.
-        do 3 rewrite -/(targetTypes _).
-        rewrite mem_cat.
-        case /orP; first case /orP; first case /orP.
+    move => stable targets A B C fsprf /(computeFailExisting_FailSound stable C fsprf) fsprf2 prf_complete D inprf__D M prf.
+    suff: (future_word stable (dropTargets targets) D M).
+    { case: (~~(computeFailExisting stable C).1) => // prf_complete2.
+      apply: future_word_weaken; last by exact prf_complete2.
+      move => E.
+      rewrite in_cons => ->.
+        by rewrite orbT. }
+    apply: (future_word_dropFailed _ _ A B C).
+    - by apply: fsprf2; apply: mem_head.
+    - move: inprf__D.
+      case: (~~(computeFailExisting stable C).1).
+      + case /orP.
+        * rewrite /= in_cons -orbA.
+          case /orP.
+          ** move => /eqP DC__eq.
+             move: prf.
+             rewrite DC__eq.
+             move => /fsprf2.
+             rewrite mem_head.
+               by move => /(fun prf => prf isT).
+          ** move => inprf.
+             apply: prf_complete => //.
+               by rewrite inprf.
+        * move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP targets__eq.
+          move => inprf__D.
+          apply: prf_complete => //.
+          rewrite targets__eq.
+          rewrite /= in_cons /targetTypes map_cat mem_cat inprf__D.
+            by repeat rewrite orbT.
+      + case /orP.
         * move => inprf__D.
-          have: (D = C).
-          { move: updates_lhs_eq => /allP.
-            move: inprf__D.
-            rewrite /targetTypes.
-            move => /mapP [] r inprf__r D__eq.
-            move => /(fun prf => prf r inprf__r).
-              by rewrite D__eq => /eqP. }
-          move => -> M /fsprf_updates.
-            by move => /(fun prf => prf inprf).
-        * move => inprf__D M prf.
-          move: (complete_prf _ (introT orP (or_introl (introT orP (or_introl inprf__D)))) M prf) => truncprf.
-          apply: (future_word_weaken stable).
-          { move => x; rewrite mem_cat => ->; by rewrite orbT. }
-          apply: future_word_dropFailed; last by exact truncprf.
-            by apply: fsprf_updates.
-        * move => inprf__D M /complete_prf prf.
-          have truncprf: (future_word (updates ++ stable) [:: RuleApply A B C & targets] D M).
-          { apply: (future_word_weaken stable).
-            - move => E.
-              rewrite mem_cat => ->.
-                by rewrite orbT.
-            - apply: prf.
-              move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP targets__eq.
-              move: inprf__D.
-              rewrite /parameterTypes pmap_cat mem_cat.
-              repeat rewrite -/(parameterTypes _).
-              case /orP.
-              + move => /(instable_updates _ erefl) ->.
-                  by rewrite orbT.
-              + move => ->.
-                  by rewrite orbT. }
-          apply: future_word_dropFailed; last by exact truncprf.
-            by apply: fsprf_updates.
-        * move => inprf__D M /complete_prf prf.
-          have truncprf: (future_word (updates ++ stable) [:: RuleApply A B C & targets] D M).
-          { apply: (future_word_weaken stable).
-            - move => E.
-              rewrite mem_cat => ->.
-                by rewrite orbT.
-            - apply: prf.
-              move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP targets__eq.
-              rewrite /= targets__eq /targetTypes map_cat -cat_cons mem_cat.
-              repeat rewrite -/(targetTypes _).
-              rewrite inprf__D.
-                by repeat rewrite orbT. }
-          apply: future_word_dropFailed; last by exact truncprf.
-            by apply: fsprf_updates.
-      + move => /= inprf instable_updates updates_lhs_eq fsprf_updates _ complete_prf D.
-        rewrite /targetTypes map_cat mem_cat.
-        repeat rewrite -/(targetTypes _).
-        rewrite -orbA.
-        case /orP; first case /orP.
-        * move => inprf__D.
-          have: (D = C).
-          { move: updates_lhs_eq => /allP.
-            move: inprf__D.
-            rewrite /targetTypes.
-            move => /mapP [] r inprf__r D__eq.
-            move => /(fun prf => prf r inprf__r).
-              by rewrite D__eq => /eqP. }
-          move => -> M /fsprf_updates disprf.
-          suff: False by done.
-            by apply: disprf.
-        * move => inprf__D M prf.
-          move: (complete_prf _ (introT orP (or_introl (introT orP (or_introl inprf__D)))) M prf) => truncprf.
-          apply: (future_word_weaken stable).
-          { move => x; rewrite mem_cat => ->; by rewrite orbT. }
-          apply: future_word_dropFailed; last by exact truncprf.
-            by apply: fsprf_updates.
-        * move => inprf__D M /complete_prf prf.
-          have truncprf: (future_word (updates ++ stable) [:: RuleApply A B C & targets] D M).
-          { apply: (future_word_weaken stable).
-            - move => E.
-              rewrite mem_cat => ->.
-                by rewrite orbT.
-            - apply: prf.
-              move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP targets__eq.
-              move: inprf__D.
-              rewrite /parameterTypes pmap_cat mem_cat.
-              repeat rewrite -/(parameterTypes _).
-              case /orP; first case /orP.
-              + move => /(instable_updates _ erefl) ->.
-                  by rewrite orbT.
-              + move => ->.
-                  by rewrite orbT.
-              + move => inprf__D.
-                rewrite targets__eq /targetTypes /= map_cat -cat_cons mem_cat.
-                repeat rewrite -/(targetTypes _).
-                rewrite inprf__D.
-                  by repeat rewrite orbT. }
-          apply: future_word_dropFailed; last by exact truncprf.
-            by apply: fsprf_updates.
-    - move => /= mkInprf _ _ _ /mkInprf inprf complete_prf D inprf__D M /complete_prf prf.
-      have truncprf: (future_word stable [:: RuleApply A B C & targets] D M).
-      { apply: prf.
-        move: inprf__D.
-        case /orP; first case /orP.
-        - by move => ->.
-        - move => ->.
-            by rewrite orbT.
-        - move => inprf__D.
-          move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP ->.
-          rewrite /targetTypes /= map_cat -cat_cons mem_cat.
-          repeat rewrite -/(targetTypes _).
-          rewrite inprf__D.
-            by repeat rewrite orbT. }
-      apply: future_word_dropFailed; last by exact truncprf.
-        by apply: fsprf.
+          apply: prf_complete => //.
+            by rewrite inprf__D.
+        * move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP targets__eq.
+          move => inprf__D.
+          apply: prf_complete => //.
+          rewrite targets__eq.
+          rewrite /= in_cons /targetTypes map_cat mem_cat inprf__D.
+            by repeat rewrite orbT.
   Qed.
 
-   Lemma rule_absorbl_apply:
+  Lemma rule_absorbl_apply:
     forall stable targets A B C,
       FCL_complete stable [:: RuleApply A B C & targets] ->
       (RuleApply A B C \in stable) ->
