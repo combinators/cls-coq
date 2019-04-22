@@ -4840,7 +4840,7 @@ Section InhabitationMachineProperties.
           case: (dropTargets targets) => //.
           case => // E d dropped _ inprf__g.
           rewrite cat_cons group_comb -cat_cons rev_cat mem_cat foldl_cat.
-          move: (nextTargets_combinatorOrEmpty C _ erefl).
+          move: (nextTargets_combinatorOrEmpty C (rev (enum Combinator)) _ erefl).
           case: (flatten
                    (map (fun c => (accumulateCovers (SplitCtxt Gamma) C (primeFactors C) ([::], true) c).1)
                         (rev (enum Combinator)))).
@@ -4883,7 +4883,7 @@ Section InhabitationMachineProperties.
              *** rewrite targets__eq -catA /group foldl_cat.
                  move: (dropTargets_combinatorOrEmpty targets).
                  case: (dropTargets targets) => //.
-                 { move: (nextTargets_combinatorOrEmpty C _ erefl).
+                 { move: (nextTargets_combinatorOrEmpty C (rev (enum Combinator)) _ erefl).
                    case: (flatten
                             (map (fun c => (accumulateCovers (SplitCtxt Gamma) C (primeFactors C) ([::], true) c).1)
                                  (rev (enum Combinator)))).
@@ -4916,7 +4916,7 @@ Section InhabitationMachineProperties.
           exists g; split; last split => //.
           rewrite targets__eq /group foldl_cat.
           suff: (g \in rev (foldl updateGroups (foldl updateGroups [::] (prefix ++ dropTargets targets)) [::])).
-          { move: (nextTargets_combinatorOrEmpty C _ erefl).
+          { move: (nextTargets_combinatorOrEmpty C (rev (enum Combinator)) _ erefl).
             case:  (flatten
                       (map (fun c => (accumulateCovers (SplitCtxt Gamma) C (primeFactors C) ([::], true) c).1)
                            (rev (enum Combinator)))) => //.
