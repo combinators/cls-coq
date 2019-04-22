@@ -2339,9 +2339,9 @@ Arguments word [Combinator Constructor].
 
 Inductive InhabitationSemantics
           {Combinator: finType} {Constructor: ctor}
-          (Gamma: Ctxt Combinator Constructor): TreeGrammar * TreeGrammar -> TreeGrammar * TreeGrammar -> Prop :=
+          (Gamma: {ffun  Combinator -> seq (seq (@MultiArrow Constructor))}): TreeGrammar * TreeGrammar -> TreeGrammar * TreeGrammar -> Prop :=
 | step__inhab : forall stable target targets,
-    InhabitationSemantics Gamma (stable, [:: target & targets]) (inhabitation_step (SplitCtxt Gamma) stable targets).
+    InhabitationSemantics Gamma (stable, [:: target & targets]) (inhabitation_step Gamma stable [:: target & targets]).
 
 Arguments InhabitationSemantics [Combinator Constructor].
 
@@ -5239,1748 +5239,229 @@ Section InhabitationMachineProperties.
             by rewrite isOmega__C.     
   Qed.
 
+  Section Algorithm.
 
+    Inductive Domain (GammaSplit: {ffun Combinator -> seq (seq (@MultiArrow Constructor))}):
+      (@TreeGrammar Combinator Constructor * @TreeGrammar Combinator Constructor) -> Prop :=
+    | Domain__done: forall G, Domain GammaSplit (G, [::])
+    | Domain__step: forall s1 s2, InhabitationSemantics GammaSplit s1 s2 -> Domain GammaSplit s2 -> Domain GammaSplit s1.
 
+    Lemma domain_start: forall A, Domain (SplitCtxt Gamma) ([::], (inhabit_cover (SplitCtxt Gamma) [::] A).2).
+    Proof.
+      move => A.
+      have: {subset undup (parameterTypes (inhabit_cover (SplitCtxt Gamma) [::] A).2)
+             <= maxParameterTypes A}.
+      { by apply: inhabit_cover_parameterTypes_subset. }
+      have: {subset undup (parameterTypes [::]) <= maxParameterTypes A} by done.
+      move: (inhabit_step_rel_wf A ([::], (inhabit_cover (SplitCtxt Gamma) [::] A).2)).
+      move: [::] ((inhabit_cover (SplitCtxt Gamma) [::] A).2).
+      move => empty targets acc.
+      have: (empty = (empty, targets).1) by done.
+      move => ->.
+      have: (targets = (empty, targets).2) by done.
+      move => ->.
+      move: acc.
+      move: (empty, targets).
+      clear empty targets.
+      move => s acc.
+      elim: s /acc.
+      move => [] nextStable nextTargets.
+      case: nextTargets.
+      - move => _ _ _ _.
+          by constructor.
+      - move => nextTarget nextTargets acc IH nextTargetsOk nextStableOk.
+        move: (inhabitation_step_subset _ _ _ nextStableOk nextTargetsOk) => [] stepNextTargetsOk stepNextStableOk.
+        move: (IH (inhabitation_step (SplitCtxt Gamma) nextStable [:: nextTarget & nextTargets])
+                  (inhabitation_step_sizes A (nextStable, [:: nextTarget & nextTargets]) isT nextTargetsOk nextStableOk)
+                  stepNextStableOk stepNextTargetsOk) => dom.
+        apply: Domain__step; last by exact dom.
+          by apply: step__inhab.
+    Qed.
 
-
-
-
-
-
-        
-
-
-
-
-
-  
-
-
-
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  Fixpoint targetsToMultiArrows_rec (m: @MultiArrow Constructor) (targets: @TreeGrammar Combinator Constructor):
-    option (seq (@MultiArrow Constructor)) :=
-    match targets with
-    | [:: RuleCombinator A _ & targets] =>
-      if targetsToMultiArrows_rec ([::], A) targets is Some ms
-      then Some [:: m & ms]
-      else None
-    | [:: RuleApply A B C & targets] =>
-      if (B == m.2) && ((C -> A) == B)
-      then targetsToMultiArrows_rec ([:: C & m.1], A) targets
-      else None
-    | [::] => Some [:: m]
-    | _ => None
-    end.
-
-  Definition targetsToMultiArrows (targets: @TreeGrammar Combinator Constructor):
-    option (seq (@MultiArrow Constructor)) :=
-    match targets with
-    | [:: RuleCombinator A _ & targets] => targetsToMultiArrows_rec ([::], A) targets
-    | [:: RuleApply A B C & targets] =>
-      if ((C -> A) == B)
-      then targetsToMultiArrows_rec ([:: C], A) targets
-      else None
-    | [::] => Some [::]
-    | _ => None
-    end.
-
-  Definition potentialDerivation (stable: @TreeGrammar Combinator Constructor) (m: @MultiArrow Constructor): Prop :=
-    (forall M, [FCL Gamma |- M : mkArrow m] -> word stable (mkArrow m) M) /\
-    (forall M src, src \in m.1 -> [FCL Gamma |- M : src] -> word stable src M).
-
-  Definition truncated_word stable targets A M : Prop :=
-    if (targetsToMultiArrows targets) is Some ms
-    then foldr (fun m s => (potentialDerivation stable m) \/ s) true ms -> word stable A M
-    else False.
-
-  Lemma truncated_word_word: forall stable A M, truncated_word stable [::] A M -> word stable A M.
-  Proof. by move => stable A M /(fun prf => prf isT). Qed.
-
-  Lemma word_weaken: forall G1 G2,
-      {subset G1 <= G2} ->
-      forall A M, word G1 A M -> word G2 A M.
-  Proof.
-    move => G1 G2 subset_prf A M.
-    move: A.
-    elim: M.
-    - move => c A /hasP [] r inprf__r prf.
-      apply /hasP.
-      (exists r) => //.
-        by apply: subset_prf.
-    - move => M IH__M N IH__N A /hasP [] r.
-      case: r => // B C D /subset_prf inprf__r /andP [] /andP [] /eqP -> /IH__M prf__M /IH__N prf__N.
-      apply /hasP.
-      (exists (RuleApply B C D)) => //.
-        by rewrite eq_refl -/(word _ _ _) prf__M -/(word _ _ _) prf__N.
-  Qed.
-
-  Lemma targetsToMultiArrows_rec_srcs:
-    forall targets srcs1 srcs2 tgt,
-      isSome (targetsToMultiArrows_rec (srcs1, tgt) targets) ->
-      isSome (targetsToMultiArrows_rec (srcs2, tgt) targets).
-  Proof.
-    elim => //.
-    case => //.
-    + move => A c targets _ srcs1 srcs2 tgt /=.
-        by case (targetsToMultiArrows_rec ([::], A)).
-    + move => A B C targets IH srcs1 srcs2 tgt /=.
-      case: ((B == tgt) && ((C -> A) == B)) => //.
-        by apply: IH.
-  Qed.
-
-  Lemma targetsToMultiArrows_behead_isSome:
-    forall r targets, isSome (targetsToMultiArrows [:: r & targets]) -> isSome (targetsToMultiArrows targets).
-  Proof.
-    case => //.
-    - move => A c.
-      case => //; case => //.
-      + move => B d targets /=.
-          by case: (targetsToMultiArrows_rec ([::], B) targets).
-      + move => B C D targets /=.
-        case eq_prf: ((C ==A) && ((D -> B) == C)) => //.
-          by move: eq_prf => /andP [] _ ->.
-    - move => A B C.
-      rewrite /=.
-      case: ((C -> A) == B) => //.
-      move => targets.
-      case: targets => //.
+    Lemma InhabitationSemantics_functional_step:
+      forall (GammaSplit: {ffun Combinator -> seq (seq (@MultiArrow Constructor))})
+        s s1 s2, InhabitationSemantics GammaSplit s s1 -> InhabitationSemantics GammaSplit s s2 -> s1 = s2.
+    Proof.
+      move => ? s s1 s2.
       case.
-      + done.
-      + move => D c targets /=.
-          by case (targetsToMultiArrows_rec ([::], D) targets).
-      + move => D E F targets /=.
-        case eq_prf: ((E == A) && ((F -> D) == E)) => //.
-        move: eq_prf => /andP [] _ ->.
-          by apply: targetsToMultiArrows_rec_srcs.
-  Qed.
+      move => stable target targets.
+      move s__eq: (stable, [:: target & targets]) => s' prf.
+      move: s__eq.
+      case: prf.
+        by move => ? ? ? [] -> -> ->.
+    Qed.
 
-  Lemma targetsToMultiArrows_suffix_isSome:
-    forall targets1 targets2,
-      suffix targets2 targets1 ->
-      isSome (targetsToMultiArrows targets1) ->
-      isSome (targetsToMultiArrows targets2).
-  Proof.
-    move => targets1 targets2 /suffixP [] prefix /eqP ->.
-    clear targets1.
-      by elim: prefix => // r targets IH /= /targetsToMultiArrows_behead_isSome /IH.
-  Qed.
+    Lemma domain_continue:
+      forall GammaSplit s (dom: Domain GammaSplit s),
+        InhabitationSemantics GammaSplit s (inhabitation_step GammaSplit s.1 s.2) ->
+        Domain GammaSplit (inhabitation_step GammaSplit s.1 s.2).
+    Proof.
+      move => GammaSplit s [].
+      - move => G.
+        move s2__eq: (G, [::]) => s2 prf.
+        move: s2__eq.
+          by case: prf.
+      - move => s1 s2 prf dom2 prf2.
+          by rewrite (InhabitationSemantics_functional_step _ _ _ _ prf2 prf).
+    Defined.
 
-  Lemma targetsToMultiArrows_concat_isSome:
-    forall targets1 A c targets2,
-      isSome (targetsToMultiArrows targets1) ->
-      isSome (targetsToMultiArrows [:: RuleCombinator A c & targets2]) ->
-      isSome (targetsToMultiArrows (targets1 ++ [:: RuleCombinator A c & targets2])).
-  Proof.
-    elim => //.
-    case => //.
-    - move => A c targets1 IH B d targets2 prf.
-      move: (prf) => /targetsToMultiArrows_behead_isSome /(IH B d targets2) res /res.
-      move: prf => /=.
-      clear IH res.
-      case: targets1.
-      + rewrite /=.
-          by case: (targetsToMultiArrows_rec ([::], B) targets2).
-      + case => //.
-        * move => C e targets /=.
-            by case: (targetsToMultiArrows_rec ([::], C) (targets ++ [:: RuleCombinator B d & targets2])).
-        * move => C D E targets /=.
-          case eq_prf: ((D == A) && ((E -> C) == D)) => //.
-            by move: eq_prf => /andP [] _ ->.
-    - move => C D E targets1 IH F c targets2 prf.
-      move: (prf) => /targetsToMultiArrows_behead_isSome /(IH F c targets2) res /res.
-      move: prf => /=.
-      case: ((E -> C) == D) => //.
-      clear IH res.
-      case: targets1.
-      + rewrite /=.
-          by case: (targetsToMultiArrows_rec ([::], F) targets2).
-      + case => //.
-        * move => G d targets /=.
-            by case: (targetsToMultiArrows_rec ([::], G) (targets ++ [:: RuleCombinator F c & targets2])) => //.
-        * move => G H I targets /=.
-          case eq_prf: ((H == C) && ((I -> G) == H)) => //.
-          move: eq_prf => /andP [] _ -> _.
-            by apply: targetsToMultiArrows_rec_srcs.
-  Qed.
-
-  Fixpoint commitMultiArrow_slow
-           (c: Combinator) (srcs: seq (@IT Constructor)) (tgt: @IT Constructor): @TreeGrammar Combinator Constructor :=
-    match srcs with
-    | [:: src & srcs] => rcons (commitMultiArrow_slow c srcs (src -> tgt)) (RuleApply tgt (src -> tgt) src)
-    | [::] => [:: RuleCombinator tgt c]
-    end.
-
-  Lemma commitMultiArrow_append:
-    forall G srcs c tgt,
-      commitMultiArrow G c srcs tgt =
-      commitMultiArrow [::] c srcs tgt ++ G.
-  Proof.
-    move => G srcs.
-    move: G.
-    elim: srcs => // src srcs IH G c tgt.
-    rewrite /= IH (IH [:: _]).
-      by rewrite cats1 cat_rcons.
-  Qed.
-
-  Lemma commitMultiArrow_rcons:
-    forall G srcs c tgt,
-      commitMultiArrow G c srcs tgt =
-      if srcs is [:: src & srcs]
-      then (rcons (commitMultiArrow [::] c srcs (src -> tgt)) (RuleApply tgt (src -> tgt) src)) ++ G
-      else [:: RuleCombinator tgt c & G].
-  Proof.
-    move => G srcs.
-    move: G.
-    elim: srcs => // src srcs IH G c tgt.
-    rewrite /= IH.
-    clear IH.
-    case: srcs => //= src1 srcs.
-      by rewrite cat_rcons cat_rcons (commitMultiArrow_append [:: _]) cats1 cat_rcons.
-  Qed.
-
-  Lemma commitMultiArrow_slow_commitMultiArrow:
-    forall G c srcs tgt, commitMultiArrow G c srcs tgt = commitMultiArrow_slow c srcs tgt ++ G.
-  Proof.
-    move => G c srcs.
-    move: G c.
-    elim: srcs => //= src srcs IH G c tgt.
-      by rewrite IH cat_rcons.
-  Qed.    
-
-  Lemma split_targetsToMultiArrows_rec:
-    forall targets src tgt m0 ms m,
-      all (fun r => if r is RuleApply _ _ _ then true else false) targets ->
-      targetsToMultiArrows_rec m0 targets = Some (rcons ms m) ->
-      (src -> tgt) == m.2 ->
-      targetsToMultiArrows_rec m0 (rcons targets (RuleApply tgt (src -> tgt) src)) = Some (rcons ms ([:: src & m.1], tgt)).
-  Proof.
-    elim.
-    - move => src tgt m0 ms m /= _.
-      case: ms.
-      + rewrite /= => [] [] -> ->.
-          by rewrite eq_refl.
-      + move => ? ? [] _ /(f_equal (seq.size)) /=.
-        rewrite -(cats1 _ m) size_cat /= (addn1 (seq.size _)) => /eqP.
-          by rewrite eq_sym eqn0Ngt.
-    - case => //.
-      move => A B C targets IH src tgt m0 ms m apply_prfs prf eq_prf.
-      rewrite /=.
-      rewrite (IH src tgt ([:: C & m0.1], A) ms m) => //.
-      + move: prf.
-        rewrite /=.
-          by case: ((B == m0.2) && ((C -> A) == B)).
-      + move: prf.
-        rewrite /=.
-          by case: ((B == m0.2) && ((C -> A) == B)).
-  Qed.
-
-  Lemma commitMultiArrow_slow_split:
-    forall c srcs tgt, exists targets, commitMultiArrow_slow c srcs tgt = [:: RuleCombinator (mkArrow (srcs, tgt)) c & targets] /\
-                             all (fun r => if r is RuleApply _ _ _ then true else false) targets.
-  Proof.
-    move => c.
-    elim.
-    - by (exists [::]).
-    - move => src srcs IH tgt /=.
-      move: (IH (src -> tgt)) => [] targets [] eq_prf apply_prfs.
-      exists (rcons targets (RuleApply tgt (src -> tgt) src)); split.
-      + by rewrite eq_prf.
-      + by rewrite all_rcons apply_prfs.
-  Qed.
-
-  Lemma targetsToMultiArrows_eq:
-    forall c srcs C, targetsToMultiArrows (commitMultiArrow [::] c srcs C) = Some [:: (srcs, C)].
-  Proof.
-    move => c srcs C.
-    rewrite commitMultiArrow_slow_commitMultiArrow cats0.
-    move: c C.
-    elim: srcs => // src srcs IH c C /=.
-    move: (IH c (src -> C)).
-    move: (commitMultiArrow_slow_split c srcs (src -> C)) => [] targets [].
-    case: (commitMultiArrow_slow c srcs (src -> C)) => // r targets' ->.
-    rewrite /=.
-    move => apply_prfs prf.
-      by apply: (split_targetsToMultiArrows_rec targets src C ([::], mkArrow (srcs, src -> C)) [::] (srcs, src -> C)) => //.
-  Qed.
-
-  Lemma inhabit_cover_multiArrows:
-    forall targets C,
-      isSome (targetsToMultiArrows targets) ->
-      isSome (targetsToMultiArrows (inhabit_cover (SplitCtxt Gamma) targets C).2).
-  Proof.
-    move => targets C.
-    rewrite /inhabit_cover.
-    suff: (targetsToMultiArrows (foldl (accumulateCovers (SplitCtxt Gamma) C (primeFactors C))
-                                       ([::], true) (enum Combinator)).1 /\
-           match (foldl (accumulateCovers (SplitCtxt Gamma) C (primeFactors C))
-                        ([::], true) (enum Combinator)).1 with
-           | [:: RuleCombinator _ _ & _] => true
-           | [::] => true
-           | _ => false
-           end).
-    { case: (foldl (accumulateCovers (SplitCtxt Gamma) C (primeFactors C))
-                   ([::], true) (enum Combinator)) => newTargets [] //=.
-      case: newTargets.
-      - by rewrite cats0.
-      - case.
-        + by move => ? ? [].
-        + move => ? ? ? [] prf1 _ prf2.
-            by apply: targetsToMultiArrows_concat_isSome.
-        + by move => ? ? ? ? []. }
-    have: (targetsToMultiArrows (([::]: @TreeGrammar Combinator Constructor, true)).1 /\
-           match ([::]: @TreeGrammar Combinator Constructor, true).1 with
-           | [:: RuleCombinator _ _ & _] => true
-           | [::] => true
-           | _ => false
-           end) by done.
-    move: ([::], true).
-    elim: (enum Combinator) => //= c combinators IH [] newTargets failed prf.
-    apply: IH.
-    move: prf.
-    clear ...
-    rewrite /accumulateCovers.
-    case: (coverMachine
-             ([::], map (fun ms =>
-                          Cover (map (fun m => (m, filter (checkSubtypes m.2) (primeFactors C))) ms) (primeFactors C))
-                       (SplitCtxt Gamma c))) => covers _ /=.
-    move: newTargets.
-    elim: (reduceMultiArrows covers) => // [] [] srcs tgt ms IH newTargets prf.
-    rewrite /=.
-    apply: IH.
-    move: prf.
-    case: newTargets.
-    - move => _.
-      split.
-      + by rewrite targetsToMultiArrows_eq.
-      + rewrite commitMultiArrow_slow_commitMultiArrow cats0.
-          by move: (commitMultiArrow_slow_split c srcs C) => [] targets [] ->.
-    - move => r newTargets prf.
-      split.
-      + rewrite commitMultiArrow_append.
-        move: prf => [].
-        case: r => //.
-        move => A d prf _.
-        rewrite targetsToMultiArrows_concat_isSome => //.
-          by rewrite targetsToMultiArrows_eq.
-      + rewrite commitMultiArrow_append commitMultiArrow_slow_commitMultiArrow cats0.
-          by move: (commitMultiArrow_slow_split c srcs C) => [] ? [] ->.
-  Qed.
-
-  Lemma inhabit_step_multiArrows:
-    forall stable targets,
-      isSome (targetsToMultiArrows targets) ->
-      isSome (targetsToMultiArrows (inhabitation_step (SplitCtxt Gamma) stable targets).2).
-  Proof.
-    move => stable.
-    case => //.
-    case => //.
-    - move => A c targets.
-      rewrite [inhabitation_step _ _ _]/=.
-      case: (RuleCombinator A c \in stable);
-        by apply: targetsToMultiArrows_behead_isSome.
-    - move => A B C targets.
-      rewrite [inhabitation_step _ _ _]/=.
-      case: (updatedExisting stable C) => [] [].
-      case.
-      + case.
-        * move => nextStable /targetsToMultiArrows_behead_isSome /(targetsToMultiArrows_suffix_isSome _ (dropTargets targets)).
-            by move => /(fun prf => prf (dropTargets_suffix targets)).
-        * by move => nextStable /targetsToMultiArrows_behead_isSome.
-      + move => _ _ /targetsToMultiArrows_behead_isSome /(inhabit_cover_multiArrows targets C).
-        case: (inhabit_cover (SplitCtxt Gamma) targets C).
-        case => //.
-          by move => nextTargets /(targetsToMultiArrows_suffix_isSome _ _ (dropTargets_suffix nextTargets)).
-  Qed.
-
-  Lemma targetsToMultiArrows_dropTarget:
-    forall target targets,
-      if targetsToMultiArrows [:: target & targets] is Some [:: m & ms] return Prop
-      then
-        forall prefix, targets == prefix ++ dropTargets targets ->
-                  targetsToMultiArrows [:: target & prefix] = Some [:: m] /\
-                  targetsToMultiArrows (dropTargets targets) = Some ms
-      else true.
-  Proof.
-    case => //.
-    - move => A c targets /=.
-      move: [::] A.
-      elim: targets.
-      + move => srcs A prefix /=.
-          by case: prefix.
-      + move => r targets IH srcs A /=.
-        case: r => //.
-        * move => B d /=.
-          case: (targetsToMultiArrows_rec ([::], B) targets) => //.
-          move => ms.
-          case => // r nextTargets /eqP /(f_equal (seq.size)) /=.
-          rewrite size_cat /= => /eqP.
-            by rewrite eqSS eqn_leq [seq.size _ + _ <= _]leqNgt ltn_addl // andbF.
-        * move => B C D /=.
-          case ok_prf: ((C == A) && ((D -> B) == C)) => //.
-          move: (IH [:: D & srcs] B).
-          case: (targetsToMultiArrows_rec (D :: srcs, B) targets) => //.
-          case => // m ms prf.
-          case.
-          ** rewrite /=.
-             move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP eq_prf.
-             rewrite [X in ([:: _ & X] == _ -> _)%type]eq_prf.
-             move => /eqP /(f_equal (seq.size)) /eqP /=.
-             rewrite size_cat.
-               by rewrite -addn1 eqn_leq -addnA (addn1 (seq.size _)) [(_ + _) <= _]leqNgt ltn_addl.
-          ** move => r prefix /= /eqP [] <- /eqP /prf.
-               by rewrite ok_prf.
-    - move => A B C targets /=.
-      case: ((C -> A) == B) => //.
-      move: [:: C] A.
-      elim: targets.
-      + move => srcs A prefix /=.
-          by case: prefix.
-      + move => r targets IH srcs A /=.
-        case: r => //.
-        * move => E d /=.
-          case: (targetsToMultiArrows_rec ([::], E) targets) => //.
-          move => ms.
-          case => // r nextTargets /eqP /(f_equal (seq.size)) /=.
-          rewrite size_cat /= => /eqP.
-            by rewrite eqSS eqn_leq [seq.size _ + _ <= _]leqNgt ltn_addl // andbF.
-        * move => E F G /=.
-          case ok_prf: ((F == A) && ((G -> E) == F)) => //.
-          move: (IH [:: G & srcs] E).
-          case: (targetsToMultiArrows_rec (G :: srcs, E) targets) => //.
-          case => // m ms prf.
-          case.
-          ** rewrite /=.
-             move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP eq_prf.
-             rewrite [X in ([:: _ & X] == _ -> _)%type]eq_prf.
-             move => /eqP /(f_equal (seq.size)) /eqP /=.
-             rewrite size_cat.
-               by rewrite -addn1 eqn_leq -addnA (addn1 (seq.size _)) [(_ + _) <= _]leqNgt ltn_addl.
-          ** move => r prefix /= /eqP [] <- /eqP /prf.
-               by rewrite ok_prf.
-  Qed.
-
-  Lemma rule_drop: forall A M stable targets r,
-      isSome (targetsToMultiArrows targets) ->
-      truncated_word stable [:: r & targets] A M -> truncated_word stable (dropTargets targets) A M.
-  Proof.
-    move => A M stable targets r targetsOk.
-    rewrite /truncated_word.
-    move: (targetsToMultiArrows_dropTarget r targets).
-    case: (targetsToMultiArrows (r :: targets)) => //.
-    case.
-    - rewrite /=.
-      move: (targetsToMultiArrows_suffix_isSome _ _ (dropTargets_suffix targets) targetsOk).
-      case: (targetsToMultiArrows (dropTargets targets)) => //.
-        by move => ? ? ? /(fun prf => prf isT).
-    - move: (targetsToMultiArrows_suffix_isSome _ _ (dropTargets_suffix targets) targetsOk).
-      case: (targetsToMultiArrows (dropTargets targets)) => //.
-      move: (dropTargets_suffix targets) => /suffixP [] prefix targets__eq.
-      move => ms _ m ? /(fun prf => prf prefix targets__eq) [] rprefix__eq [] <- /= res prf.
-      apply: res.
-        by right.
-  Qed.
-
-  Lemma rule_absorbl: forall A M stable targets c B,
-      isSome (targetsToMultiArrows targets) ->
-      (RuleCombinator c B \in stable) ->
-      truncated_word stable [:: RuleCombinator c B & targets] A M -> truncated_word stable targets A M.
-  Proof.
-    move => A M stable targets B c targetsOk inprf.
-    rewrite /truncated_word.
-    move: (targetsToMultiArrows_dropTarget (RuleCombinator B c) targets).
-    case: (targetsToMultiArrows (RuleCombinator B c :: targets)) => //.
-    case.
-    - rewrite /=.
-      move: targetsOk.
-      case: (targetsToMultiArrows targets) => //.
-        by move => ? ? _ /(fun prf => prf isT).
-    - move => m ms /=.
-      move: (targetsToMultiArrows_suffix_isSome _ _ (dropTargets_suffix targets) targetsOk).
-      move drop__eq: (targetsToMultiArrows (dropTargets targets)) => ms2.
-      move: drop__eq.
-      case: ms2 => //.
-      move: (dropTargets_suffix targets) => /suffixP [] prefix targets__eq.
-      move => ms2 drop__eq _ /(fun prf => prf prefix targets__eq) [] rprefix__eq [] ms__eq.
-      move: drop__eq.
-      rewrite ms__eq.
-      clear ms__eq ms2.
-
-
-      apply: res.
-        by right.
-  Qed.
-
+    Fixpoint inhabit_rec GammaSplit s (dom: Domain GammaSplit s) :=
+      match s as s return Domain GammaSplit s -> { G: TreeGrammar | clos_refl_trans_1n _ (InhabitationSemantics GammaSplit) s (G, [::]) } with
+      | (G, [:: target & targets]) =>
+        fun dom =>
+          let: exist res prf :=
+             inhabit_rec GammaSplit
+                         (inhabitation_step GammaSplit G [:: target & targets])
+                         (domain_continue GammaSplit (G, [:: target & targets]) dom (step__inhab GammaSplit G target targets)) in
+          exist _ res (rt1n_trans _ (InhabitationSemantics GammaSplit) _ _ (res, [::]) (step__inhab GammaSplit G target targets) prf)
+      | (G, [::]) => fun _ => exist _ G (rt1n_refl _ _ (G, [::]))
+      end dom.
       
-  
+    Definition inhabit (A: @IT Constructor): TreeGrammar :=
+      if isOmega A
+      then OmegaRules A
+      else
+        let GammaSplit := (SplitCtxt Gamma) in
+        (if inhabit_cover GammaSplit [::] A is (false, nextTargets) as r
+            return (Domain GammaSplit ([::], r.2) -> TreeGrammar)%type
+         then fun dom => proj1_sig (inhabit_rec GammaSplit ([::], nextTargets) dom)
+         else fun _ => [:: RuleFail A]) (domain_start A).
+  End Algorithm.
 
-  Definition FCL_complete stable targets :=
-    forall A, (A \in targetTypes stable) || (A \in targetTypes targets) ->
-         forall M, [FCL Gamma |- M : A] -> truncated_word stable targets A M.
-
-  
-
-  
-
-  Lemma inhabit_step_complete:
-    forall stable targets,
-      {subset OmegaRules <= stable} ->
-      noTargetFailures targets ->
-      isSome (targetsToMultiArrows targets) ->
-      FCL_complete stable targets ->
-      FCL_complete (inhabitation_step (SplitCtxt Gamma) stable targets).1
-                   (inhabitation_step (SplitCtxt Gamma) stable targets).2.
+  Lemma inhabit_multistep_sound:
+    forall s1 s2,
+      clos_refl_trans_1n _ (InhabitationSemantics (SplitCtxt Gamma)) s1 s2 ->
+      FCL_sound s1.1 ->
+      FCL_sound s1.2 ->
+      FCL_sound s2.1 /\ FCL_sound s2.2.
   Proof.
-    move => stable targets omega_subset.
-    case: targets => // r targets.
-    case: r.
-    - done.
-    - move => A c _ prf_some prf_complete /= B /orP.
-      case.
-      + case inprf__Ac: (RuleCombinator A c \in stable).
-        * move => in_stable M prf__MB.
-          move: (fun inprf => prf_complete B inprf M prf__MB).
-          rewrite in_stable orTb.
-          move => /(fun prf => prf isT) res.
-          rewrite /= /truncated_word.
-            by apply: rule_absorbl.
-        * move => in_stable M prf__MB /=.
-          apply: (rule_absorbl _ _ _ _ A c); first by apply: mem_head.
-          apply: (truncated_word_weaken stable _ [:: RuleCombinator A c & targets]) => //.
-          { move => x; rewrite in_cons => ->; by rewrite orbT. }
-          apply: prf_complete => //.
-          move: in_stable.
-          rewrite /= in_cons in_cons.
-          move => /orP [] -> //.
-            by rewrite orbT.
-      + case inprf__Ac: (RuleCombinator A c \in stable).
-        * move => in_targets M prf__MB.
-          move: (fun inprf => prf_complete B inprf M prf__MB).
-          rewrite in_cons in_targets orbT orbT.
-          move => /(fun prf => prf isT).
-            by apply: rule_absorbl.
-        * move => in_targets M prf__MB /=.
-          apply: (rule_absorbl _ _ _ _ A c); first by apply: mem_head.
-          apply: (truncated_word_weaken stable _ [:: RuleCombinator A c & targets]) => //.
-          { move => x; rewrite in_cons => ->; by rewrite orbT. }
-          apply: prf_complete => //.
-          move: in_targets.
-          rewrite /= in_cons => ->.
-            by do 2 rewrite orbT.
-    - move => A B C noFail prf_complete /= D.
-      
+    move => s1 s2 steps.
+    elim: s1 s2 /steps => // s1 s2 s3 step steps IH prf1 prf2.
+    move: (inhabitation_step_sound s1.1 s1.2 prf1 prf2).
+    move: steps IH.
+    case: step => stable target targets steps IH [] prf12 prf22.
+      by apply: IH.
   Qed.
 
+  Lemma inhabit_multistep_complete:
+    forall initialType s1 s2,
+      clos_refl_trans_1n _ (InhabitationSemantics (SplitCtxt Gamma)) s1 s2 ->
+      FailSound s1.1 ->
+      noTargetFailures s1.2 ->
+      FCL_complete initialType s1.1 s1.2 ->
+      FCL_complete initialType s2.1 s2.2.
+  Proof.
+    move => initialType s1 s2 steps.
+    elim: s1 s2 /steps => // s1 s2 s3 step steps IH fsprf nofailprf prf_complete.
+    move: (inhabit_step_FailSound s1.1 s1.2 fsprf).
+    move: (inhabitation_step_noTargetFailures s1.1 s1.2 nofailprf).
+    move: (inhabit_step_complete initialType s1.1 s1.2 fsprf nofailprf prf_complete).
+    move: steps IH.
+    case: step => stable target targets steps IH prf_complete2 nofailprf2 fsprf2.
+      by apply: IH.
+  Qed.
+
+  Theorem inhabit_sound: forall A M, word (inhabit A) A M -> [FCL Gamma |- M : A].
+  Proof.
+    move => A M.
+    apply: FCL_sound_sound.
+    rewrite /inhabit.
+    case isOmega__A: (isOmega A).
+    - by apply: (OmegaRules_sound A isOmega__A).
+    - move: (inhabit_cover_sound [::] A (negbT isOmega__A) isT).
+      have: (FCL_sound [::]) by done.
+      move: (domain_start A).
+      case: (inhabit_cover (SplitCtxt Gamma) [::] A).
+      case => //.
+      move => G dom.
+      rewrite [_.2]/= => stable_sound targets_sound.
+        by case:  (inhabit_multistep_sound _ _ (proj2_sig ((inhabit_rec (SplitCtxt Gamma) ([::], G) dom))) stable_sound targets_sound).
+  Qed.
+
+  Theorem inhabit_complete: forall A M, [FCL Gamma |- M : A] -> word (inhabit A) A M.
+  Proof.
+    move => A M.
+    apply: (FCL_complete_emptyTargets A); last by rewrite eq_refl.
+    move => B.
+    clear M.
+    rewrite /inhabit.
+    case isOmega__A: (isOmega A).
+    - move => inprf__B M prf.
+      move: (OmegaRules_future_word [::] [::] A M isOmega__A).
+      rewrite cats0.
+      move: inprf__B.
+      case /orP => //.
+      case /orP.
+      + by move => /eqP ->.
+      + by rewrite OmegaRules_params mem_seq1 => /eqP ->.
+    - move => inprf__B M prf.
+      have: (FailSound [::]) by done.
+      have: (noTargetFailures (inhabit_cover (SplitCtxt Gamma) [::] A).2) by apply: inhabit_cover_noTargetFailures.
+      have: (FCL_complete A [::] (inhabit_cover (SplitCtxt Gamma) [::] A).2).
+      { move: isOmega__A.
+        clear ...
+        move => isOmega__A B inprf__B M prf.
+        rewrite /inhabit_cover.
+        move: inprf__B => /=.
+        case /orP => //.
+        + case /orP => // AB__eq.
+          move: prf.
+          rewrite (eqP AB__eq).
+          move => /(future_word_covers A M (negbT isOmega__A)).
+          rewrite -inhabit_cover_flatten.
+          move: (inhabit_cover_empty A).
+          case: (foldl (accumulateCovers (SplitCtxt Gamma) A (primeFactors A)) ([::], true) (enum Combinator)).
+          move => r.
+          case => //.
+          move => /(fun prf => prf isT) ->.
+          clear...
+          case: M.
+          * move => c.
+             case => //.
+               by case => [] g [].
+          * by move => M N /= [] ? [] ? [] [] // ? [].
+        + move: (cover_targets A) => /allP /=.
+          rewrite -inhabit_cover_flatten.
+          move => prfs.
+          move: (future_word_covers A M (negbT isOmega__A)) (inhabit_cover_empty A) prfs.
+          rewrite -inhabit_cover_flatten.
+          rewrite /inhabit_cover.
+          case: ((foldl (accumulateCovers (SplitCtxt Gamma) A (primeFactors A)) ([::], true) (enum Combinator))).
+          move => targets.
+          case => //.
+          move => fwprf _ prfs /prfs /eqP eq_prf.
+          move: prf.
+          rewrite eq_prf.
+            by apply: fwprf. }
+      move: inprf__B.
+      move: (domain_start A).
+      move: (inhabit_cover_empty A).
+      rewrite /inhabit_cover.
+      case: (foldl (accumulateCovers (SplitCtxt Gamma) A (primeFactors A)) ([::], true) (enum Combinator)) => targets failed.
+      case: failed.
+      + move => /(fun prf => prf isT) emptyprf /= _.
+        rewrite in_nil orbF orbF.
+        move => /eqP eq_prf.
+        move: prf.
+        rewrite eq_prf.
+        move => prf prf_complete.
+        move: (prf_complete A).
+        rewrite eq_refl /=.
+        move => /(fun pc => pc isT M prf).
+        clear...
+        case: M.
+        * move => c.
+          case => //.
+            by case => [] g [].
+        * by move => M N /= [] ? [] ? [] [] // ? [].
+      + move => _.
+        rewrite cat0s [(_, _).2]/=.
+        move => dom inprf__B prf_complete prf_ok fsprf.
+        move: (inhabit_multistep_complete A _ _
+                                          (proj2_sig (inhabit_rec (SplitCtxt Gamma) ([::], targets) dom))
+                                          fsprf prf_ok prf_complete).
+          by move => /(fun res => res _ inprf__B M prf).
+  Qed.   
 
 End InhabitationMachineProperties.
 
-
-(** Archive
-
-  Definition FCL_complete stable targets :=
-    forall A, (A \in targetTypes stable) ->
-         forall c srcs1, [FCL Gamma |- (Var c) : mkArrow (srcs1, A)] ->
-                    exists srcs2,
-                      seq.size srcs1 == seq.size srcs2 /\
-                      all (fun AB => checkSubtypes AB.1 AB.2) (zip srcs1 srcs2) /\
-                      (RuleCombinator (mkArrow (srcs2, A)) c \in stable) /\
-                      (forall src, src \in srcs2 -> src \in (targetTypes stable) \/ src \in (parameterTypes targets)) /\
-                      (forall r, r \in commitMultiArrow [::] c srcs2 A -> r \in stable \/ r \in targets).
-
-  Lemma revApply_rcons: forall (M N: @Term Combinator) Ns, revApply M (rcons Ns N) = revApply (M @ N) Ns.
-  Proof.
-    move => M N Ns.
-      by rewrite /revApply -cats1 (foldr_cat _ _ Ns [:: N]).
-  Qed.
-
-  Lemma revApply_nil: forall (M: @Term Combinator), revApply M [::] = M.
-  Proof. by move => M. Qed.    
-
-  Definition Term_unapply_ind:
-    forall (P : @Term Combinator -> Prop) (f: forall c Ns, (forall N, N \in Ns -> P N) -> P (revApply (Var c) Ns)) M, P M :=
-    fun P f M =>
-      (fix rec (M: Term): forall (Ns: seq Term), (forall N, N \in Ns -> P N) -> P (revApply M Ns) :=
-         match M with
-         | Var c => f c
-         | M @ N => fun Ns prfs =>
-                     rew revApply_rcons M N Ns in
-                       (rec M (rcons Ns N)
-                            (fun N2 inprf =>
-                               match orP (rew (in_cons N Ns N2)
-                                           in rew (mem_rcons Ns N N2) in inprf) with
-                               | or_introl N__eq =>
-                                 rew <- [P] (eqP N__eq) in
-                                     rew (revApply_nil N) in
-                                     rec N [::] (fun N inprf => False_rect _ (not_false_is_true inprf))
-                               | or_intror inprf => prfs N2 inprf
-                               end))
-         end) M [::] (fun N inprf => False_rect _ (not_false_is_true inprf)).
-
-  Lemma commitMultiArrow_suffix:
-    forall G c srcs tgt, suffix G (commitMultiArrow G c srcs tgt).
-  Proof.
-    move => G c srcs.
-    move: G.
-    elim: srcs.
-    - move => G tgt.
-        by rewrite /= suffix_refl orbT.
-    - move => src srcs IH G tgt /=.
-      apply: suffix_trans; last by apply: IH.
-        by rewrite /= suffix_refl orbT.
-  Qed.
-
-  Lemma commitMultiArrow_cat:
-    forall G c srcs tgt, commitMultiArrow G c srcs tgt = commitMultiArrow [::] c srcs tgt ++ G.
-  Proof.
-    move => G c srcs.
-    move: G.
-    elim: srcs => // src srcs IH G tgt.
-      by rewrite /= IH [X in _ = X ++ _]IH -catA cat_cons.
-  Qed.
-
-  Lemma FCL_complete_complete:
-    forall stable,
-      FCL_complete stable [::] ->
-      forall A, (A \in targetTypes stable) ->
-           forall M, [FCL Gamma |- M : A] -> word stable A M.
-  Proof.
-    move => stable stable_complete A inprf__A M.
-    move: A inprf__A.
-    elim /Term_unapply_ind: M.
-    move => c Ns IH A inprf__A /FCL__invApp [] srcs [] srcs__size ty_prf.
-    move: (ty_prf (seq.size Ns)).
-    rewrite nth_default // nth_default; last by rewrite srcs__size.
-    move => /(stable_complete A inprf__A c srcs).
-    move => [] srcs2 [] /eqP srcs2__size [] /allP le_prfs [] _ /= [] inprf__srcs2 inprf__rules.
-    have: (forall n : nat, [ FCL Gamma |- nth (Var c) Ns n : nth Omega srcs n]).
-    { move => n.
-      case n_lt: (n < seq.size srcs).
-      - move: (ty_prf n).
-          by rewrite (set_nth_default Omega).
-      - rewrite nth_default; first rewrite nth_default.
-        + by apply: FCL__Omega.
-        + rewrite leqNgt.
-            by apply /negbT.
-        + rewrite leqNgt srcs__size.
-            by apply /negbT. }
-    move: ty_prf => _ ty_prf.
-    have: (forall NAB, NAB \in zip Ns (zip srcs srcs2) -> word stable NAB.2.2 NAB.1).
-    { move => NAB.
-      move: srcs__size srcs2__size IH le_prfs inprf__srcs2 ty_prf.
-      clear ...
-      move: srcs srcs2 NAB.
-      elim: Ns; first by move => [] // [] //.
-      move => N Ns IH [] // src srcs [] // src2 srcs2 NAB [] srcs_size [] srcs2_size prfs le_prfs inprf__srcs2 ty_prf /=.
-      rewrite in_cons.
-      move => /orP.
-      case.
-      - move => /eqP -> /=.
-        apply: prfs.
-        + by apply: mem_head.
-        + move: (inprf__srcs2 src2 (mem_head _ _)).
-            by case.
-        + apply: FCL__Sub; first by apply: (ty_prf 0).
-          apply /subtypeMachineP.
-          apply: (le_prfs (src, src2)).
-            by apply: mem_head.
-      - apply: IH => //.
-        + move => N2 inprf.
-          apply: prfs.
-            by rewrite in_cons inprf orbT.
-        + move => AB inprf.
-          apply: le_prfs.
-            by rewrite in_cons inprf orbT.
-        + move => src3 inprf.
-          apply: inprf__srcs2.
-            by rewrite in_cons inprf orbT.
-        + move => n.
-            by apply: (ty_prf n.+1). }
-    move: inprf__srcs2 le_prfs IH ty_prf => _ _ _ _.
-    move: A inprf__A Ns srcs__size srcs2 srcs2__size inprf__rules.
-    elim: srcs.
-    - move => A ? [] // _ [] // _ /= prf _.
-      apply /hasP.
-      exists (RuleCombinator A c).
-      + by case: (prf _ (mem_head _ _)).
-      + by rewrite eq_refl eq_refl.
-    - move => src srcs IH A inprf__A [] // N Ns [] srcs__size [] // src2 srcs2 [] srcs2__size inprf wordprf.
-      rewrite /=.
-      apply /hasP.
-      exists (RuleApply A (src2 -> A) src2).
-      + move: (inprf (RuleApply A (src2 -> A) src2)).
-        have inprf__r: (RuleApply A (src2 -> A) src2 \in commitMultiArrow [::] c (src2 :: srcs2) A).
-        { rewrite /=.
-          move: (commitMultiArrow_suffix [:: RuleApply A (src2 -> A) src2] c srcs2 (src2 -> A)) => /suffixP [] prefix /eqP ->.
-            by rewrite mem_cat mem_head orbT. }
-        move => /(fun prf => prf inprf__r).
-          by case.
-      + rewrite eq_refl /=.
-        apply /andP.
-        split.
-        * apply: (fun inprf__A => IH (src2 -> A) inprf__A Ns srcs__size srcs2 srcs2__size) => //.
-          ** move: inprf.
-             rewrite /=.
-             move: srcs2__size wordprf => _ _.
-             case: srcs2 => /=.
-             *** move => /(fun prf => prf _ (mem_head _ _)).
-                 case => // inprf.
-                 rewrite /targetTypes.
-                 apply /mapP.
-                   by (eexists; first by exact inprf).
-             *** move => src22 srcs22 inprf.
-                 rewrite /targetTypes.
-                 apply /mapP.
-                 exists (RuleApply (src2 -> A) (src22 -> src2 -> A) src22) => //.
-                 suff: ( (RuleApply (src2 -> A) (src22 -> src2 -> A) src22) \in
-                           commitMultiArrow [:: RuleApply (src2 -> A) (src22 -> src2 -> A) src22; RuleApply A (src2 -> A) src2] c srcs22
-                                            (src22 -> src2 -> A)) by (move => /inprf; case).
-                 move: (commitMultiArrow_suffix [:: RuleApply (src2 -> A) (src22 -> src2 -> A) src22; RuleApply A (src2 -> A) src2]
-                                                c srcs22 (src22 -> src2 -> A)) => /suffixP [] prefix /eqP ->.
-                   by rewrite mem_cat mem_head orbT.
-          ** move => r inprf__r.
-             apply: inprf.
-               by rewrite /= commitMultiArrow_cat mem_cat inprf__r.
-          ** move => NAB inprf__NAB.
-             apply: wordprf.
-               by rewrite in_cons inprf__NAB orbT.
-        * apply: (wordprf (N, (src, src2))).
-            by apply: mem_head.
-  Qed.
-  
-  Lemma inhabit_step_complete:
-    forall stable targets,
-      FCL_complete stable targets ->
-      FCL_complete (inhabitation_step Gamma stable targets).1 (inhabitation_step Gamma stable targets).2.
-  Proof.
-    move => stable targets.
-    case: targets => //.
-    case.
-    - move => A targets /= prf__complete B inprf__B c srcs.
-      admit.
-    - move => A c targets prf__complete B /= inprf__B d srcs prf.
-      move: inprf__B.
-      case inprf__Ac: (RuleCombinator A c \in stable).
-      + move => /(fun inprf__B => prf__complete B inprf__B d srcs prf).
-        move => [] srcs2 [] srcs2__size [] le_prfs [] inprf__stable [] src_prfs rule_prfs.
-        exists srcs2; repeat split => //.
-        move => r /rule_prfs.
-        case; first by (move => ?; left).
-        rewrite in_cons.
-        move => /orP.
-        case.
-        * move => /eqP ->.
-            by left.
-        * move => ->.
-            by right.
-      + rewrite [X in (_ \in X -> _)%type]/targetTypes (map_cat _ [:: _]) -/(targetTypes stable) in_cons.
-        move => /orP.
-        case.
-        * move => /eqP ->.
-          exists srcs; repeat split => //.
-          *
-
-          
-
-        move => /(fun inprf__B => prf__complete B inprf__B d srcs prf).
-
-
-
-      
-      
-
-
-  
-
-
-          
-  
-
-
-
-
-
-
-
-  Definition Constructor: ctor := sum_ctorType Constructor1 Constructor2.
-
-  Definition Ctxt1 := Ctxt Combinator Constructor1.
-  Definition Ctxt2 := Ctxt Combinator Constructor2.
-  Definition Ctxt__sum := Ctxt Combinator Constructor.
-
-
-
-
-  Fixpoint mapctor {C1 C2: ctor} (f: C1 -> C2) (A: @IT C1): @IT C2 :=
-    match A with
-    | Ctor c A => Ctor (f c) (mapctor f A)
-    | A -> B => mapctor f A -> mapctor f B
-    | A \times B => mapctor f A \times mapctor f B
-    | A \cap B => mapctor f A \cap mapctor f B
-    | Omega => Omega
-    end.
-
-  Definition lift1 := @mapctor Constructor1 Constructor inl.
-  Definition lift2 := @mapctor Constructor2 Constructor inr.
-
-  Lemma mapctor_isOmega {C1 C2 : ctor}:
-    forall (f: C1 -> C2) A, isOmega A = isOmega (mapctor f A).
-  Proof.
-    move => f.
-      by elim => //= ? -> ? ->.
-  Qed.   
-
-  Lemma mapctor_cast_hom {C1 C2 : ctor}:
-    forall (f: C1 -> C2),
-      (forall c d, [ctor c <= d] = [ctor (f c) <= (f d)]) ->
-      forall A B,
-        cast (mapctor f A) (mapctor f B) =
-        map (match A as A' return arity A' -> arity (mapctor f A') with
-             | Omega => fun _ =>  tt
-             | Ctor _ _ => mapctor f
-             | _ => (fun (AB: IT * IT) => (mapctor f AB.1, mapctor f AB.2))
-             end) (cast A B).
-  Proof.
-    move => f f_prf.
-    case => //.
-    - move => c A B.
-      elim: B => //.
-      + move => d B _.
-        rewrite /cast /=.
-        move: (f_prf d c).
-          by case: [ctor d <= c] => <-.
-      + move => B1 IH1 B2 IH2.
-          by rewrite cast_inter //= cast_inter //= map_cat IH1 IH2.
-    - move => A1 A2 B /=.
-      rewrite slow_cast_cast slow_cast_cast /slow_cast /= -(mapctor_isOmega f).
-      case: (isOmega A2) => //.
-      elim: B => //= B1 IH1 B2 IH2.
-        by rewrite map_cat IH1 IH2.
-    - move => A1 A2 B /=.
-      rewrite slow_cast_cast slow_cast_cast /slow_cast /=.
-      elim: B => //= B1 IH1 B2 IH2.
-        by rewrite map_cat IH1 IH2.
-    - move => A1 A2 B /=.
-      rewrite slow_cast_cast slow_cast_cast /slow_cast /= -(mapctor_isOmega f) -(mapctor_isOmega f).
-      case: (isOmega A1 && isOmega A2) => //.
-      elim: B => //= B1 IH1 B2 IH2.
-        by rewrite map_cat IH1 IH2.
-  Qed.
-
-  (*Lemma mapctor_cast_subseq {C1 C2 : ctor}:
-    forall (f: C1 -> C2),
-      (forall c d, [ctor c <= d] -> [ctor (f c) <= (f d)]) ->
-      forall A B, match A with
-             | Ctor c A => subseq (map (mapctor f) (cast (Ctor c A) B)) (cast (mapctor f (Ctor c A)) (mapctor f B))
-             | Omega => subseq (cast Omega B) (cast (mapctor f Omega) (mapctor f B))
-             | A => subseq (map (fun A1A2 => (mapctor f A1A2.1, mapctor f A1A2.2)) (cast A B))
-                          (cast (mapctor f A) (mapctor f B))
-             end.
-  Proof.
-     move => f f_prf.
-    case => //.
-    - move => c A B.
-      elim: B => //.
-      + move => d B _.
-        rewrite /cast /=.
-        move: (f_prf d c).
-        case: [ctor d <= c]; last by move => _; apply: sub0seq.
-        move => /(fun prf => prf isT) ->.
-          by apply: subseq_refl.
-      + move => B1 IH1 B2 IH2.
-        rewrite cast_inter //= cast_inter //= map_cat.
-          by apply: cat_subseq.
-    - move => A1 A2 B.
-      rewrite /A.
-      rewrite slow_cast_cast slow_cast_cast /slow_cast /= -(mapctor_isOmega f).
-      case: (isOmega A2) => //.
-      elim: B => //= B1 IH1 B2 IH2.
-      + by rewrite eq_refl.
-      + rewrite map_cat.
-          by apply: cat_subseq.
-    - move => A1 A2 B.
-      rewrite /A.
-      move: A => _.
-      rewrite slow_cast_cast slow_cast_cast /slow_cast /=.
-      elim: B => //= B1 IH1 B2 IH2.
-      + by rewrite eq_refl.
-      + rewrite /= map_cat.
-          by apply: cat_subseq.
-    - move => A1 A2 B.
-      rewrite /A.
-      rewrite slow_cast_cast slow_cast_cast /slow_cast /= -(mapctor_isOmega f) -(mapctor_isOmega f).
-      case: (isOmega A1 && isOmega A2) => //.
-      elim: B => //= B1 IH1 B2 IH2.
-      rewrite map_cat.
-        by apply cat_subseq.
-  Qed.
-
-  Lemma cast_mapctor_subseq {C1 C2 : ctor}:
-    forall (f: C1 -> C2),
-      (forall c d, [ctor (f c) <= (f d)] -> [ctor c <= d]) ->
-      forall A B, match A with
-             | Ctor c A => subseq (cast (mapctor f (Ctor c A)) (mapctor f B)) (map (mapctor f) (cast (Ctor c A) B))
-             | Omega => subseq (cast (mapctor f Omega) (mapctor f B)) (cast Omega B)
-             | A => subseq (cast (mapctor f A) (mapctor f B))
-                          (map (fun A1A2 => (mapctor f A1A2.1, mapctor f A1A2.2)) (cast A B))
-             end.
-  Proof.
-    move => f f_prf.
-    case => //.
-    - move => c A B.
-      elim: B => //.
-      + move => d B _.
-        rewrite /cast /=.
-        move: (f_prf d c).
-        case: [ctor (f d) <= (f c)]; last by move => _; apply: sub0seq.
-        move => /(fun prf => prf isT) ->.
-          by apply: subseq_refl.
-      + move => B1 IH1 B2 IH2.
-        rewrite cast_inter //= cast_inter //= map_cat.
-          by apply: cat_subseq.
-    - move => A1 A2 B.
-      rewrite /A.
-      rewrite slow_cast_cast slow_cast_cast /slow_cast /= -(mapctor_isOmega f).
-      case: (isOmega A2) => //.
-      elim: B => //= B1 IH1 B2 IH2.
-      + by rewrite eq_refl.
-      + rewrite map_cat.
-          by apply: cat_subseq.
-    - move => A1 A2 B.
-      rewrite /A.
-      move: A => _.
-      rewrite slow_cast_cast slow_cast_cast /slow_cast /=.
-      elim: B => //= B1 IH1 B2 IH2.
-      + by rewrite eq_refl.
-      + rewrite /= map_cat.
-          by apply: cat_subseq.
-    - move => A1 A2 B.
-      rewrite /A.
-      rewrite slow_cast_cast slow_cast_cast /slow_cast /= -(mapctor_isOmega f) -(mapctor_isOmega f).
-      case: (isOmega A1 && isOmega A2) => //.
-      elim: B => //= B1 IH1 B2 IH2.
-      rewrite map_cat.
-        by apply cat_subseq.
-  Qed.*)
-
-
-  Lemma mapctor_map_bigcap {a : Type} {C1 C2 : ctor}:
-    forall (f: a -> @IT C1) (g: C1 -> C2) Delta,
-      mapctor g (\bigcap_(A_i <- Delta) f A_i) = \bigcap_(A_i <- map (mapctor g \o f) Delta) A_i.
-  Proof.
-    move => f g.
-    elim => // A Delta.
-    rewrite bigcap_cons bigcap_cons.
-      by case: Delta => //= ? ? ->.
-  Qed.
-
-  Lemma map_nilp {a b: Type}: forall (f: a -> b) xs, nilp (map f xs) = nilp xs.
-  Proof. by move => ? []. Qed.
-
-  (*Lemma mapctor_cast_nilp {C1 C2: ctor}:
-    forall (f: (C1 -> C2)%type),
-      (forall c d, [ctor c <= d] -> [ctor (f c) <= (f d)]) ->
-      forall A B, 
-        ~~nilp (cast A B) -> ~~nilp (cast (mapctor f A) (mapctor f B)).
-  Proof.
-    move => f f_prf A B.
-    move: (mapctor_cast_subseq f f_prf A B).
-    case: A => //.
-    - move => c A.
-      case: (cast (Ctor c A) B) => //.
-        by case: (cast (mapctor f (Ctor c A)) (mapctor f B)).
-    - move => A1 A2 /=.
-      case: (cast (A1 -> A2) B) => //.
-        by case: (cast (mapctor f (A1 -> A2)) (mapctor f B)).
-    - move => A1 A2 /=.
-      case: (cast (A1 \times A2) B) => //.
-        by case: (cast (mapctor f (A1 \times A2)) (mapctor f B)).
-    - move => A1 A2 /=.
-      case: (cast (A1 \cap A2) B) => //.
-        by case: (cast (mapctor f (A1 \cap A2)) (mapctor f B)).
-  Qed.
-
-  Lemma cast_mapctor_nilp {C1 C2: ctor}:
-    forall (f: (C1 -> C2)%type),
-      (forall c d, [ctor (f c) <= (f d)] -> [ctor c <= d]) ->
-      forall A B, 
-        ~~nilp (cast (mapctor f A) (mapctor f B)) -> ~~nilp (cast A B).
-  Proof.
-    move => f f_prf A B.
-    move: (cast_mapctor_subseq f f_prf A B).
-    case: A => //.
-    - move => c A.
-      case: (cast (Ctor c A) B) => //.
-        by case: (cast (mapctor f (Ctor c A)) (mapctor f B)).
-    - move => A1 A2 /=.
-      case: (cast (A1 -> A2) B) => //.
-        by case: (cast (mapctor f (A1 -> A2)) (mapctor f B)).
-    - move => A1 A2 /=.
-      case: (cast (A1 \times A2) B) => //.
-        by case: (cast (mapctor f (A1 \times A2)) (mapctor f B)).
-    - move => A1 A2 /=.
-      case: (cast (A1 \cap A2) B) => //.
-        by case: (cast (mapctor f (A1 \cap A2)) (mapctor f B)).
-  Qed.*)
-
-  Lemma mapctor_cast_nilp {C1 C2: ctor}:
-    forall (f: (C1 -> C2)%type),
-      (forall c d, [ctor c <= d] = [ctor (f c) <= (f d)]) ->
-      forall A B, 
-        nilp (cast A B) = nilp (cast (mapctor f A) (mapctor f B)).
-  Proof.
-    move => f f_hom A B.
-    rewrite (mapctor_cast_hom f f_hom).
-      by rewrite map_nilp.
-  Qed.
-
-  Lemma injective_mapctor {C1 C2 : ctor}:
-    forall (f: C1 -> C2), injective f -> injective (mapctor f).
-  Proof.
-    move => f f_inj.
-    elim.
-    - by case.
-    - move => c A IH.
-        by case => //= d B [] /f_inj -> /IH ->.
-    - move => A1 IH1 A2 IH2.
-        by case => //= ? ? [] /IH1 -> /IH2 ->.
-    - move => A1 IH1 A2 IH2.
-        by case => //= ? ? [] /IH1 -> /IH2 ->.
-    - move => A1 IH1 A2 IH2.
-        by case => //= ? ? [] /IH1 -> /IH2 ->.
-  Qed.
-
-  Lemma mapctor_le {C1 C2 : ctor}:
-    forall (f: C1 -> C2),
-      (forall c d, [ctor c <= d] -> [ctor (f c) <= (f d)]) ->
-      forall A B,
-        [bcd A <= B] ->
-        [bcd (mapctor f A) <= (mapctor f B)].
-  Proof.
-    move => f f_prf A B prf.
-    elim: A B / prf => //=.
-    - by move => *; apply: BCD__CAx; auto.
-    - by move => *; apply: BCD__Sub.
-    - by move => *; apply: BCD__ProdSub.
-    - by move => *; apply: BCD__Trans; eauto.
-    - by move => *; apply: BCD__Glb.
-  Qed.
-
-  Lemma subtypeMachine_mapctor {C1 C2 : ctor}:
-    forall (f: C1 -> C2),
-      (forall c d, [ctor c <= d] = [ctor (f c) <= (f d)]) ->
-      forall i r,
-        Types.Semantics i r ->
-        match i, r with
-        | [subty fA of fB], Return r =>
-          forall A, mapctor f A = fA ->
-               forall B, mapctor f B = fB ->
-                    Types.Semantics [subty A of B] (Return r)
-        | [tgt_for_srcs_gte fB in fDelta1], [check_tgt fDelta2] =>
-          forall B, mapctor f B = fB ->
-               forall Delta1, map (fun AB => (mapctor f AB.1, mapctor f AB.2)) Delta1 = fDelta1 ->
-                         exists Delta2, map (mapctor f) Delta2 = fDelta2 /\
-                                   Types.Semantics [tgt_for_srcs_gte B in Delta1]
-                                                   [check_tgt Delta2]
-        | _, _ => True
-        end.
-  Proof.
-    move => f f_hom i r prf.
-    elim: i r / prf.
-    - by move => A A__tmp _ [].
-    - move => fA fc fB r prf IH A fA__eq cB fcB__eq.
-      have: (exists c B, (cB = Ctor c B) /\ (f c = fc) /\ (mapctor f B = fB)).
-      { move: fcB__eq.
-        clear...
-        case: cB => // c B [] <- <-.
-          by (exists c, B); split => //; split. }
-      move => [] c [] B [] -> [] c__eq B__eq.
-      rewrite -c__eq -B__eq -fA__eq.
-      rewrite (mapctor_cast_hom f f_hom (Ctor c B) A) map_nilp.
-      constructor.
-      apply: IH; last by rewrite B__eq.
-      rewrite -fA__eq.
-      rewrite mapctor_map_bigcap -(mapctor_cast_hom f f_hom (Ctor c B) A).
-      do 2 apply: f_equal.
-        by rewrite /= -c__eq -B__eq.
-    - move => fA fB1 fB2 fDelta2 r prf1 IH1 prf2 IH2 A fA__eq B fB__eq.
-      have: (exists B1 B2, (B = (B1 -> B2)%IT) /\ (mapctor f B1 = fB1) /\ (mapctor f B2 = fB2)).
-      { move: fB__eq.
-        clear...
-        case: B => // B1 B2 [] <- <-.
-          by (exists B1, B2); split => //; split. }
-      move => [] B1 [] B2 [] -> [] fB1__eq fB2__eq.
-      rewrite -fB2__eq -(mapctor_isOmega f).
-      have: (exists Delta2, map (mapctor f) Delta2 = fDelta2 /\
-                       Types.Semantics [ tgt_for_srcs_gte B1 in cast (B1 -> B2) A]
-                                       [ check_tgt Delta2]).
-      { apply: IH1 => //.
-          by rewrite -(mapctor_cast_hom f f_hom (B1 -> B2)) /= -fB1__eq -fB2__eq -fA__eq. }
-      move => [] Delta2 [] fDelta2__eq prf__Delta2.
-      apply: step__Arr => //; first by exact prf__Delta2.
-      apply: IH2 => //.
-        by rewrite -fDelta2__eq mapctor_map_bigcap.
-    - move => fB [] fA1 fA2 fDelta1 fDelta2 [] prf1 IH1 prf2 IH2 B fB__eq [] // []
-                A1 A2 Delta1 [] [] fA1__eq fA2__eq fDelta1__eq.
-      + move: (IH2 B fB__eq Delta1 fDelta1__eq) => [] Delta2 [] fDelta2__eq rest_prf.
-        exists [:: A2 & Delta2]; split.
-        * by rewrite /= fA2__eq fDelta2__eq.
-        * apply: (step__chooseTgt (r := true)) => //.
-            by apply: IH1.
-      + move: (IH2 B fB__eq Delta1 fDelta1__eq) => [] Delta2 [] fDelta2__eq rest_prf.
-        exists Delta2; split => //.
-        apply: (step__chooseTgt (r := false)) => //.
-          by apply: IH1.        
-    - move => ? ? [] // _ [] // _.
-        by (exists [::]); split.
-    - move => fA fB1 fB2 r1 r2 prf1 IH1 prf2 IH2 A fA__eq B fB__eq.
-      rewrite -fB__eq -fA__eq -(mapctor_cast_nilp f f_hom).
-      have: (exists B1 B2, ((B = (B1 \times B2)) /\
-                       (fB1 = mapctor f B1) /\
-                       (fB2 = mapctor f B2))).
-      { move: fB__eq => [].
-        clear ...
-        case: B => // B1 B2 /= [] <- <-.
-          by (exists B1, B2). }
-      move => [] B1 [] B2 [] B__eq [] fB1__eq fB2__eq.
-      rewrite B__eq.
-      apply: step__Prod.
-      + apply: IH1 => //.
-        rewrite mapctor_map_bigcap fB1__eq fB2__eq -fA__eq (mapctor_cast_hom f f_hom (B1 \times B2)).
-          by rewrite -map_comp -map_comp.
-      + apply: IH2 => //.
-        rewrite mapctor_map_bigcap fB1__eq fB2__eq -fA__eq (mapctor_cast_hom f f_hom (B1 \times B2)).
-          by rewrite -map_comp -map_comp.
-    - move => fA fB1 fB2 r1 r2 prf1 IH1 prf2 IH2 A fA__eq B fB__eq.
-       have: (exists B1 B2, ((B = (B1 \cap B2)) /\
-                       (fB1 = mapctor f B1) /\
-                       (fB2 = mapctor f B2))).
-      { move: fB__eq => [].
-        clear ...
-        case: B => // B1 B2 /= [] <- <-.
-          by (exists B1, B2). }
-      move: fB__eq => _.
-      move => [] B1 [] B2 [] fB__eq [] B1__eq B2__eq.
-      rewrite fB__eq.
-      constructor.
-      + by apply: IH1.
-      + by apply: IH2.
-  Qed.
-
-  Lemma le_mapctor {C1 C2 : ctor}:
-    forall (f: C1 -> C2),
-      (forall c d, [ctor c <= d] = [ctor (f c) <= (f d)]) ->
-      forall A B, [bcd (mapctor f A) <= (mapctor f B)] -> [bcd A <= B].
-  Proof.
-    move => f f_hom A B /subty_complete prf.
-    apply /subty__sound.
-      by apply: (subtypeMachine_mapctor f f_hom _ _ prf).
-  Qed.
-
-  Lemma lift1_hom: forall A B, [bcd A <= B] <-> [bcd (lift1 A) <= lift1 B].
-  Proof.
-    move => A B.
-    split.
-    - move => /(@mapctor_le Constructor1 Constructor inl) res.
-        by apply: res.
-    - move => /(@le_mapctor Constructor1 Constructor inl) res.
-        by apply: res.
-  Qed.
-
-  Lemma lift2_hom: forall A B, [bcd A <= B] <-> [bcd (lift2 A) <= lift2 B].
-  Proof.
-    move => A B.
-    split.
-    - move => /(@mapctor_le Constructor2 Constructor inr) res.
-        by apply: res.
-    - move => /(@le_mapctor Constructor2 Constructor inr) res.
-        by apply: res.
-  Qed.
-
-  Lemma injective_lift1: injective lift1.
-  Proof. by apply: injective_mapctor; move => ? ? []. Qed.
-
-  Lemma injective_lift2: injective lift2.
-  Proof. by apply: injective_mapctor; move => ? ? []. Qed.
-
-
-  (*Fixpoint pmapctor {C1 C2: ctor} (f: C1 -> option C2) (A: @IT C1): option (@IT C2) :=
-    match A with
-    | Ctor c A =>
-      if f c is Some c
-      then if pmapctor f A is Some A
-           then Some (Ctor c A)
-           else None
-      else None
-    | A -> B =>
-      if pmapctor f A is Some A
-      then if pmapctor f B is Some B
-           then Some (A -> B)
-           else None
-      else None
-    | A \times B =>
-      if pmapctor f A is Some A
-      then if pmapctor f B is Some B
-           then Some (A \times B)
-           else None
-      else None
-    | A \cap B =>
-      if pmapctor f A is Some A
-      then if pmapctor f B is Some B
-           then Some (A \cap B)
-           else None
-      else None
-    | Omega => Some Omega
-    end.
-
-  Definition unlift1 := @pmapctor Constructor Constructor1 (fun c => if c is inl c then Some c else None).
-  Definition unlift2 := @pmapctor Constructor Constructor2 (fun c => if c is inr c then Some c else None).
-
-  Lemma mapctor_pmapctor_pcancel {C1 C2: ctor}:
-    forall (f: C1 -> C2) (g: C2 -> option C1),
-      pcancel f g -> pcancel (mapctor f) (pmapctor g).
-  Proof.
-    move => f g fg_pcancel.
-    elim => //.
-    - move => c A /=.
-      rewrite (fg_pcancel c).
-        by move ->.
-    - by move => /= ? -> ? ->.
-    - by move => /= ? -> ? ->.
-    - by move => /= ? -> ? ->.
-  Qed.
-
-  Lemma lift1_unlift1_pcancel: pcancel lift1 unlift1.
-  Proof. by apply: mapctor_pmapctor_pcancel. Qed.
-
-  Lemma lift2_unlift2_pcancel: pcancel lift2 unlift2.
-  Proof. by apply: mapctor_pmapctor_pcancel. Qed. *)
-
-  Definition intersectCtxt (Gamma1: Ctxt1) (Gamma2: Ctxt2): Ctxt__sum :=
-    [ffun c => lift1 (Gamma1 c) \cap lift2 (Gamma2 c)].
-
-  Lemma FCL__join: forall Gamma1 Gamma2 M A1 A2,
-      [FCL Gamma1 |- M : A1] ->
-      [FCL Gamma2 |- M : A2] ->
-      [FCL intersectCtxt Gamma1 Gamma2 |- M : lift1 A1 \cap lift2 A2].
-  Proof.
-    move => Gamma1 Gamma2 M A1 A2 prf1 prf2.
-    apply: FCL__II.
-    - move: prf2 => _.
-      elim /FCL_normalized_ind: M A1 / prf1.
-      + move => c.
-        apply: (FCL__Sub (lift1 (Gamma1 c) \cap lift2 (Gamma2 c))) => //.
-        move: (@FCL__Var _ _ (intersectCtxt Gamma1 Gamma2) c).
-          by rewrite ffunE.
-      + move => c A prf le_prf.
-          by apply: (FCL__Sub (lift1 (Gamma1 c))); last by apply: (proj1 (lift1_hom _ _)).
-      + move => M N A B _ prf1 _ prf2.
-          by apply: (FCL__MP (lift1 A)).
-    - move: prf1 => _.
-      elim /FCL_normalized_ind: M A2 / prf2.
-      + move => c.
-        apply: (FCL__Sub (lift1 (Gamma1 c) \cap lift2 (Gamma2 c))) => //.
-        move: (@FCL__Var _ _ (intersectCtxt Gamma1 Gamma2) c).
-          by rewrite ffunE.
-      + move => c A prf le_prf.
-          by apply: (FCL__Sub (lift2 (Gamma2 c))); last by apply: (proj1 (lift2_hom _ _)).
-      + move => M N A B _ prf1 _ prf2.
-          by apply: (FCL__MP (lift2 A)).
-  Qed.
-
-  Lemma hom_addAndFilter {C1 C2: ctor}:
-    forall Delta A (f : C1 -> C2),
-      (forall c d, [ctor c <= d] = [ctor (f c) <= (f d)]) ->
-      map (mapctor f) (addAndFilter _ Delta A) = addAndFilter _ (map (mapctor f) Delta) (mapctor f A).
-  Proof.
-    elim => //= B Delta IH A f f_hom.
-    have st_f : (forall A B, checkSubtypes A B = checkSubtypes (mapctor f A) (mapctor f B)).
-    { move => A1 A2.
-      case le12: (checkSubtypes A1 A2).
-      - apply: Logic.eq_sym.
-        apply /subtypeMachineP.
-        apply: mapctor_le.
-        + move => ? ?.
-            by rewrite f_hom.
-        + by apply /subtypeMachineP.
-      - case lef12: (checkSubtypes (mapctor f A1) (mapctor f A2)) => //.
-          by move: lef12 le12 => /subtypeMachineP /(le_mapctor f f_hom) /subtypeMachineP -> ->. }
-    move: (st_f B A) => <-.
-    case: (checkSubtypes B A) => //.
-    move: (st_f A B) => <-.
-    case: (checkSubtypes A B) => //;
-      by rewrite /= IH.
-  Qed.    
-
-  Lemma map_hom_primeFactors {C1 C2: ctor}: forall (f: C1 -> C2),
-      (forall c d, [ctor c <= d] = [ctor (f c) <= (f d)]) ->
-      forall A, map (mapctor f) (primeFactors A) = primeFactors (mapctor f A).
-  Proof.
-    rewrite /primeFactors.
-    move => f f_hom A.
-    have: ((mapctor f \o id) =1 (id \o mapctor f)) => //.
-    have: (map (mapctor f) [::] = [::]) => //.
-    move: (@id (@IT C1)) (@id (@IT C2)).
-    move: (@nil (@IT C1)) (@nil (@IT C2)).
-    elim: A => //=.
-    - move => Delta1 Delta2 g1 g2 <- prf.
-      move: (prf Omega) => /= <-.
-      rewrite -mapctor_isOmega.
-      case: (isOmega (g1 Omega)) => //.
-        by apply: hom_addAndFilter.
-    - move => c A IH Delta1 Delta2 g1 g2 prf1 prf2.
-      apply: IH => //.
-      move => B.
-        by apply: prf2.
-    - move => A1 IH1 A2 IH2 Delta1 Delta2 g1 g2 prf1 prf2.
-      apply: IH2 => //.
-      move => B.
-        by apply: prf2.
-    - move => A1 IH1 A2 IH2 Delta1 Delta2 g1 g2 prf1 prf2.
-      apply: IH2 => //.
-      + apply: IH1 => //.
-        move => B.
-          by apply: prf2.
-      + move => B.
-          by apply: prf2.
-    - move => A1 IH1 A2 IH2 Delta1 Delta2 g1 g2 prf1 prf2.
-      apply: IH2 => //.
-        by apply: IH1.
-  Qed.
-
-  Lemma mapctor_prime {C1 C2: ctor}: forall (f: C1 -> C2) (A: @IT C1), isPrimeComponent A -> isPrimeComponent (mapctor f A).
-  Proof.
-    move => f.
-    elim => // A1 IH1 A2 IH2.
-    move: IH1 IH2.
-      by case: A1; case: A2 => //.
-  Qed.
-
-  Lemma lift1_cast_lift2: forall c A B, cast (lift1 (Ctor c A)) (lift2 B) = [::].
-  Proof.
-    move => c A.
-    elim => // B1 IH1 B2 IH2.
-      by rewrite /= cast_inter -/mapctor //= IH1 IH2.
-  Qed.
-
-  Lemma lift2_cast_lift1: forall c A B, cast (lift2 (Ctor c A)) (lift1 B) = [::].
-  Proof.
-    move => c A.
-    elim => // B1 IH1 B2 IH2.
-      by rewrite /= cast_inter -/mapctor //= IH1 IH2.
-  Qed.
-
-  Lemma split_subseq {a: eqType}: forall (xs ys zs: seq a),
-      subseq xs (ys ++ zs) -> exists xs1 xs2, xs == xs1 ++ xs2 /\ subseq xs1 ys /\ subseq xs2 zs.
-  Proof.
-    move => xs ys.
-    move: xs.
-    elim: ys.
-    - move => xs ys prf.
-        by exists [::], xs; split.
-    - move => y ys IH xs zs /=.
-      case: xs.
-      + move => _.
-        exists [::], [::]; split => //; split => //.
-          by apply: sub0seq.
-      + move => x xs.
-        case x__eq: (x == y).
-        * move => /IH [] xs1 [] xs2 [] /eqP xs__eq [] prf1 prf2.
-          exists [:: x & xs1], xs2; split.
-          ** by rewrite xs__eq.
-          ** by rewrite x__eq; split.
-        * move => /IH [] xs1 [] xs2 [] /eqP xs__eq [] prf1 prf2.
-          exists xs1, xs2; split.
-          ** by rewrite xs__eq.
-          ** split => //.
-             move: xs__eq prf1.
-             case: xs1 => // x1 xs1 [] <-.
-               by rewrite x__eq.
-  Qed.
-
-  Lemma injective_bigcap {C: ctor}:
-    forall (Delta1 Delta2: seq (@IT C)),
-      seq.size Delta1 = seq.size Delta2 ->
-      \bigcap_(A_i <- Delta1) A_i = \bigcap_(A_i <- Delta2) A_i ->
-      Delta1 = Delta2.
-  Proof.
-    elim.
-    - by case.
-    - move => A Delta1 IH.
-      case => // B Delta2 [] size_prf.
-      move: IH size_prf (IH _ size_prf) => _.
-      case: Delta1.
-      + by case: Delta2 => //= _ _ ->.
-      + move => A2 Delta1.
-          by case: Delta2 => // B2 Delta2 _ IH /= [] -> /IH ->.
-  Qed.     
-
-
-  Lemma mapctor_tgtctxt {C1 C2: ctor}:
-    forall (f: C1 -> C2) A B1 B2 fDelta2,
-      subseq fDelta2 (map snd (cast (B1 -> B2) (mapctor f A))) ->
-      exists Delta2,
-        seq.size fDelta2 = seq.size Delta2 /\
-        \bigcap_(A_i <- fDelta2) A_i = mapctor f (\bigcap_(A_i <- Delta2) A_i).
-  Proof.
-    move => f A B1 B2.
-    case isOmega__B2: (isOmega B2).
-    - rewrite /cast /= isOmega__B2.
-      case.
-      + move => _.
-          by (exists [::]).
-      + move => B fDelta2 prf.
-        (exists [:: Omega]).
-        move: prf.
-        case: fDelta2.
-        * by rewrite sub1seq mem_seq1 /= => /eqP ->.
-        * move => ? ? /=.
-            by case: (B == Omega).
-    - elim: A.
-      + rewrite /cast /= isOmega__B2.
-        move => [] // _.
-          by (exists [::]).
-      + rewrite /cast /= isOmega__B2.
-        move => ? ? _ [] // _.
-          by (exists [::]).
-      + move => A1 _ A2 _.
-        case.
-        * move => _.
-            by (exists [::]).
-        * move => B fDelta2 prf.
-          (exists [:: A2]).
-          move: prf.
-          case: fDelta2.
-          ** by rewrite /cast /= isOmega__B2 sub1seq mem_seq1 /= => /eqP ->.
-          ** move => ? ? /=.
-             rewrite /cast /= isOmega__B2 /=.
-               by case: (B == mapctor f A2).
-      + rewrite /cast /= isOmega__B2.
-        move => ? _ ? _ [] // _.
-          by (exists [::]).
-      + move => A1 IH1 A2 IH2 fDelta2.
-        rewrite cast_inter -/(mapctor f); last by rewrite /= isOmega__B2.
-        rewrite map_cat.
-        move => /split_subseq [] fDelta21 [] fDelta22 [] /eqP fDelta2__eq [].
-        move => /IH1 [] Delta21 [] fDelta21__size fDelta21__eq.
-        move => /IH2 [] Delta22 [] fDelta22__size fDelta22__eq.
-        exists (Delta21 ++ Delta22); split.
-        * by rewrite fDelta2__eq size_cat size_cat fDelta21__size fDelta22__size.
-        * rewrite fDelta2__eq mapctor_map_bigcap.
-          move: fDelta21__eq.
-          rewrite mapctor_map_bigcap.
-          move => /injective_bigcap.
-          rewrite size_map.
-          move => /(fun prf => prf fDelta21__size) ->.
-          move: fDelta22__eq.
-          rewrite mapctor_map_bigcap.
-          move => /injective_bigcap.
-          rewrite size_map.
-          move => /(fun prf => prf fDelta22__size) ->.
-            by rewrite [map _ (Delta21 ++ Delta22)]map_cat.
-  Qed.
-
-  Lemma mapctor_prod {C1 C2: ctor}:
-    forall (f: C1 -> C2) A B1 B2,
-      exists Delta2,
-        seq.size (cast (B1 \times B2) (mapctor f A)) = seq.size Delta2 /\
-        \bigcap_(A_i <- (cast (B1 \times B2) (mapctor f A))) A_i.1 = mapctor f (\bigcap_(A_i <- Delta2) A_i.1) /\
-        \bigcap_(A_i <- (cast (B1 \times B2) (mapctor f A))) A_i.2 = mapctor f (\bigcap_(A_i <- Delta2) A_i.2).
-  Proof.
-    move => f A B1 B2.
-    elim: A; try by (exists [::]).
-    - move => A1 _ A2 _.
-        by (exists [:: (A1, A2)]).
-    - move => A1 [] Delta21 [] fDelta21__size [] fDelta21__fst fDelta21__snd.
-      move => A2 [] Delta22 [] fDelta22__size [] fDelta22__fst fDelta22__snd.
-      exists (Delta21 ++ Delta22); split; last split.
-      + by rewrite cast_inter // size_cat fDelta21__size fDelta22__size size_cat.
-      + rewrite mapctor_map_bigcap map_cat.
-        move: fDelta21__fst.
-        rewrite mapctor_map_bigcap (eqP (bigcap_map_eq _ _ _ fst)).
-        move => /injective_bigcap.
-        do 2 rewrite size_map.
-        move => /(fun prf => prf fDelta21__size) <-.
-        move: fDelta22__fst.
-        rewrite mapctor_map_bigcap (eqP (bigcap_map_eq _ _ _ fst)).
-        move => /injective_bigcap.
-        do 2 rewrite size_map.
-        move => /(fun prf => prf fDelta22__size) <-.
-        rewrite -map_cat.
-        rewrite (eqP (bigcap_map_eq _ _ _ fst)).
-          by rewrite cast_inter.
-      + rewrite mapctor_map_bigcap map_cat.
-        move: fDelta21__snd.
-        rewrite mapctor_map_bigcap (eqP (bigcap_map_eq _ _ _ snd)).
-        move => /injective_bigcap.
-        do 2 rewrite size_map.
-        move => /(fun prf => prf fDelta21__size) <-.
-        move: fDelta22__snd.
-        rewrite mapctor_map_bigcap (eqP (bigcap_map_eq _ _ _ snd)).
-        move => /injective_bigcap.
-        do 2 rewrite size_map.
-        move => /(fun prf => prf fDelta22__size) <-.
-        rewrite -map_cat.
-        rewrite (eqP (bigcap_map_eq _ _ _ snd)).
-          by rewrite cast_inter.
-  Qed.
-
-  Lemma lift2_nle_lift1: forall A B, ~~(isOmega B) -> Types.Semantics [subty (lift1 A) of (lift2 B)] (Return false).
-  Proof.
-    move => A B.
-    move: A.
-    elim: B => //=.
-    - move => d B _ A _.
-      have: (exists r, Types.Semantics [ subty \bigcap_(A__i <- cast (lift2 (Ctor d B)) (lift1 A)) A__i of lift2 B] (Return r)).
-      { move: (subtype_machine _ [ subty \bigcap_(A__i <- cast (lift2 (Ctor d B)) (lift1 A)) A__i of lift2 B]) => [] r res.
-        move: res (inv_subtyp_return _ res).
-        case: r => // r res _.
-          by (exists r). }
-      move => [] r prf. 
-      have: (~~nilp (cast (lift2 (Ctor d B)) (lift1 A)) && r = false) by rewrite lift2_cast_lift1.
-      move => <-.
-        by apply: (step__Ctor prf).
-    - move => B1 _ B2 IH A /= notOmega.
-      have: (exists fDelta, Types.Semantics [ tgt_for_srcs_gte lift2 B1 in cast (lift2 (B1 -> B2)) (lift1 A)] [check_tgt fDelta]).
-      { move: (subtype_machine _ [ tgt_for_srcs_gte lift2 B1 in cast (lift2 (B1 -> B2)) (lift1 A)]) => [] r res.
-        move: res (inv_tgt_for_srcs_gte_check_tgt _ res).
-        case: r => // r res _.
-          by (exists r). }
-      move => [] fDelta prf.
-      have notOmega__fB2: (isOmega (lift2 B2) = false).
-      { move: notOmega.
-          by rewrite (@mapctor_isOmega Constructor2 Constructor inr B2) /lift2 => /negbTE ->. }
-      have: (isOmega (lift2 B2) || false = false) by rewrite notOmega__fB2.
-      move => <-.
-      apply: (step__Arr prf).
-      move: (check_tgt_subseq _ _ _ _ prf).
-      move => /mapctor_tgtctxt [] Delta2 [] fDelta2__size fDelta2__eq.
-      rewrite fDelta2__eq.
-        by apply: IH.
-    - move => B1 IH1 B2 IH2 A _.
-      have: (false = ~~ nilp (cast (lift2 (B1 \times B2)) (lift1 A)) && false && false) by rewrite andbF.
-      move => ->.
-      move: (@mapctor_prod Constructor1 Constructor inl A (lift2 B1) (lift2 B2)).
-      move => [] Delta [] Delta__size [] Delta__fst Delta__snd.
-      apply: (step__Prod (r1 := false) (r2 := false)).
-      + rewrite -/mapctor Delta__fst.
-        apply: IH1.
-        admit.
-      + admit.
-  Admitted.   
-  
-
-  (*Lemma BCD__unliftsum1: forall A B C,
-      [bcd (lift1 A \cap lift2 B) <= lift1 C] ->
-      [bcd A <= C].
-  Proof.
-    move => A B C /(fun prf => BCD__Trans (lift1 C) prf (primeFactors_geq (lift1 C))).
-    rewrite -(@map_hom_primeFactors Constructor1 Constructor inl) => // prf.
-    apply: BCD__Trans; last by apply: primeFactors_leq.
-    apply: (proj2 (lift1_hom _ _)).
-    move: prf.
-    rewrite /lift1.
-    rewrite mapctor_map_bigcap.
-    have: (@mapctor Constructor1 Constructor inl \o id = @mapctor Constructor1 Constructor inl) => // ->.
-    have: (all (@isPrimeComponent Constructor) (map (@mapctor Constructor1 Constructor inl) (primeFactors C))).
-    { move: (primeFactors_prime C) => /allP prf.
-      rewrite all_map.
-      apply /allP.
-      move => ? /prf /=.
-        by apply: mapctor_prime. }
-    have: (all (
-    elim: (map (@mapctor Constructor1 Constructor inl) (primeFactors C)).
-    - move => _ _ /=.
-        by apply: BCD__omega.
-    - move => C1 Delta IH /andP [] prf1 prfs /(fun prf => BCD__Trans _ prf (bcd_cat_bigcap _ [:: C1] Delta)) le_prf.
-      apply: BCD__Trans; last by apply: (bcd_bigcap_cat _ [:: _] _).
-      apply: BCD__Glb.
-      + move: le_prf => /(fun prf => BCD__Trans _ prf BCD__Lub1).
-        move => /primeComponentPrime.
-        move: prf1 => /isPrimeComponentP prf1 /(fun prf => prf prf1) [] => //.
-        * 
-
-
-
-
-    rewrite (@mapctor_map_bigcap (@IT Constructor1) Constructor1 Constructor id inl (primeFactors C)).
-    rewrite /lift1.
-    have: 
-    have: ([ bcd (lift1 A \cap lift2 B) <= mapctor inl (\bigcap_(A_i <- primeFactors C) A_i)]).
-
-    apply: BCD__Trans; last by exact prf.
-
-
-    move => prf.
-    apply: 
-*)
-
-
-
-  Lemma FCL__split: forall Gamma1 Gamma2 M A1 A2,
-      [FCL intersectCtxt Gamma1 Gamma2 |- M : lift1 A1 \cap lift2 A2] ->
-      [FCL Gamma1 |- M : A1] /\ [FCL Gamma2 |- M : A2].
-  Proof.
-    move => Gamma1 Gamma2 M A1 A2.
-    move A__eq: (lift1 A1 \cap lift2 A2) => A prf.
-    move: A1 A2 A__eq.
-    elim /FCL_normalized_ind: M A / prf.
-    - move => c A1 A2.
-      rewrite /intersectCtxt ffunE.
-      move => [] /injective_lift1 -> /injective_lift2 ->.
-        by split.
-    - move => c A /(fun prf => prf (Gamma1 c) (Gamma2 c)).
-      rewrite /intersectCtxt ffunE.
-      move => /(fun prf => prf Logic.eq_refl) [] prf1 prf2.
-      move => le_prf A1 A2.
-      move: le_prf.
-      case: A => // ? ? le_prf [] A1__eq A2__eq.
-      move: le_prf.
-      rewrite -A1__eq -A2__eq.
-      move => le_prf.
-      
-
-
-
-
-
-
-
-
-
-
-
-
-
-  Definition MultiArrow: Type := seq (@IT Constructor) * (@IT Constructor).
-
-  Definition safeSplit (Delta: seq (seq MultiArrow)): seq MultiArrow * seq (seq MultiArrow) :=
-    match Delta with
-    | [::] => ([::], [::])
-    | [:: Delta ] => (Delta, [::])
-    | [:: Delta1 & Delta2 ] => (Delta1, Delta2)
-    end.
-
-  Fixpoint splitRec
-           (A: @IT Constructor)
-           (srcs: seq (@IT Constructor))
-           (Delta: seq (seq MultiArrow)):
-    seq (seq MultiArrow) :=
-    match A with
-    | Arrow A B =>
-      let (Delta1, Delta2) := safeSplit Delta in
-      [:: [:: ([:: A & srcs], B) & Delta1] & splitRec B [:: A & srcs] Delta2]
-    | A \cap B =>
-      if (isOmega A) then splitRec B srcs Delta
-      else if (isOmega B) then splitRec A srcs Delta
-           else splitRec A srcs (splitRec B srcs Delta)
-    | _ => Delta
-    end.
-
-  Definition splitTy (A: @IT Constructor): seq (seq MultiArrow) :=
-    if isOmega A
-    then [::]
-    else [:: ([::], A) ] :: splitRec A [::] [::].
-
-End Split.
-
-
-Arguments MultiArrow [Constructor].
-Arguments splitTy [Constructor].
-
-
-(** Instructions for a machine covering paths with multi arrows **)
-Section CoverInstuctions.
-  Variable Constructor: ctor.
-
-  Inductive Instruction: Type :=
-  | Cover (splits : seq (@MultiArrow Constructor * seq (@IT Constructor)))
-          (toCover : seq (@IT Constructor))
-  | ContinueCover
-      (splits : seq (@MultiArrow Constructor * seq (@IT Constructor)))
-      (toCover : seq (@IT Constructor))
-      (currentResult : @MultiArrow Constructor)
-  | CheckCover
-      (splits : seq (@MultiArrow Constructor * seq (@IT Constructor)))
-      (toCover : seq (@IT Constructor))
-  | CheckContinueCover
-      (splits : seq (@MultiArrow Constructor * seq (@IT Constructor)))
-      (toCover : seq (@IT Constructor))
-      (currentResult : @MultiArrow Constructor).
-
-  Definition State: Type := seq (@MultiArrow Constructor).
-
-  (** Enable mathcomp functionalities on instructions **)
-  Section InstructionMathcompInstances.
-    Fixpoint Instruction2tree (i: Instruction):
-      GenTree.tree (seq ((@MultiArrow Constructor * seq (@IT Constructor))) + seq (@IT Constructor) + @MultiArrow Constructor) :=
-      match i with
-      | Cover splits toCover => GenTree.Node 0 [:: GenTree.Leaf (inl (inl splits)); GenTree.Leaf (inl (inr toCover))]
-      | ContinueCover splits toCover currentResult =>
-        GenTree.Node 1 [:: GenTree.Leaf (inl (inl splits)); GenTree.Leaf (inl (inr toCover)); GenTree.Leaf (inr currentResult)]
-      | CheckCover splits toCover =>
-        GenTree.Node 2 [:: GenTree.Leaf (inl (inl splits)); GenTree.Leaf (inl (inr toCover))]
-      | CheckContinueCover splits toCover currentResult =>
-        GenTree.Node 3 [:: GenTree.Leaf (inl (inl splits)); GenTree.Leaf (inl (inr toCover)); GenTree.Leaf (inr currentResult)]
-      end.
-
-    Fixpoint tree2Instruction
-             (t: GenTree.tree (seq ((@MultiArrow Constructor * seq (@IT Constructor)))
-                               + seq (@IT Constructor)
-                               + @MultiArrow Constructor)): option Instruction :=
-      match t with
-      | GenTree.Node n args =>
-        match n, args with
-        | 0, [:: GenTree.Leaf (inl (inl splits)); GenTree.Leaf (inl (inr toCover))] => Some (Cover splits toCover)
-        | 1, [:: GenTree.Leaf (inl (inl splits)); GenTree.Leaf (inl (inr toCover)); GenTree.Leaf (inr currentResult)] =>
-          Some (ContinueCover splits toCover currentResult)
-        | 2, [:: GenTree.Leaf (inl (inl splits)); GenTree.Leaf (inl (inr toCover))] => Some (CheckCover splits toCover)
-        | 3, [:: GenTree.Leaf (inl (inl splits)); GenTree.Leaf (inl (inr toCover)); GenTree.Leaf (inr currentResult)] =>
-          Some (CheckContinueCover splits toCover currentResult)
-        | _, _ => None
-        end
-      | _ => None
-      end.
-
-    Lemma pcan_Instructiontree: pcancel Instruction2tree tree2Instruction.
-    Proof. by case => //= [] [] //=. Qed.
-
-    Definition Instruction_eqMixin := PcanEqMixin pcan_Instructiontree.
-    Canonical Instruction_eqType := EqType Instruction Instruction_eqMixin.
-    Definition Instruction_choiceMixin := PcanChoiceMixin pcan_Instructiontree.
-    Canonical Instruction_choiceType := ChoiceType Instruction Instruction_choiceMixin.
-    Definition Instruction_countMixin := PcanCountMixin pcan_Instructiontree.
-    Canonical Instruction_countType := CountType Instruction Instruction_countMixin.
-  End InstructionMathcompInstances.
-End CoverInstuctions.
-
-Arguments Instruction [Constructor].
-Arguments State [Constructor].
-Arguments Cover [Constructor].
-Arguments ContinueCover [Constructor].
-Arguments CheckCover [Constructor].
-Arguments CheckContinueCover [Constructor].
-Hint Constructors Instruction.
-
-**)
