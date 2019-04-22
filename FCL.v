@@ -2218,7 +2218,7 @@ Section InhabitationMachine.
 
   Definition TreeGrammar: Type := seq Rule.
 
-  Fixpoint computeFailExisting (G: TreeGrammar) (A: @IT Constructor): bool * bool :=
+  Fixpoint computeFailExisting(G: TreeGrammar) (A: @IT Constructor): bool * bool :=
     if G is [:: r & G]
     then
       match r with
@@ -2229,12 +2229,9 @@ Section InhabitationMachine.
           if checkSubtypes A B
           then (true, RuleFail A \in G)
           else computeFailExisting G A
-      | RuleCombinator B c =>
-        if A == B
-        then (false, true)
-        else computeFailExisting G A
+      | RuleCombinator B c => computeFailExisting G A
       | RuleApply B C D =>
-        if (A == B) || (A == D)
+        if (A == D)
         then (false, true)
         else computeFailExisting G A 
       end
@@ -2302,7 +2299,7 @@ Section InhabitationMachine.
                then ([:: RuleApply A B currentTarget & OmegaRules currentTarget ++ stable], targets)
                else let: (failed, nextTargets) := inhabit_cover targets currentTarget in
                     if failed
-                    then ([:: RuleFail currentTarget & stable], dropTargets nextTargets)
+                    then ([:: RuleFail currentTarget & stable], dropTargets targets)
                     else ([:: RuleApply A B currentTarget & stable], nextTargets)
     | [:: RuleCombinator A c & targets] =>
       if RuleCombinator A c \in stable
@@ -2539,788 +2536,6 @@ Section InhabitationMachineProperties.
       by rewrite andbT.
   Qed.
 
-  (*
-  Definition FailSound G :=
-    forall A, RuleFail A \in G -> forall M, [FCL Gamma |- M : A] -> False.
-
-  Lemma FailSound_cat:
-    forall G1 G2, FailSound G1 -> FailSound G2 -> FailSound (G1 ++ G2).
-  Proof.
-    move => G1 G2 prf1 prf2 A.
-    rewrite mem_cat.
-    move => /orP.
-    case.
-    - by move => /prf1.
-    - by move => /prf2.
-  Qed.
-
-  Lemma cat_FailSound:
-    forall G1 G2, FailSound (G1 ++ G2) -> FailSound G1 /\ FailSound G2.
-  Proof.
-    move => G1 G2 prf.
-    split.
-    - move => A inprf.
-      apply: prf.
-        by rewrite mem_cat inprf.
-    - move => A inprf.
-      apply: prf.
-        by rewrite mem_cat inprf orbT.
-  Qed.
-
-  Lemma computeUpdates_FailSound:
-    forall G A, FailSound G -> FailSound (if computeUpdates G A is (_, Some updates) then updates else [::]).
-  Proof.
-    elim => //.
-    case.
-    - move => B G IH A /=.
-      case: (A == B) => //.
-      case le__AB: (checkSubtypes A B).
-      + case: (RuleFail A \in G) => //.
-        move => /(cat_FailSound [:: _]) [] prf _.
-        move => C inprf M MC.
-        apply: (prf B (mem_head _ _) M).
-        apply: FCL__Sub; first by exact MC.
-        move: inprf.
-        rewrite mem_seq1 => /eqP [] ->.
-          by apply /subtypeMachineP.
-      + by move => /(cat_FailSound [:: _]) [] _ /(IH A).
-    - move => B c G IH A /=.
-      case: (A == B) => //.
-      move => prf.
-      move: (IH A (proj2 (cat_FailSound [:: _] _ prf))).
-      case: (computeUpdates G A).
-      case => //; case => //.
-      move => G2 G2__FailSound.
-      case AB__eq: (checkSubtypes A B && checkSubtypes B A) => //.
-        by case: (RuleCombinator A c \in G2).
-    - move => B C D G IH A /=.
-      case: (A == B) => //.
-      move => prf.
-      move: (IH A (proj2 (cat_FailSound [:: _] _ prf))).
-      case: (computeUpdates G A).
-      case => //; case => //.
-      move => G2 G2__FailSound.
-      case AB__eq: (checkSubtypes A B && checkSubtypes B A) => //.
-        by case: (RuleApply A C D \in G2).
-  Qed.
-
-  Lemma updatedExisting_FailSound:
-    forall G A, FailSound G -> FailSound (updatedExisting G A).2.
-  Proof.
-    move => G A prf.
-    rewrite /updatedExisting.
-    move: (computeUpdates_FailSound G A prf).
-    case: (computeUpdates G A).
-    move => ?.
-    case => //.
-    move => updated updated__FailSound.
-      by apply: FailSound_cat.
-  Qed.
-
-  Lemma inhabit_cover_FailSound:
-    forall G A,
-      ~~isOmega A ->
-      (inhabit_cover Gamma G A).1 -> forall M, [FCL Gamma |- M : A] -> False.
-  Proof.
-    move => G A notOmega__A.
-    rewrite /inhabit_cover.
-
-
-   
-
-  Lemma inhabitation_step_FailSound:
-    forall stable targets,
-      FailSound stable ->
-      FailSound targets ->
-      FailSound (inhabitation_step Gamma stable targets).1 /\ FailSound (inhabitation_step Gamma stable targets).2.
-  Proof.
-    move => stable.
-    case => //.
-    case.
-    - move => /= A targets stable__FailSound /(cat_FailSound [::_]) [] prf prfs.
-      split => //.
-      move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP targets__eq.
-      move: (cat_FailSound prefix (dropTargets targets)).
-      rewrite -targets__eq.
-        by move => /(fun prf => prf prfs) [].
-    - move => /= A c targets stable__FailSound /(cat_FailSound [::_]) [] prf prfs.
-        by case: (RuleCombinator A c \in stable).
-    - move => /= A B C targets stable__FailSound /(cat_FailSound [::_]) [] prf prfs.
-      move: (updatedExisting_FailSound stable C stable__FailSound).
-      case: (updatedExisting stable C) => [] [].
-      case.
-      + case => //.
-        move => ? ?.
-        split => //=.
-        move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP targets__eq.
-        move: (cat_FailSound prefix (dropTargets targets)).
-        rewrite -targets__eq.
-          by move => /(fun prf => prf prfs) [].
-      + 
-
-
-
-
-
-
-
-
-
-
-
-
-
-      Fixpoint FailSound G : bool :=
-    match G with
-    | [:: RuleFail A & G] => all (fun r => checkSubtypes (lhs r) A ==> (r == RuleFail (lhs r))) G && FailSound G
-    | [:: r1 & G] => all (fun r2 => (r2 == RuleFail (lhs r2)) ==> ~~checkSubtypes (lhs r1) (lhs r2)) G && FailSound G
-    | [::] => true
-    end.
-
-  Lemma FailSoundP: forall G, reflect (forall A r2, (RuleFail A \in G) ->
-                                          (r2 \in G) ->
-                                          checkSubtypes (lhs r2) A ->
-                                          r2 = RuleFail (lhs r2)) (FailSound G).
-  Proof.
-    move => G.
-    elim: G.
-    - by constructor.
-    - case.
-      + move => A G IH.
-        rewrite /=.
-        case hd_prf: (all (fun r => checkSubtypes (lhs r) A ==> (r == RuleFail (lhs r))) G).
-        * case G__FailSound: (FailSound G).
-          ** constructor.
-             move => B r2.
-             rewrite in_cons.
-             move => /orP.
-             case.
-             *** rewrite in_cons.
-                 move => /eqP [] AB__eq /orP.
-                 case.
-                 **** by move => /eqP ->.
-                 **** move: hd_prf => /allP hd_prf /hd_prf /implyP.
-                      rewrite AB__eq.
-                        by move => res /res /eqP.
-             *** move => inprf.
-                 rewrite in_cons.
-                 move => /orP.
-                 case.
-                 **** by move => /eqP ->.
-                 **** move: (IH G__FailSound) => prf /prf res.
-                        by apply: res.
-          ** rewrite andbF.
-             constructor.
-             move => disprf.
-             suff: (FailSound G) by rewrite G__FailSound.
-             apply /IH.
-             move => B r2 inprf__B inprf__r2.
-             apply: disprf.
-             *** by rewrite in_cons inprf__B orbT.
-             *** by rewrite in_cons inprf__r2 orbT.
-        * rewrite andFb.
-          constructor.
-          move => disprf.
-          move: hd_prf => /negbT.
-          rewrite -has_predC.
-          move => /hasP [] r inprf.
-          rewrite /= negb_imply.
-          move => /andP [] le_prf /eqP r__ineq.
-          apply: r__ineq.
-          apply: (disprf A) => //.
-          ** by apply: mem_head.
-          ** by rewrite in_cons inprf orbT.
-      + move => A c G IH.
-        rewrite /=.
-        case hd_prf: (all (fun r => (r == RuleFail (lhs r)) ==> ~~ checkSubtypes A (lhs r)) G).
-        * case G__FailSound: (FailSound G).
-          ** move: IH.
-             rewrite G__FailSound.
-             move => /(fun prf => prf isT) G__prf.
-             constructor.
-             move => B r2.
-             rewrite in_cons.
-             move => /orP.
-             case => //.
-             move => inprf.
-             rewrite in_cons.
-             move => /orP.
-             case.
-             *** move => /eqP -> /= le_prf.
-                 suff: ~~(checkSubtypes A B) by rewrite le_prf.
-                 move: hd_prf => /allP hd_prf.
-                 move: inprf => /hd_prf.
-                   by rewrite eq_refl implyTb.
-             *** by apply: G__prf.
-          ** rewrite andbF.
-             constructor.
-             move => disprf.
-             suff: (FailSound G) by rewrite G__FailSound.
-             apply /IH.
-             move => B r2 inprf__B inprf__r2.
-             apply: disprf.
-             *** by rewrite in_cons inprf__B orbT.
-             *** by rewrite in_cons inprf__r2 orbT.
-        * rewrite andFb.
-          constructor.
-          move => disprf.
-          move: hd_prf => /negbT.
-          rewrite -has_predC.
-          move => /hasP [] r inprf.
-          rewrite /= negb_imply.
-          move => /andP [] /eqP r__eq /negPn le_prf.
-          suff: (RuleCombinator A c = RuleFail A) by discriminate.
-          apply: (disprf (lhs r)) => //.
-          ** by rewrite in_cons -r__eq inprf orbT.
-          ** by apply mem_head.
-      + move => A B C G IH.
-        rewrite /=.
-        case hd_prf: (all (fun r => (r == RuleFail (lhs r)) ==> ~~ checkSubtypes A (lhs r)) G).
-        * case G__FailSound: (FailSound G).
-          ** move: IH.
-             rewrite G__FailSound.
-             move => /(fun prf => prf isT) G__prf.
-             constructor.
-             move => D r2.
-             rewrite in_cons.
-             move => /orP.
-             case => //.
-             move => inprf.
-             rewrite in_cons.
-             move => /orP.
-             case.
-             *** move => /eqP -> /= le_prf.
-                 suff: ~~(checkSubtypes A D) by rewrite le_prf.
-                 move: hd_prf => /allP hd_prf.
-                 move: inprf => /hd_prf.
-                   by rewrite eq_refl implyTb.
-             *** by apply: G__prf.
-          ** rewrite andbF.
-             constructor.
-             move => disprf.
-             suff: (FailSound G) by rewrite G__FailSound.
-             apply /IH.
-             move => D r2 inprf__D inprf__r2.
-             apply: disprf.
-             *** by rewrite in_cons inprf__D orbT.
-             *** by rewrite in_cons inprf__r2 orbT.
-        * rewrite andFb.
-          constructor.
-          move => disprf.
-          move: hd_prf => /negbT.
-          rewrite -has_predC.
-          move => /hasP [] r inprf.
-          rewrite /= negb_imply.
-          move => /andP [] /eqP r__eq /negPn le_prf.
-          suff: (@RuleApply Combinator _ A B C = RuleFail A) by discriminate.
-          apply: (disprf (lhs r)) => //.
-          ** by rewrite in_cons -r__eq inprf orbT.
-          ** by apply mem_head.
-  Qed.
-
-  Lemma cat_FailSound: forall G1 G2, FailSound (G1 ++ G2) -> FailSound G1 && FailSound G2.
-  Proof.
-    move => G1 G2 /FailSoundP prf.
-    apply /andP.
-    split.
-    - apply /FailSoundP.
-      move => A r2 inprf__A inprf__r2.
-      apply: prf; rewrite mem_cat.
-      + by rewrite inprf__A.
-      + by rewrite inprf__r2.
-    - apply /FailSoundP.
-      move => A r2 inprf__A inprf__r2.
-      apply: prf; rewrite mem_cat.
-      + by rewrite inprf__A orbT.
-      + by rewrite inprf__r2 orbT.
-  Qed.
-
-  Lemma subset_FailSound: forall G1 G2, {subset G2 <= G1} -> FailSound G1 -> FailSound G2.
-  Proof.
-    move => G1 G2 subset_prf /FailSoundP prf.
-    apply /FailSoundP.
-    move => A r2 inprf__A inprf__r2.
-    apply: prf; by apply: subset_prf.
-  Qed.
-
-  Lemma computeUpdates_lhs:
-    forall G A, all (fun r => lhs r == A) (if computeUpdates G A is (_, Some updates) then updates else [::]).
-  Proof.
-    elim => // r G IH.
-    case: r.
-    - move => B A /=.
-      case: (A == B) => //.
-      case: (checkSubtypes A B) => //.
-      case: (RuleFail A \in G) => //=.
-        by rewrite eq_refl.
-    - move => B c A /=.
-      case: (A == B) => //.
-      move: (IH A).
-      case: (computeUpdates G A).
-      case => //.
-      case => //.
-      case: (checkSubtypes A B && checkSubtypes B A) => //.
-      move => updates.
-      case: (RuleCombinator A c \in updates) => //= ->.
-        by rewrite eq_refl.
-    - move => B C D A /=.
-      case: (A == B) => //.
-      move: (IH A).
-      case: (computeUpdates G A).
-      case => //.
-      case => //.
-      case: (checkSubtypes A B && checkSubtypes B A) => //.
-      move => updates.
-      case: (RuleApply A C D \in updates) => //= ->.
-        by rewrite eq_refl.
-  Qed.
-
-  Lemma computeUpdates_leq:
-    forall G A r,
-      (r \in if computeUpdates G A is (_, Some updates) then updates else [::]) ->
-      match r with
-      | RuleFail B => has (fun r => (r == RuleFail (lhs r)) && checkSubtypes A (lhs r)) G
-      | RuleCombinator B c => has (fun r => (r == RuleCombinator (lhs r) c) && checkSubtypes A (lhs r)) G
-      | RuleApply B C D => has (fun r => (r == RuleApply (lhs r) C D) && checkSubtypes A (lhs r)) G
-      end.
-  Proof.
-    elim => // r1 G IH A r2.
-    case: r1.
-    - move => B /=.
-      case: (A == B) => //.
-      case: (checkSubtypes A B).
-      + case: (RuleFail A \in G) => //.
-        rewrite mem_seq1 => /eqP ->.
-          by rewrite eq_refl.
-      + move => /IH.
-          by rewrite andbF orFb.
-    - move => B c /=.
-      case: (A == B) => //.
-      move: (IH A r2).
-      case: (computeUpdates G A).
-      case; case => //.
-      + move => G2 prf /prf.
-        move: prf => _.
-        case: r2 => //.
-        move => ? ? ->.
-          by rewrite orbT.
-      + case: (checkSubtypes A B).
-        * case: (checkSubtypes B A).
-          ** move => G2 prf /=.
-             case: (RuleCombinator A c \in G2).
-             *** move => /prf.
-                 move: prf => _.
-                 case: r2 => // ? ? ->.
-                   by rewrite orbT.
-             *** rewrite in_cons.
-                 move => /orP.
-                 case.
-                 **** move => /eqP ->.
-                        by rewrite eq_refl.
-                 **** move => /prf.
-                      move: prf => _.
-                      case: r2 => // ? ? ->.
-                        by rewrite orbT.
-          ** rewrite /=.
-             move => G2 prf /prf.
-             move: prf => _.
-             case: r2 => // ? ? ->.
-               by rewrite orbT.
-        * rewrite /=.
-          move => G2 prf /prf.
-          move: prf => _.
-          case: r2 => // ? ? ->.
-            by rewrite orbT.
-    - move => B C D /=.
-      case: (A == B) => //.
-      move: (IH A r2).
-      case: (computeUpdates G A).
-      case; case => //.
-      + move => G2 prf /prf.
-        move: prf => _.
-        case: r2 => // ? ? ? ->.
-          by rewrite orbT.
-      + case: (checkSubtypes A B).
-        * case: (checkSubtypes B A).
-          ** move => G2 prf /=.
-             case: (RuleApply A C D \in G2).
-             *** move => /prf.
-                 move: prf => _.
-                 case: r2 => // ? ? ? ->.
-                   by rewrite orbT.
-             *** rewrite in_cons.
-                 move => /orP.
-                 case.
-                 **** move => /eqP ->.
-                        by rewrite eq_refl.
-                 **** move => /prf.
-                      move: prf => _.
-                      case: r2 => // ? ? ? ->.
-                        by rewrite orbT.
-          ** rewrite /=.
-             move => G2 prf /prf.
-             move: prf => _.
-             case: r2 => // ? ? ? ->.
-               by rewrite orbT.
-        * rewrite /=.
-          move => G2 prf /prf.
-          move: prf => _.
-          case: r2 => // ? ? ? ->.
-            by rewrite orbT.
-  Qed.
-
-  Lemma computeUpdates_FailSound:
-    forall G A,
-      FailSound G ->
-      FailSound ((if computeUpdates G A is (_, Some updates) then updates else [::]) ++ G).
-  Proof.
-    elim => //.
-    case.
-    - move => B G IH A prf /=.
-      case: (A == B) => //.
-      case le__AB: (checkSubtypes A B).
-      + case inprf__A: (RuleFail A \in G) => //.
-        rewrite [[:: RuleFail B & G]]lock /= -lock prf andbT.
-        apply /allP.
-        move => r /orP.
-        case.
-        * move => /eqP -> /=.
-            by rewrite eq_refl implybT.
-        * move: prf => /andP [] /allP prf _ /prf /implyP res.
-          apply /implyP.
-          move => /subtypeMachineP /(fun prf => BCD__Trans A prf (subtypeMachineP _ _ _ le__AB)) /subtypeMachineP.
-            by exact res.
-      + apply (subset_FailSound [:: RuleFail B & (if computeUpdates G A is (_, Some updates)
-                                                  then updates
-                                                  else [::]) ++ G]).
-        * move => r.
-          rewrite mem_cat.
-          move => /orP.
-          case.
-          ** rewrite in_cons mem_cat => ->.
-               by rewrite orbT.
-          ** rewrite in_cons.
-             move => /orP.
-             case.
-             *** move => /eqP ->.
-                   by apply mem_head.
-             *** rewrite in_cons mem_cat => ->.
-                   by do 2 rewrite orbT.
-        * have rest_sound: FailSound ((if computeUpdates G A is (_, Some updates)
-                                       then updates
-                                       else [::]) ++ G).
-          { by (apply: IH; move: prf => /andP []). }
-          rewrite /= rest_sound andbT.
-          apply /allP.
-          move => r.
-          rewrite mem_cat.
-          move => /orP.
-          case.
-          ** move: (computeUpdates_lhs G A) => /allP lhs_prf /lhs_prf /eqP ->.
-               by rewrite le__AB.
-          ** by move: prf => /andP [] /allP prf _ /prf.
-    - move => B c G IH A prf /=.
-      case: (A == B) => //.
-      move: (IH A (proj2 (andP prf))).
-      move: (computeUpdates_leq G A).
-      move: (computeUpdates_lhs G A).
-      move => lhs_prf leq_prf G2G__FailSound.
-      have: (FailSound ((if computeUpdates G A is (_, Some updates)
-                         then updates
-                         else [::]) ++ [:: RuleCombinator B c & G])).
-      { apply: (subset_FailSound [:: RuleCombinator B c & (if computeUpdates G A is (_, Some updates)
-                                                           then updates
-                                                           else [::]) ++ G]).
-        - move => r.
-          rewrite mem_cat.
-          move => /orP.
-          case.
-          ** rewrite in_cons mem_cat => ->.
-               by rewrite orbT.
-          ** rewrite in_cons.
-             move => /orP.
-             case.
-             *** move => /eqP ->.
-                   by apply: mem_head.
-             *** rewrite in_cons mem_cat => ->.
-                   by do 2 rewrite orbT.
-        - rewrite /= G2G__FailSound andbT all_cat.
-          apply /andP.
-          split; last by move: prf => /andP [] //.
-          apply /allP.
-          move => r.
-          move: lhs_prf leq_prf G2G__FailSound.
-          case: (computeUpdates G A) => // r2 G2 lhs_prf leq_prf G2G__FailSound.
-          move => inprf.
-          apply /implyP.
-          move: lhs_prf => /allP /(fun prf => prf _ inprf) /eqP -> /eqP r__eq.
-          move: inprf.
-          rewrite r__eq.
-          move => inprf.
-          move: (leq_prf _ inprf) => /hasP [] r3 inprf__r3 /andP [] r3__eq leq_prf__r3.
-          move: prf => /andP [] /allP /(fun prf => prf _ inprf__r3).
-          rewrite r3__eq implyTb.
-          move => le_prf__Br3 _.
-          apply /subtypeMachineP.
-          move => /(fun prf => BCD__Trans _ prf (subtypeMachineP _ _ _ leq_prf__r3)) /subtypeMachineP devil.
-          move: le_prf__Br3.
-            by rewrite devil. }
-      case: (computeUpdates G A).
-      case; case => //.
-      case AB__eq: (checkSubtypes A B && checkSubtypes B A) => //.
-      move => G2.
-      case: (RuleCombinator A c \in G2) => //.
-      move => G2rG__FailSound /=.
-      rewrite G2rG__FailSound andbT.
-      apply /allP.
-      move => r inprf.
-      apply /implyP.
-      move => /eqP r__eq.
-      move: inprf.
-      rewrite r__eq.
-      move => inprf.
-      move: G2rG__FailSound => /FailSoundP /(fun prf => prf (lhs r) (RuleCombinator B c)) disprf.
-      apply /negP.
-      move => devil.
-      suff: (RuleCombinator B c = RuleFail (lhs (RuleCombinator B c))) by discriminate.
-      apply: disprf => //.
-      + by rewrite mem_cat mem_head orbT.
-      + apply /subtypeMachineP.
-        apply: (BCD__Trans A); last by apply /subtypeMachineP.
-        apply /subtypeMachineP.
-          by move: AB__eq => /andP [].
-    - move => B C D G IH A prf /=.
-      case: (A == B) => //.
-      move: (IH A (proj2 (andP prf))).
-      move: (computeUpdates_leq G A).
-      move: (computeUpdates_lhs G A).
-      move => lhs_prf leq_prf G2G__FailSound.
-      have: (FailSound ((if computeUpdates G A is (_, Some updates)
-                         then updates
-                         else [::]) ++ [:: RuleApply B C D & G])).
-      { apply: (subset_FailSound [:: RuleApply B C D & (if computeUpdates G A is (_, Some updates)
-                                                        then updates
-                                                        else [::]) ++ G]).
-        - move => r.
-          rewrite mem_cat.
-          move => /orP.
-          case.
-          ** rewrite in_cons mem_cat => ->.
-               by rewrite orbT.
-          ** rewrite in_cons.
-             move => /orP.
-             case.
-             *** move => /eqP ->.
-                   by apply: mem_head.
-             *** rewrite in_cons mem_cat => ->.
-                   by do 2 rewrite orbT.
-        - rewrite /= G2G__FailSound andbT all_cat.
-          apply /andP.
-          split; last by move: prf => /andP [] //.
-          apply /allP.
-          move => r.
-          move: lhs_prf leq_prf G2G__FailSound.
-          case: (computeUpdates G A) => // r2 G2 lhs_prf leq_prf G2G__FailSound.
-          move => inprf.
-          apply /implyP.
-          move: lhs_prf => /allP /(fun prf => prf _ inprf) /eqP -> /eqP r__eq.
-          move: inprf.
-          rewrite r__eq.
-          move => inprf.
-          move: (leq_prf _ inprf) => /hasP [] r3 inprf__r3 /andP [] r3__eq leq_prf__r3.
-          move: prf => /andP [] /allP /(fun prf => prf _ inprf__r3).
-          rewrite r3__eq implyTb.
-          move => le_prf__Br3 _.
-          apply /subtypeMachineP.
-          move => /(fun prf => BCD__Trans _ prf (subtypeMachineP _ _ _ leq_prf__r3)) /subtypeMachineP devil.
-          move: le_prf__Br3.
-            by rewrite devil. }
-      case: (computeUpdates G A).
-      case; case => //.
-      case AB__eq: (checkSubtypes A B && checkSubtypes B A) => //.
-      move => G2.
-      case: (RuleApply A C D \in G2) => //.
-      move => G2rG__FailSound /=.
-      rewrite G2rG__FailSound andbT.
-      apply /allP.
-      move => r inprf.
-      apply /implyP.
-      move => /eqP r__eq.
-      move: inprf.
-      rewrite r__eq.
-      move => inprf.
-      move: G2rG__FailSound => /FailSoundP /(fun prf => prf (lhs r) (RuleApply B C D)) disprf.
-      apply /negP.
-      move => devil.
-      suff: (@RuleApply Combinator _ B C D = RuleFail (lhs (@RuleApply Combinator _ B C D))) by  discriminate.
-      apply: disprf => //.
-      + by rewrite mem_cat mem_head orbT.
-      + apply /subtypeMachineP.
-        apply: (BCD__Trans A); last by apply /subtypeMachineP.
-        apply /subtypeMachineP.
-          by move: AB__eq => /andP [].
-  Qed.
-
-  Lemma updatedExisting_FailSound:
-    forall G A,
-      FailSound G ->
-      FailSound (updatedExisting G A).2.
-  Proof.
-    move => G A prf.
-    rewrite /updatedExisting.
-    move: (computeUpdates_FailSound G A prf).
-      by case: (computeUpdates G A) => [] ? [].
-  Qed.
-
-  Lemma inhabitation_step_FailSound:
-    forall stable targets,
-      FailSound (stable ++ targets) ->
-      FailSound ((inhabitation_step Gamma stable targets).1 ++ (inhabitation_step Gamma stable targets).2).
-  Proof.
-    move => stable targets.
-    move: stable.
-    case: targets => //.
-    case.
-    - rewrite /=.
-      move => A targets stable prf.
-      apply: subset_FailSound; last by exact prf.
-      move => r.
-      rewrite mem_cat mem_cat.
-      move => /orP.
-      case.
-      + by move => ->.
-      + move => inprf.
-        move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP ->.
-          by rewrite in_cons mem_cat inprf orbT orbT orbT.
-    - move => A c targets stable /= prf.
-      apply: subset_FailSound; last by exact prf.
-      case: (RuleCombinator A c \in stable).
-      + move => r.
-        rewrite mem_cat.
-        move => /orP.
-        rewrite mem_cat.
-        case.
-        ** by move => ->.
-        ** rewrite in_cons.
-           move => ->.
-             by rewrite orbT orbT.
-      + move => r.
-        rewrite in_cons mem_cat.
-        move => /orP.
-        rewrite mem_cat in_cons.
-        case; last (move => /orP; case).
-        * move => ->.
-            by rewrite orbT.
-        * by move => ->.
-        * move => ->.
-            by rewrite orbT orbT.
-    - move => A B C targets stable prf.
-      rewrite /=.
-      have: (FailSound (updatedExisting stable C).2).
-      { apply: updatedExisting_FailSound.
-        apply: subset_FailSound; last by exact prf.
-        move => r.
-          by rewrite mem_cat => ->. }
-      rewrite /updatedExisting.
-      move: (computeUpdates_leq stable C).
-      move: (computeUpdates_lhs stable C).
-      case: (computeUpdates stable C) => [] [] [].
-      + case => /=.
-        * case (inhabit_cover 
-
-      
-
-
-
-
-
-
-
-  Lemma computeUpdates_omega_noFail:
-    forall G A,
-      isOmega A ->
-      FailSound G ->
-      {
-      (forall B, RuleFail B \in G -> ~~isOmega B) ->
-      ~~(computeUpdates G A).1.
-  Proof.
-    elim => // r G IH A isOmega__A.
-    case: r.
-    - move => B prf.
-      have notOmega__B: ~~(isOmega B).
-      { by (apply: prf; apply mem_head). }
-      rewrite /=.
-      case AB__eq: (A == B).
-      + move: notOmega__B.
-        rewrite (eqP 
-
-
-  Lemma computeUpdates_omega:
-    forall G A,
-      isOmega A ->
-      {subset OmegaRules <= G} ->
-      (forall B, RuleFail B \in G -> ~~isOmega B) ->
-      if (computeUpdates G A).2 is Some updates then updates != [::] else true.
-  Proof.
-    move => G A isOmega__A OmegaRules_subset.
-    have: (RuleApply Omega Omega Omega \in G).
-    { apply: OmegaRules_subset.
-        by rewrite /OmegaRules mem_head. }
-    move: OmegaRules_subset => _.
-    elim: G => // r G IH.
-    case r__eq: (r == RuleApply Omega Omega Omega).
-    - rewrite (eqP r__eq).
-      move => _ /=.
-      case: (A == Omega) => //.*)
-
-
-  Lemma computeFailExisting_found:
-    forall G A, has (fun r => lhs r == A) G -> ~~(computeFailExisting G A).1 -> (computeFailExisting G A).2.
-  Proof.
-    elim => //.
-    case.
-    - move => B G IH A.
-      move => /hasP [] r.
-      rewrite in_cons /=.
-      case AB__eq: (A == B) => //.
-      move => /orP.
-      case.
-      + move => /eqP -> /=.
-          by rewrite eq_sym AB__eq.
-      + move => inprf lhs__eq.
-        case: (checkSubtypes A B) => //.
-        apply: IH.
-        apply /hasP.
-          by (exists r).
-    - move => B c G IH A.
-      move => /hasP [] r.
-      rewrite in_cons /=.
-      case AB__eq: (A == B) => //.
-      move => /orP.
-      case.
-      + move => /eqP ->.
-          by rewrite eq_sym AB__eq.
-      + move => inprf lhs__eq.
-        apply: IH.
-        apply /hasP.
-          by (exists r).
-    - move => B C D G IH A.
-      move => /hasP [] r.
-      rewrite in_cons /=.
-      case A__eq: ((A == B) || (A == D)) => //.
-      move => /orP.
-      case.
-      + move => /eqP -> /=.
-        rewrite eq_sym.
-        move => disprf.
-        move: A__eq.
-          by rewrite disprf.
-      + move => inprf lhs__eq.
-        apply: IH.
-        apply /hasP.
-          by (exists r).
-  Qed.
-
   Definition parameterTypes (G: @TreeGrammar Combinator Constructor): seq (@IT Constructor) :=
     pmap (fun r => match r with
                 | RuleApply _ _ C => Some C
@@ -3338,16 +2553,14 @@ Section InhabitationMachineProperties.
     - move => B G IH A /IH /=.
       case: (A == B) => //.
         by case: (checkSubtypes A B) => //.
-    - move => B c G IH A /IH /=.
-        by case: (A == B) => //.
+    - by move => B c G IH A /IH /=.
     - move => B C D G IH A /=.
       rewrite in_cons.
       move => /orP.
       case.
-      + move => ->.
-          by rewrite orbT.
+      + by move => ->.
       + move => /IH.
-          by case: ((A == B) || (A == D)) => //.
+          by case: ((A == D)) => //.
   Qed.
 
   Lemma OmegaRules_sound:
@@ -3387,23 +2600,22 @@ Section InhabitationMachineProperties.
         by apply /andP.
     - move => A B C targets /=.
       case: (RuleApply A B C \in stable); first by move => /andP [].
-      move: (computeFailExisting_found stable C).
       case: (computeFailExisting stable C) => failed existing.
       case: failed.
       + case: existing.
-        * move => _ /= targets_sound.
+        * move => /= targets_sound.
           split => //.
           apply: suffix_sound; first by apply: dropTargets_suffix.
             by move: targets_sound => /andP [].
-        * move => _ /= targets_sound.
+        * move => /= targets_sound.
           split => //.
           apply: suffix_sound; first by apply: dropTargets_suffix.
             by move: targets_sound => /andP [].
       + case: existing.
-        * move => _ /andP [] rule_sound targets_sound.
+        * move => /andP [] rule_sound targets_sound.
           split => //.
             by apply /andP.
-        * move => _ /andP [] le_prf targets_sound.
+        * move => /andP [] le_prf targets_sound.
           case isOmega__C: (isOmega C).
           ** split; last by done.
              rewrite /= /FCL_sound (all_cat _ [:: _]) [[:: RuleApply _ _ _ & _ ++ _]]lock /= le_prf /= -lock.
@@ -3430,10 +2642,6 @@ Section InhabitationMachineProperties.
                                                                   (filterMergeMultiArrows _ (subseqs ms))))
                                              (SplitCtxt Gamma c)))
                          (enum Combinator))].
-
-  Definition maxTypes (A: @IT Constructor): seq (@IT Constructor) :=
-    flatten (map (fun A => maxParameterTypes A) (maxParameterTypes A)).
-
 
   Definition targetTypes (G: @TreeGrammar Combinator Constructor): seq (@IT Constructor) := map (@lhs Combinator _) G.
 
@@ -3540,25 +2748,6 @@ Section InhabitationMachineProperties.
       apply: subset__ms.
         by rewrite in_cons inprf__m orbT.
   Qed.
-
-  Lemma commitUpdates_targetTypes_subset:
-    forall (Delta: seq (@IT Constructor)) G currentTarget c (ms : seq (@MultiArrow Constructor)),
-      {subset (undup (targetTypes G)) <= Delta} ->
-      (forall m,  m \in ms -> forall n, (mkArrow (take n m.1, currentTarget)) \in Delta) ->
-      {subset (undup (targetTypes (commitUpdates G currentTarget c ms))) <= Delta}.
-  Proof.
-    move => Delta G currentTarget c ms.
-    move: G.
-    elim: ms => // [] [] srcs tgt ms IH G subset__G subset__ms.
-    rewrite /=.
-    apply: IH.
-    - apply: commitMultiArrow_targetTypes_subset => //.
-      apply: (subset__ms (srcs, tgt)).
-        by rewrite in_cons eq_refl.
-    - move => m inprf.
-      apply: subset__ms.
-        by rewrite in_cons inprf orbT.
-  Qed.
   
   Lemma accumulateCovers_parameterTypes_subset:
     forall c targets b currentTarget initialTarget,
@@ -3599,7 +2788,6 @@ Section InhabitationMachineProperties.
       apply f_equal.
         by apply: map_id. }
     move => /eq_map ->.
-    rewrite /maxTypes.
     move => inprf__srcstgt src inprf__src.
     rewrite /maxParameterTypes in_cons.
     apply /orP.
@@ -3620,83 +2808,9 @@ Section InhabitationMachineProperties.
           by apply: grammarTypes_src_mem.
   Qed.
 
-  Lemma accumulateCovers_targetTypes_subset:
-    forall c targets b currentTarget initialTarget,
-      {subset (undup (targetTypes targets)) <= maxTypes initialTarget} ->
-      (currentTarget \in maxParameterTypes initialTarget) ->
-      {subset
-         (undup (targetTypes
-                   (accumulateCovers (SplitCtxt Gamma) currentTarget (primeFactors currentTarget) (targets, b) c).1)) <=
-       maxTypes initialTarget}.
-  Proof.
-    move => c targets b currentTarget initialTarget.
-    rewrite /accumulateCovers.
-    move: (coverMachine ([::],
-                         map (fun ms =>
-                                Cover (map (fun m => (m, filter (checkSubtypes m.2)
-                                                             (primeFactors currentTarget))) ms)
-                                      (primeFactors currentTarget))
-                             (SplitCtxt Gamma c))) => [] covers steps.
-    move: (semantics_mergeComponents _ _ (covers, [::]) steps).
-    rewrite /sound.
-    move => /allP /(fun prf x inprf => prf x (mem_subseq (reduction_subseq _ _) inprf)).    
-    move: steps => _.
-    case: covers => // m covers prf prfs inprf__currentTarget.
-    apply: commitUpdates_targetTypes_subset => //.
-    move: prf.
-    rewrite [([::], _).1]/= [seq.size [::]]/= subn0 take_size.
-    move => prf.
-    move => [] srcs tgt /prf.
-    rewrite [([::], _).2]/= -map_comp.
-    have: ((fun i => (filterMergeMultiArrows _ (subseqs (mergeComponentsOf Constructor i))))
-             \o (fun ms =>
-                   Cover (map (fun m => (m, filter (checkSubtypes m.2)
-                                                (primeFactors currentTarget))) ms)
-                         (primeFactors currentTarget))
-           =1 (fun ms => filterMergeMultiArrows _ (subseqs ms))).
-    { move => ms /=.
-      rewrite -map_comp.
-      apply f_equal.
-      apply f_equal.
-        by apply: map_id. }
-    move => /eq_map ->.
-    rewrite /maxTypes.
-    move => inprf__srcstgt n.
-    apply /flatten_mapP.
-    exists currentTarget => //.
-    rewrite /maxParameterTypes in_cons.
-    apply /orP.
-    right.
-    apply /flatten_mapP.
-    exists c.
-    - by rewrite mem_enum.
-    - apply /flattenP.
-      move: inprf__srcstgt => /flatten_mapP [] ms inprf__ms inprf__srcstgt.
-      exists (flatten (map (fun m => grammarTypes m.1 m.2 ++ grammarTypes m.1 currentTarget) (filterMergeMultiArrows _ (subseqs ms)))).
-      + apply /mapP.
-          by (exists ms).
-      + apply /flatten_mapP.
-        exists (srcs, tgt) => //=.
-        rewrite mem_cat.
-        apply /orP.
-        right.
-          by apply: grammarTypes_tgt_mem.
-  Qed.
-
   Lemma maxParameterTypes_initialTarget:
     forall initialTarget, initialTarget \in maxParameterTypes initialTarget.
   Proof. move => initialTarget; by rewrite /maxParameterTypes in_cons eq_refl. Qed.
-
-  Lemma maxTypes_maxParameterTypes: forall A, {subset maxParameterTypes A <= maxTypes A }.
-  Proof.
-    move => A B inprf.
-    rewrite /maxTypes.
-    apply /flattenP.
-    exists (maxParameterTypes A) => //.
-    apply /mapP.
-    exists A => //.
-      by apply: maxParameterTypes_initialTarget.
-  Qed.
 
   Lemma foldl_accumulateCovers_parameterTypes_subset:
      forall targets b currentTarget initialTarget,
@@ -3710,25 +2824,6 @@ Section InhabitationMachineProperties.
     elim: (enum Combinator) => // c combinators IH targets b currentTarget initialTarget prf.
     rewrite (foldl_cat _ _ [:: c]).
     move: (accumulateCovers_parameterTypes_subset c targets b currentTarget initialTarget prf).
-    rewrite [accumulateCovers _ _ _]lock /= -lock.
-    case: (accumulateCovers (SplitCtxt Gamma) currentTarget (primeFactors currentTarget) (targets, b) c).
-    move => nextTargets failed nextTargets_subeset.
-      by apply: IH.
-  Qed.
-
-  Lemma foldl_accumulateCovers_targetTypes_subset:
-     forall targets b currentTarget initialTarget,
-       {subset (undup (targetTypes targets)) <= maxTypes initialTarget} ->
-       (currentTarget \in maxParameterTypes initialTarget) ->
-       {subset
-          (undup (targetTypes
-                    (foldl (accumulateCovers (SplitCtxt Gamma) currentTarget (primeFactors currentTarget))
-                           (targets, b) (enum Combinator)).1)) <=
-        maxTypes initialTarget}.
-  Proof.
-    elim: (enum Combinator) => // c combinators IH targets b currentTarget initialTarget prf inprf__currentTarget.
-    rewrite (foldl_cat _ _ [:: c]).
-    move: (accumulateCovers_targetTypes_subset c targets b currentTarget initialTarget prf inprf__currentTarget).
     rewrite [accumulateCovers _ _ _]lock /= -lock.
     case: (accumulateCovers (SplitCtxt Gamma) currentTarget (primeFactors currentTarget) (targets, b) c).
     move => nextTargets failed nextTargets_subeset.
@@ -3768,33 +2863,6 @@ Section InhabitationMachineProperties.
         by apply: nextTargets_subset.
   Qed.
 
-  Lemma inhabit_cover_targetTypes_subset:
-    forall targets currentTarget initialTarget,
-      {subset (undup (targetTypes targets)) <= maxTypes initialTarget} ->
-      (currentTarget \in maxParameterTypes initialTarget) ->
-      {subset (undup (targetTypes
-                        (inhabit_cover (SplitCtxt Gamma) targets currentTarget).2)) <=
-       maxTypes initialTarget}.
-  Proof.
-    move => targets currentTarget initialTarget targets_subset inprf__currentTarget.
-    rewrite /inhabit_cover.
-    move: (foldl_accumulateCovers_targetTypes_subset [::] true currentTarget initialTarget
-                                                     (mem_subseq (sub0seq _)) inprf__currentTarget).
-    case: (foldl (accumulateCovers (SplitCtxt Gamma) currentTarget (primeFactors currentTarget))
-                 ([::], true) (enum Combinator)).
-    move => nextTargets failed.
-    case: failed => // nextTargets_subset.
-    rewrite /targetTypes map_cat.
-    move => A.
-    rewrite mem_undup mem_cat.
-    move => /orP.
-    case.
-    - rewrite -mem_undup.
-        by apply: targets_subset.
-    - rewrite -mem_undup.
-        by apply: nextTargets_subset.
-  Qed.
-
   Lemma OmegaRules_targets:
     forall A, targetTypes (OmegaRules A) =i [:: A].
   Proof.
@@ -3814,30 +2882,20 @@ Section InhabitationMachineProperties.
       by elim: (enum Combinator).
   Qed.
 
-
   Lemma OmegaRules_subset:
     forall A initialTarget,
       (A \in maxParameterTypes initialTarget) ->
-      {subset (undup (targetTypes (OmegaRules A))) <= maxTypes initialTarget} /\
       {subset (undup (parameterTypes (OmegaRules A))) <= maxParameterTypes initialTarget}.
   Proof.
     move => A initialTarget inprf.
-    split.
-    - move => D.
-      rewrite mem_undup OmegaRules_targets mem_seq1 => /eqP ->.
-        by apply: maxTypes_maxParameterTypes.
-    - move => D.
-        by rewrite mem_undup OmegaRules_params mem_seq1 => /eqP ->.
+    move => D.
+      by rewrite mem_undup OmegaRules_params mem_seq1 => /eqP ->.
   Qed.
 
   Lemma inhabitation_step_subset:
     forall initialTarget stable targets,
-      {subset (undup (targetTypes stable)) <= maxTypes initialTarget} ->
-      {subset (undup (targetTypes targets)) <= maxTypes initialTarget} ->
       {subset (undup (parameterTypes targets)) <= maxParameterTypes initialTarget} ->
       {subset (undup (parameterTypes stable)) <= maxParameterTypes initialTarget} ->
-      {subset (undup (targetTypes (inhabitation_step (SplitCtxt Gamma) stable targets).1)) <= maxTypes initialTarget} /\
-      {subset (undup (targetTypes (inhabitation_step (SplitCtxt Gamma) stable targets).2)) <= maxTypes initialTarget} /\
       {subset (undup (parameterTypes (inhabitation_step (SplitCtxt Gamma) stable targets).2)) <= maxParameterTypes initialTarget} /\
       {subset (undup (parameterTypes (inhabitation_step (SplitCtxt Gamma) stable targets).1)) <= maxParameterTypes initialTarget}.
   Proof.
@@ -3845,59 +2903,23 @@ Section InhabitationMachineProperties.
     rewrite /inhabitation_step.
     case => //.
     case.
-    - move => A targets stable_subset targets_subset target_parametersSubset.
-      split => //; last split; last split => //.
-      + rewrite /=.
-        move => B.
-        rewrite mem_undup.
-        move => /mapP [] r [] inprf__r B__eq.
-        apply: targets_subset.
-        rewrite mem_undup in_cons.
-        apply /orP.
-        right.        
-        apply /mapP.
-        exists r => //.
-        move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP ->.
-        rewrite mem_cat.
-        apply /orP.
-          by right.
-      + rewrite /=.
-        move => B.
-        rewrite mem_undup.
-        rewrite /parameterTypes.
-        move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP targets_eq inprf.
-        apply: target_parametersSubset.
-        rewrite mem_undup /= targets_eq /parameterTypes pmap_cat mem_cat.
-        apply /orP.
-          by right.
-    - move => A c targets stable_subset targets_subset target_parametersSubset.
-      split; last split; last split.
-      + case inprf: (RuleCombinator A c \in stable) => // B.
-        rewrite mem_undup in_cons -/(map (@lhs Combinator _) stable) -/(targetTypes stable).
-        move => /orP.
-        case.
-        * move => /eqP ->.
-          apply: targets_subset.
-            by rewrite mem_undup in_cons eq_refl.
-        * rewrite -[_ \in targetTypes _](mem_undup).
-            by move => /stable_subset.
-      + have: {subset undup (targetTypes targets) <= maxTypes initialTarget}.
-        { move => B.
-          rewrite mem_undup.
-          move => inprf__B.
-          apply: targets_subset.
-            by rewrite mem_undup in_cons inprf__B orbT. }
-          by case inprf: (RuleCombinator A c \in stable).
+    - move => A targets target_parametersSubset.
+      split => //.
+      rewrite /=.
+      move => B.
+      rewrite mem_undup.
+      rewrite /parameterTypes.
+      move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP targets_eq inprf.
+      apply: target_parametersSubset.
+      rewrite mem_undup /= targets_eq /parameterTypes pmap_cat mem_cat.
+      apply /orP.
+        by right.
+    - move => A c targets target_parametersSubset.
+      split.
       + move: target_parametersSubset => /= target_parametersSubset.
           by case inprf: (RuleCombinator A c \in stable) => // B inprf__B.
       + by case: (RuleCombinator A c \in stable).
-    - move => A B C targets stable_subset all_targets_subset all_target_parameterSubset stable_parameterSubset.
-      have targets_subset: {subset undup (targetTypes targets) <= maxTypes initialTarget}.
-      { move => D.
-        rewrite mem_undup.
-        move => inprf__D.
-        apply: all_targets_subset.
-          by rewrite mem_undup in_cons inprf__D orbT. }
+    - move => A B C targets all_target_parameterSubset stable_parameterSubset.
       have target_parametersSubset: {subset undup (parameterTypes targets) <= maxParameterTypes initialTarget}.
       { move => D.
         rewrite mem_undup.
@@ -3905,13 +2927,6 @@ Section InhabitationMachineProperties.
         apply: all_target_parameterSubset.
           by rewrite mem_undup in_cons inprf__D orbT. }
       case: (RuleApply A B C \in stable) => //.
-      have dropTargets_subset: {subset undup (targetTypes (dropTargets targets)) <= maxTypes initialTarget}.
-      { move => D.
-        rewrite mem_undup.
-        move => inprf.
-        apply: targets_subset.
-        move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP ->.
-          by rewrite mem_undup /targetTypes map_cat mem_cat inprf orbT. }
       have dropTargets_parametersSubset: {subset undup (parameterTypes (dropTargets targets)) <= maxParameterTypes initialTarget}.
       { move => D.
         rewrite mem_undup.
@@ -3919,100 +2934,39 @@ Section InhabitationMachineProperties.
         apply: target_parametersSubset.
         move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP ->.
           by rewrite mem_undup /parameterTypes pmap_cat mem_cat inprf orbT. }
-      have inprf__A: A \in maxTypes initialTarget.
-      { apply: all_targets_subset.
-          by rewrite mem_undup in_cons /= eq_refl. }
       have inprf__C: C \in maxParameterTypes initialTarget.
       { apply: all_target_parameterSubset.
           by rewrite mem_undup in_cons /= eq_refl. }
-      have fail_subset: {subset (undup (targetTypes [:: RuleFail C & stable])) <= maxTypes initialTarget} /\
-                        {subset (undup (parameterTypes [:: RuleFail C & stable])) <= maxParameterTypes initialTarget}.
-      { split.
-        - move => D.
-          rewrite mem_undup /=.
-          case /orP.
-          + move => /eqP ->.
-              by apply: maxTypes_maxParameterTypes.
-          + move => prf.
-            apply /stable_subset.
-              by rewrite mem_undup.
-        - move => D /=.
-            by apply: stable_parameterSubset. }
-      have existing_subset: {subset (undup (targetTypes [:: RuleApply A B C & stable])) <= maxTypes initialTarget} /\
-                            {subset (undup (parameterTypes [:: RuleApply A B C & stable])) <= maxParameterTypes initialTarget}.
-      { split.
-        - move => D.
-          rewrite mem_undup /=.
-          case /orP.
-          + by move => /eqP ->.
-          + move => prf.
-            apply /stable_subset.
-              by rewrite mem_undup.
-        - move => D /=.
-          case: (C \in parameterTypes stable).
-          + by apply: stable_parameterSubset.
-          + case /orP.
-            * by move => /eqP ->.
-            * by apply: stable_parameterSubset. }
-      have: {subset (undup (targetTypes [:: RuleApply A B C & OmegaRules C ++ stable])) <= maxTypes initialTarget} /\
-            {subset (undup (parameterTypes [:: RuleApply A B C & OmegaRules C ++ stable])) <= maxParameterTypes initialTarget}.
-      { move: (OmegaRules_subset C initialTarget inprf__C) => [] p1 p2.
-        split.
-        - move => D.
-          rewrite mem_undup [OmegaRules C]lock /= in_cons.
-          case /orP; first  by move => /eqP ->.
-          rewrite /targetTypes map_cat mem_cat.
-          case /orP.
-          + rewrite -mem_undup -lock.
-              by move => /p1.
-          + rewrite -mem_undup.
-              by move => /stable_subset.
-        - move => D.
-          rewrite mem_undup [OmegaRules C]lock /= in_cons.
-          case /orP; first  by move => /eqP ->.
-          rewrite -lock mem_pmap map_cat mem_cat -mem_pmap -mem_pmap.
-          case /orP.
-          + rewrite -mem_undup.
-              by move => /p2.
-          + rewrite -mem_undup.
-              by move => /stable_parameterSubset. }
-      move => [].
+      have fail_subset: {subset (undup (parameterTypes [:: RuleFail C & stable])) <= maxParameterTypes initialTarget}.
+      { move => D /=.
+          by apply: stable_parameterSubset. }
+      have existing_subset: {subset (undup (parameterTypes [:: RuleApply A B C & stable])) <= maxParameterTypes initialTarget}.
+      { move => D /=.
+        case: (C \in parameterTypes stable).
+        + by apply: stable_parameterSubset.
+        + case /orP.
+          * by move => /eqP ->.
+          * by apply: stable_parameterSubset. }
+      have: {subset (undup (parameterTypes [:: RuleApply A B C & OmegaRules C ++ stable])) <= maxParameterTypes initialTarget}.
+      { move: (OmegaRules_subset C initialTarget inprf__C) => p2.
+        move => D.
+        rewrite mem_undup [OmegaRules C]lock /= in_cons.
+        case /orP; first  by move => /eqP ->.
+        rewrite -lock mem_pmap map_cat mem_cat -mem_pmap -mem_pmap.
+        case /orP.
+        + rewrite -mem_undup.
+            by move => /p2.
+        + rewrite -mem_undup.
+            by move => /stable_parameterSubset. }
       move: fail_subset.
-      move => [].
       move: existing_subset.
-      move => [].
       case: (computeFailExisting stable C) => [].
       case.
       + by case.
       + case => //.
         case: (isOmega C) => //.
-        move => _ _ _ _ _ _.
-        move: (inhabit_cover_targetTypes_subset targets C initialTarget targets_subset inprf__C) => nextTargets_subset.
+        move => _ _ _.
         move: (inhabit_cover_parameterTypes_subset targets C initialTarget target_parametersSubset) => nextTarget_parametersSubset.
-        have: {subset (undup (targetTypes [:: RuleFail C & stable])) <= maxTypes initialTarget}.
-        { move => D.
-          rewrite mem_undup in_cons.
-          move => /orP.
-          case.
-          + move => /eqP ->.
-              by apply: maxTypes_maxParameterTypes.
-          + rewrite -mem_undup.
-              by apply: stable_subset. }
-        have: {subset (undup (targetTypes [:: RuleApply A B C & stable])) <= maxTypes initialTarget}.
-        { move => D.
-          rewrite mem_undup in_cons.
-          move => /orP.
-          case.
-          + by move => /eqP ->.
-          + rewrite -mem_undup.
-              by apply: stable_subset. }
-        have: {subset (undup (targetTypes (dropTargets (inhabit_cover (SplitCtxt Gamma) targets C).2))) <= maxTypes initialTarget}.
-        { move => D.
-          rewrite mem_undup.
-          move => inprf.
-          apply: nextTargets_subset.
-          move: (dropTargets_suffix (inhabit_cover (SplitCtxt Gamma) targets C).2) => /suffixP [] prefix /eqP ->.
-            by rewrite mem_undup /targetTypes map_cat mem_cat inprf orbT. }
         have: {subset undup (parameterTypes (dropTargets (inhabit_cover (SplitCtxt Gamma) targets C).2)) <=
                maxParameterTypes initialTarget}.
         { move => D.
@@ -4029,7 +2983,7 @@ Section InhabitationMachineProperties.
           - by move => /eqP ->.
           - rewrite -mem_undup.
               by apply: stable_parameterSubset. }
-        move: nextTargets_subset nextTarget_parametersSubset.
+        move: nextTarget_parametersSubset.
         case: (inhabit_cover (SplitCtxt Gamma) targets C).
           by case.
   Qed.
@@ -4037,16 +2991,11 @@ Section InhabitationMachineProperties.
   Definition inhabit_step_rel (initialTarget: @IT Constructor):
     (TreeGrammar * TreeGrammar) -> (TreeGrammar * TreeGrammar) -> Prop :=
     fun s1 s2 =>
-      lexprod (seq (@IT Constructor)) (fun _ => { stableParams : seq (@IT Constructor) & @TreeGrammar Combinator Constructor })
-              (ltof _ (fun stableTargets => (seq.size (maxTypes initialTarget)).+1 - seq.size stableTargets))
-              (fun stableTargets => lexprod (seq (@IT Constructor)) (fun _ => TreeGrammar)
-                                         (ltof _ (fun stableParams => (seq.size (maxParameterTypes initialTarget)).+1 -
-                                                                   (seq.size stableParams)))
-                                         (fun _ => ltof _ seq.size))
-              (existT _ (undup (targetTypes s1.1)) (existT _ (undup (filter (fun r => r \notin (undup (targetTypes s1.1)))
-                                                                            (parameterTypes s1.1))) s1.2))
-              (existT _ (undup (targetTypes s2.1)) (existT _ (undup (filter (fun r => r \notin (undup (targetTypes s2.1)))
-                                                                            ((parameterTypes s2.1)))) s2.2)).
+      lexprod (seq (@IT Constructor)) (fun _ => @TreeGrammar Combinator Constructor)
+              (ltof _ (fun stableParams => (seq.size (maxParameterTypes initialTarget)).+1 - seq.size stableParams))
+              (fun _ => ltof _  seq.size)
+              (existT _ (undup (parameterTypes s1.1)) s1.2)
+              (existT _ (undup (parameterTypes s2.1)) s2.2).
 
 
   Lemma inhabit_step_rel_wf:
@@ -4059,132 +3008,51 @@ Section InhabitationMachineProperties.
     apply: wf_lexprod.
     - by exact: well_founded_ltof.
     - move => ?.
-      apply: wf_lexprod.
-      + by exact: well_founded_ltof.
-      + move => ?.
-          by exact: well_founded_ltof.
+        by exact: well_founded_ltof.
   Qed.
 
   Lemma inhabit_step_rel_cons:
     forall initialTarget stable1 targets1 stable2 targets2 r,
-      {subset (undup (targetTypes stable1)) <= maxTypes initialTarget} ->
       {subset (undup (parameterTypes stable1)) <= maxParameterTypes initialTarget} ->
       inhabit_step_rel initialTarget (stable1, targets1) (stable2, targets2) ->
       inhabit_step_rel initialTarget ([:: r & stable1], targets1) (stable2, targets2).
   Proof.
-    move => initialTarget stable1 targets1 stable2 targets2 r subset_targets subset_params.
+    move => initialTarget stable1 targets1 stable2 targets2 r subset_params.
     rewrite /inhabit_step_rel.
     set (exleft :=
-           (existT (fun _ : seq IT => {_ : seq IT & TreeGrammar})
-                   (undup (targetTypes (stable1, targets1).1))
-                   (existT (fun _ : seq IT => TreeGrammar)
-                           (undup
-                              [seq r0 <- parameterTypes (stable1, targets1).1
-                              | r0 \notin undup (targetTypes (stable1, targets1).1)])
-                           (stable1, targets1).2))).
+           (existT (fun _ : seq IT => TreeGrammar)
+                   (undup (parameterTypes (stable1, targets1).1))
+                   (stable1, targets1).2)).
     rewrite -/exleft.
-    have: (projT2 (projT2 exleft) = (stable1, targets1).2) by done.
-    have: (projT1 (projT2 exleft) = (undup
-                                       [seq r0 <- parameterTypes (stable1, targets1).1
-                                       | r0 \notin undup (targetTypes (stable1, targets1).1)])) by done.
-    have: (projT1 exleft = (undup (targetTypes (stable1, targets1).1))) by done.
-    move: exleft => exleft p1 p2 p3 prf.
-    move: prf p1 p2 p3.
-    rewrite [maxTypes initialTarget]lock [maxParameterTypes]lock.
+    have: (projT2 exleft = (stable1, targets1).2) by done.
+    have: (projT1 exleft = undup (parameterTypes (stable1, targets1).1)) by done.
+    move: exleft => exleft p1 p2 prf.
+    move: prf p1 p2.
+    rewrite [maxParameterTypes]lock.
     case.
-    + move => ? ? ? ? lt_prf /= p1 _ _.
+    - move => ? ? ? ? lt_prf /= p1 _.
       move: lt_prf.
       rewrite p1.
       move => lt_prf.
       left.
-      case: (lhs r \in targetTypes stable1) => //.
+      case: r => //= _ _ C.
+      case: (C \in parameterTypes stable1) => //.
       rewrite /ltof /=.
       apply /leP.
       apply: leq_ltn_trans; last by move: lt_prf => /leP lt_prf; exact lt_prf.
         by apply: leq_sub2r.
-    + move => x ? ? prf x__eq.
-      case inprf__r: (lhs r \in targetTypes stable1).
-      * have: (undup (targetTypes ([:: r & stable1], targets1).1) = x).
-        { by rewrite /= inprf__r. }
-        move => ->.
-        move: prf.
-        case.
-        ** move => ? ? ? ? lt_prf /= p2 _.
-           move: x__eq lt_prf.
-           rewrite /= p2 => ->.
-           move => lt_prf.
-           right; left.
-           clear inprf__r.
-           case: r => //= _ _ C.
-           case: (C \notin undup (targetTypes stable1)) => //=.
-           case: (C \in [seq r <- parameterTypes stable1 | r \notin undup (targetTypes stable1)]) => //.
-           rewrite /ltof /=.
-           apply /leP.
-           apply: leq_ltn_trans; last by move: lt_prf => /leP lt_prf; exact lt_prf.
-             by apply: leq_sub2r.
-        ** case inprf__r2: (if r is RuleApply _ _ C
-                          then C \in undup
-                                       [seq r0 <- parameterTypes (stable1, targets1).1
-                                       | r0 \notin undup (targetTypes (stable1, targets1).1)]
-                          else true).
-           *** move => y ? ? lt_prf /= y__eq.
-               have: ((undup [seq r0 <- parameterTypes (r :: stable1, targets1).1 | r0 \notin x]) = y).
-               { rewrite /=.
-                 move: x__eq inprf__r2.
-                 clear inprf__r.
-                 rewrite /= => ->.
-                 case: r => //; try by rewrite y__eq.
-                 move => /= _ _ C.
-                 rewrite mem_undup mem_filter => /andP [] prf1 prf2 /=.
-                   by rewrite prf1 /= mem_filter prf1 prf2 y__eq. }
-               move => ->.
-               right; right.
-                 by rewrite -p3.
-           *** move => y ? ? lt_prf /= y__eq.
-               case r__eq: (if r is RuleApply _ _ C then C \in (undup (targetTypes stable1)) else false).
-               **** move => p3.
-                    have: ((undup
-                               [seq r0 <- oapp (cons^~ (parameterTypes stable1))
-                                   (parameterTypes stable1)
-                                   match r with
-                                   | RuleApply _ _ C => Some C
-                                   | _ => None
-                                   end
-                               | r0 \notin x]) = y).
-                    { move: r__eq inprf__r2.
-                      clear inprf__r.
-                      case: r => //.
-                      move: x__eq => /= -> _ _ C -> /=.
-                        by rewrite y__eq. }
-                    move => ->.
-                    right; right.
-                      by rewrite -p3.
-               **** move => p3.
-                    right; left.
-                    rewrite /ltof.
-                    apply /leP.
-                    rewrite y__eq.
-                    rewrite ltn_sub2l //.
-                    { apply: (@leq_ltn_trans (seq.size (undup (parameterTypes stable1)))).
-                      - rewrite uniq_leq_size //; first by rewrite undup_uniq.
-                        move => C.
-                        rewrite mem_undup mem_filter => /andP [] _.
-                          by rewrite mem_undup.
-                      - rewrite ltnS uniq_leq_size //; first by rewrite undup_uniq.
-                          by rewrite -lock. }
-                    { move: r__eq.
-                      clear inprf__r.
-                      move: inprf__r2.
-                      case: r => //= _ _ C.
-                      move: x__eq => /= -> prf1 -> /=.
-                      move: prf1.
-                        by rewrite mem_undup => ->. }
-      * move => p2 p3.
-        left.
-        rewrite /ltof.
-        apply /leP.
-        move: x__eq => //= ->.
-        rewrite inprf__r ltn_sub2l // ltnS uniq_leq_size //; first by rewrite undup_uniq.
+    - move => x y ? lt_prf x__eq y__eq.
+      move: y__eq lt_prf.
+      rewrite [projT2 _]/= => ->.
+      rewrite [parameterTypes [:: r & _]]/=.
+      case r; try by move => * /=; move: x__eq => /= ->; right.
+      move => /= ? ? C.
+      case: (C \in parameterTypes stable1); first by move => * /=; move: x__eq => /= ->; right.
+      left.
+      move: x__eq => /= ->.
+      rewrite /ltof /=.
+      apply /leP.
+      rewrite ltn_sub2l // ltnS uniq_leq_size //; first by rewrite undup_uniq.
           by rewrite -lock.
   Qed.
 
@@ -4281,22 +3149,17 @@ Section InhabitationMachineProperties.
     forall G A,
       ~~(computeFailExisting G A).1 ->
       ~~(computeFailExisting G A).2 ->
-      ~~(A \in targetTypes G) && ~~(A \in parameterTypes G).
+      ~~(A \in parameterTypes G).
   Proof.
     elim => // r G IH A.
     case: r.
     - move => B /=.
       case AB__eq: (A == B) => //.
       case: (checkSubtypes A B) => //.
-      rewrite in_cons AB__eq /=.
         by apply: IH.
     - move => B c /=.
-      case AB__eq: (A == B) => //.
-      rewrite in_cons AB__eq /=.
         by apply: IH.
     - move => B C D /=.
-      case AB__eq: (A == B) => //.
-      rewrite in_cons AB__eq /=.
       case AD__eq: (A == D) => //.
       rewrite in_cons AD__eq /=.
         by apply: IH.
@@ -4305,155 +3168,92 @@ Section InhabitationMachineProperties.
   Lemma inhabitation_step_sizes:
     forall initialTarget s,
       ~~(nilp s.2) ->
-      {subset (undup (targetTypes s.1)) <= maxTypes initialTarget} ->
-      {subset (undup (targetTypes s.1)) <= maxTypes initialTarget} ->
       {subset (undup (parameterTypes s.1)) <= maxParameterTypes initialTarget} ->
       {subset (undup (parameterTypes s.2)) <= maxParameterTypes initialTarget} ->
       inhabit_step_rel initialTarget (inhabitation_step (SplitCtxt Gamma) s.1 s.2) s.
   Proof.
     move => initialTarget [] stable targets /=.
-    elim: targets => // r targets IH _ stable_subset.
+    elim: targets => // r targets IH _.
     case: r.
     - move => A _ _.
       right.
-      right.
       rewrite /= /ltof.
       apply /leP.
-      rewrite ltnS /=.
+      rewrite ltnS.
         by apply: dropTargets_size.
-    - move => A c _ _ _ /=.
+    - move => A c _ _ /=.
       case: (RuleCombinator A c \in stable).
       + right.
-        right.
         apply /leP.
           by rewrite ltnS /= leqnn.
-      + case inprf__A: (A \in (targetTypes stable)).
-        * rewrite /inhabit_step_rel [undup _]/= inprf__A.
-          right.
-          right.
-          rewrite /= /ltof.
-            by apply /leP.
-        * left.
-          rewrite [undup _]/= inprf__A /ltof.
-          apply /leP.
-          rewrite [seq.size [:: A & _]]/= -(addn1 (seq.size (undup (targetTypes stable)))) subnDA -[X in _ < X]subn0.
-          apply: ltn_sub2l => //.
-          have size_leq: (seq.size (undup (targetTypes stable)) <= seq.size (maxTypes initialTarget)).
-          { apply: uniq_leq_size => //.
-              by apply: undup_uniq. }
-          rewrite subn_gt0.
-            by apply: (@leq_trans ((seq.size (maxTypes initialTarget)).+1)).
-    - move => A B C /= targets_subset target_parametersSubset targets_parametersSubset.
-      case: (RuleApply A B C \in stable); first by right; right.
+      + right.
+        rewrite /= /ltof.
+          by apply /leP.
+    - move => A B C /= stable_parametersSubset.
+      case: (RuleApply A B C \in stable); first by right.
       move: (computeFailExisting_notFound stable C).
       case: (computeFailExisting stable C).
       case.
       + case => /= _.
-        * right; right.
+        * right.
           rewrite /=.
           apply /leP.
           rewrite ltnS /=.
             by apply: dropTargets_size.
-        * case inprf__C: (C \in targetTypes stable).
+        * right.
+          apply /leP.
+          rewrite ltnS /=.
+            by apply: dropTargets_size.
+      + case.
+        * move => _ targets_parametersSubset.
+          case inprf__C: (C \in (parameterTypes stable)).
           ** rewrite /inhabit_step_rel /= inprf__C.
              right.
-             right.
-             apply /leP.
-             rewrite ltnS /=.
-               by apply: dropTargets_size.
-          ** left.
-             apply /leP.
-             apply: ltn_sub2l.
-             *** apply: uniq_leq_size; first by apply: undup_uniq.
-                 move => r2 inprf.
-                 apply: targets_subset.
-                 move: inprf.
-                   by rewrite mem_undup.
-             *** by rewrite /= inprf__C.
-      + case.
-        * move => _.
-          case inprf__A: (A \in targetTypes stable).
-          ** rewrite /inhabit_step_rel.
-             rewrite [maxParameterTypes]lock [maxTypes]lock /= inprf__A.
-             right.
-             case: (C \notin undup (targetTypes stable)).
-             *** case inprf__C: (C \in (filter (fun A => A \notin undup (targetTypes stable)) (parameterTypes stable))).
-                 **** rewrite /= inprf__C.
-                        by right.
-                 **** left.
-                      rewrite /= inprf__C.
-                      apply /leP.
-                      rewrite ltn_sub2l //.
-                      apply: uniq_leq_size; first by apply: undup_uniq.
-                      move => D inprf.
-                      rewrite -lock.
-                      apply /target_parametersSubset.
-                      rewrite mem_undup.
-                      move: inprf.
-                        by rewrite mem_undup mem_filter => /andP [] _ ->.
-             *** right.
-                   by apply /leP.
+               by apply /leP.
           ** left.
              apply /leP.
              rewrite ltn_sub2l //.
-             *** by apply: uniq_leq_size; first by apply: undup_uniq.
-             *** by rewrite /= inprf__A.
-        * move => /(fun prf => prf isT isT) /andP [] notInprf_targets__C notInprf_params__C.
+             *** apply: uniq_leq_size; first by apply: undup_uniq.
+                 move => D inprf.
+                 apply /stable_parametersSubset.
+                 rewrite mem_undup.
+                 move: inprf.
+                   by rewrite mem_undup.
+             *** by rewrite /= inprf__C.
+        * move => /(fun prf => prf isT isT) notInprf_params__C targets_parametersSubset.
           case: (isOmega C).
           ** left.
              apply /leP.
              rewrite ltn_sub2l //.
              { by apply: uniq_leq_size; first by apply: undup_uniq. }
-             { rewrite (@leq_trans (seq.size (undup [:: C & targetTypes stable]))) //.
-               - by rewrite /= (negbTE notInprf_targets__C).  
+             { rewrite (@leq_trans (seq.size (undup [:: C & parameterTypes stable]))) //.
+               - by rewrite /= (negbTE notInprf_params__C).  
                - apply: uniq_leq_size; first by apply: undup_uniq.
                  move => D.
-                 rewrite mem_undup mem_undup /targetTypes /= map_cat.
-                 repeat rewrite -/(targetTypes _).
-                 rewrite in_cons.
-                 case /orP.
-                 + move => /eqP ->.
-                   rewrite in_cons.
-                   apply /orP; right.
-                     by rewrite mem_head.
-                 + rewrite in_cons in_cons mem_cat => ->.
-                     by repeat rewrite orbT. }
+                 rewrite mem_undup /= [C \in _]in_cons eq_refl /= /parameterTypes /= pmap_cat.
+                 repeat rewrite -/(parameterTypes _).
+                 have: (parameterTypes [seq RuleCombinator C c | c <- enum Combinator] = [::]) by elim: (enum Combinator) => //.
+                 move => ->.
+                 rewrite cat0s.
+                   by rewrite (negbTE notInprf_params__C) in_cons in_cons mem_undup. }
           ** case: (inhabit_cover (SplitCtxt Gamma) targets C) => [].
              case.
+             *** move => _.
+                 right.
+                 apply /leP.
+                 rewrite ltnS.
+                   by apply: dropTargets_size.
              *** move => nextTargets.
                  left.
                  apply /leP.
                  apply: ltn_sub2l.
                  **** apply: uniq_leq_size; first by apply: undup_uniq.
                       move => r2 inprf.
-                      apply: targets_subset.
+                      apply: stable_parametersSubset.
                       move: inprf.
                         by rewrite mem_undup.
                  **** rewrite /=.
-                        by move: notInprf_targets__C => /negbTE ->.
-             *** move => nextTargets.
-                 case inprf__A: (A \in (targetTypes stable)).
-                 **** rewrite /inhabit_step_rel [_.1]/= [_.1]/= [undup (targetTypes [:: RuleApply A B C & _])]/= inprf__A.
-                      right.
-                      left.
-                      apply /leP.
-                      apply: ltn_sub2l.
-                      { apply: uniq_leq_size; first by apply: undup_uniq.
-                        move => r2 inprf.
-                        apply: target_parametersSubset.
-                        move: inprf.
-                        rewrite mem_undup mem_filter => /andP [] _.
-                          by rewrite mem_undup. }
-                      { rewrite [targetTypes _]lock /= -lock mem_undup notInprf_targets__C.
-                          by rewrite [targetTypes _]lock /= -lock mem_filter mem_undup notInprf_targets__C (negbTE notInprf_params__C) andbF. }
-                 **** left.
-                      rewrite /ltof [_.1]/= [_.1]/=.
-                      apply /leP.
-                      apply: ltn_sub2l.
-                      { rewrite ltnS.
-                        apply: uniq_leq_size => //.
-                          by apply: undup_uniq. }
-                      { by rewrite /= inprf__A. }
+                        by move: notInprf_params__C => /negbTE ->.
   Qed.
  
   Definition FailSound G :=
@@ -4516,13 +3316,12 @@ Section InhabitationMachineProperties.
                by apply: mem_head.
           ** apply: IH => //.
                by move: fsprf => /(cat_FailSound [:: _]) [].
-    - move => B c /=.
-      case (A == B) => //.
+    - move => B c /= .
       move => /(cat_FailSound [::_]) [] fsprf1 fsprf2 failedprf.
       move: (IH A fsprf2 failedprf) => /(cat_FailSound [:: _]) [] fsprf3 _.
         by apply (FailSound_cat [:: _]).
     - move => B C D /=.
-      case ((A == B) || (A == D)) => //.
+      case (A == D) => //.
       move => /(cat_FailSound [::_]) [] fsprf1 fsprf2 failedprf.
       move: (IH A fsprf2 failedprf) => /(cat_FailSound [:: _]) [] fsprf3 _.
         by apply (FailSound_cat [:: _]).
@@ -4703,10 +3502,7 @@ Section InhabitationMachineProperties.
       case: (isOmega C) => //.
       move: (inhabit_cover_noTargetFailures targets C noFail).
       case: (inhabit_cover (SplitCtxt Gamma) targets C) => [] failed nextTargets.
-      case: failed => //.
-      move => /noTargetFailures_suffix prf.
-      apply: prf.
-        by apply: dropTargets_suffix.
+        by case: failed => //.
   Qed.
 
   
@@ -5010,19 +3806,19 @@ Section InhabitationMachineProperties.
     - move => A B C /=.
         by rewrite [X in [:: _ & X] = _]IH.
   Qed.    
-          
-  Definition FCL_complete stable targets :=
-    forall A, (A \in targetTypes stable)
+
+  Definition FCL_complete initialType stable targets :=
+    forall A, (A == initialType)
          || (A \in parameterTypes stable)
-         || (A \in targetTypes (takeTargets targets ++ pmap (ohead \o rev) (group (dropTargets targets)))) ->
+         || (A \in targetTypes (pmap (ohead \o rev) (group targets))) ->
          forall M, [FCL Gamma |- M : A] -> future_word stable targets A M.
 
   Lemma FCL_complete_emptyTargets:
-    forall stable, FCL_complete stable [::] ->
-              forall A, (A \in targetTypes stable) ->
+    forall initialType stable, FCL_complete initialType stable [::] ->
+              forall A, (A == initialType) || (A \in parameterTypes stable) ->
                    forall M, [FCL Gamma |- M : A] -> word stable A M.
   Proof.
-    move => stable prf_complete A inprf__A M prf.
+    move => initalType stable prf_complete A inprf__A M prf.
     apply: future_word_word.
     apply: prf_complete => //.
       by rewrite inprf__A.
@@ -5084,14 +3880,15 @@ Section InhabitationMachineProperties.
   Qed.
 
   Lemma computeFailExisting_failed_complete:
-    forall stable targets A B C,
+    forall initialType stable targets A B C,
       FailSound stable ->
       (computeFailExisting stable C).1 ->
-      FCL_complete stable [:: RuleApply A B C & targets] ->
-      FCL_complete (if ~~(computeFailExisting stable C).2 then [:: RuleFail C & stable] else stable)
+      FCL_complete initialType stable [:: RuleApply A B C & targets] ->
+      FCL_complete initialType
+                   (if ~~(computeFailExisting stable C).2 then [:: RuleFail C & stable] else stable)
                    (dropTargets targets).
   Proof.
-    move => stable targets A B C fsprf /(computeFailExisting_FailSound stable C fsprf) fsprf2 prf_complete D inprf__D M prf.
+    move => initialType stable targets A B C fsprf /(computeFailExisting_FailSound stable C fsprf) fsprf2 prf_complete D inprf__D M prf.
     suff: (future_word stable (dropTargets targets) D M).
     { case: (~~(computeFailExisting stable C).2) => // prf_complete2.
       apply: future_word_weaken; last by exact prf_complete2.
@@ -5103,22 +3900,19 @@ Section InhabitationMachineProperties.
     - move: inprf__D.
       case: (~~(computeFailExisting stable C).2).
       + case /orP.
-        * rewrite /= in_cons -orbA.
+        * rewrite /=.
           case /orP.
-          ** move => /eqP DC__eq.
-             move: prf.
-             rewrite DC__eq.
-             move => /fsprf2.
-             rewrite mem_head.
-               by move => /(fun prf => prf isT).
           ** move => inprf.
              apply: prf_complete => //.
                by rewrite inprf.
+          ** move => inprf.
+             apply: prf_complete => //.
+               by rewrite inprf orbT.
         * move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP targets__eq.
           move => inprf__D.
           apply: prf_complete => //.
           move: inprf__D.
-          rewrite takeDropTargets_empty cat0s dropTargetsI /targetTypes map_cat mem_cat => ->.
+          rewrite (group_split _ _ _ targets__eq) (pmap_cat _ [::_]) /targetTypes map_cat mem_cat => ->.
             by repeat rewrite orbT.
       + case /orP.
         * move => inprf__D.
@@ -5128,18 +3922,18 @@ Section InhabitationMachineProperties.
           move => inprf__D.
           apply: prf_complete => //.
           move: inprf__D.
-          rewrite takeDropTargets_empty cat0s dropTargetsI /targetTypes map_cat mem_cat => ->.
+          rewrite (group_split _ _ _ targets__eq) (pmap_cat _ [::_]) /targetTypes map_cat mem_cat => ->.
             by repeat rewrite orbT.
   Qed.
 
   Lemma rule_absorbl_apply:
-    forall stable targets A B C,
-      FCL_complete stable [:: RuleApply A B C & targets] ->
+    forall initialType stable targets A B C,
+      FCL_complete initialType stable [:: RuleApply A B C & targets] ->
       (RuleApply A B C \in stable) ->
       forall D M, future_word stable [:: RuleApply A B C & targets] D M ->
              future_word stable targets D M.
   Proof.
-    move => stable targets A B C prf_complete inprf D M.
+    move => initialType stable targets A B C prf_complete inprf D M.
     move: D.
     elim: M.
     - move => c D.
@@ -5228,36 +4022,22 @@ Section InhabitationMachineProperties.
 
   Lemma computeFailExisting_existing:
     forall G A,
+      ~~(computeFailExisting G A).1 ->
       (computeFailExisting G A).2 ->
-      (A \in targetTypes G) || (A \in parameterTypes G).
+      (A \in parameterTypes G).
   Proof.
     elim => // r G IH A.
     case: r.
     - move => B /=.
-      case AB__eq: (A == B); first by rewrite (eqP AB__eq) mem_head.
-      case: (checkSubtypes A B).
-      + move => inprf.
-        apply /orP; left.
-        apply /orP; right.
-        apply /mapP.
-          by (exists (RuleFail A)).
-      + move => /IH.
-        rewrite in_cons -orbA => ->.
-          by rewrite orbT.
+      case AB__eq: (A == B) => //.
+      case: (checkSubtypes A B) => //.
+        by apply: IH.
     - move => B c /=.
-      case AB__eq: (A == B); first by rewrite (eqP AB__eq) mem_head.
-      move => /IH.
-      rewrite in_cons -orbA => ->.
-        by rewrite orbT.
-    - move => B C D/=.
-      case AB__eq: (A == B); first by rewrite (eqP AB__eq) mem_head.
-      case AD__eq: (A == D); first by rewrite (eqP AD__eq) mem_head orbT orbT.
-      move => /IH.
-      case /orP.
-      + rewrite in_cons -orbA => ->.
-          by rewrite orbT.
-      + rewrite in_cons in_cons -orbA => ->.
-          by repeat rewrite orbT.
+        by apply: IH.
+    - move => B C D /=.
+      case AD__eq: (A == D); first by rewrite (eqP AD__eq) mem_head.
+      move => noFail existing.
+        by rewrite in_cons IH // orbT.
   Qed.
 
   Lemma OmegaRules_future_word:
@@ -5369,12 +4149,12 @@ Section InhabitationMachineProperties.
   Qed.
 
   Lemma FCL_Omega_complete:
-    forall stable targets A B C,
+    forall initialType stable targets A B C,
       isOmega C ->
-      FCL_complete stable [:: RuleApply A B C & targets] ->
-      FCL_complete [:: RuleApply A B C & OmegaRules C ++ stable] targets.
+      FCL_complete initialType stable [:: RuleApply A B C & targets] ->
+      FCL_complete initialType [:: RuleApply A B C & OmegaRules C ++ stable] targets.
   Proof.
-    move => stable targets A B C isOmega__C prf_complete D inprf__D M prf.
+    move => initialType stable targets A B C isOmega__C prf_complete D inprf__D M prf.
     apply: rule_MP.
     { move => N prf__N.
       apply: future_word_weaken; last by apply: (OmegaRules_future_word stable).
@@ -5389,14 +4169,7 @@ Section InhabitationMachineProperties.
       move: inprf__D.
       rewrite [OmegaRules C]lock.
       case /orP; first case /orP.
-      + rewrite /= in_cons.
-        case /orP.
-        * move => /eqP ->.
-            by rewrite mem_head orbT.
-        * rewrite /targetTypes map_cat mem_cat.
-          repeat rewrite -/(targetTypes _).
-          case /orP; last by move => ->.
-            by rewrite -lock (OmegaRules_targets) mem_seq1 DC__eq.
+      + by move => ->.
       + rewrite /= in_cons.
         case /orP.
         * by rewrite DC__eq.
@@ -5404,56 +4177,38 @@ Section InhabitationMachineProperties.
           repeat rewrite -/(parameterTypes _).
           case /orP; last by move => ->; rewrite orbT.
             by rewrite -lock (OmegaRules_params) mem_seq1 DC__eq.
-      + rewrite /= in_cons.
-        move => ->.
-          by repeat rewrite orbT.
-
-      (*
-    suff: (FCL_complete [:: RuleApply A B C & OmegaRules C ++ stable] [:: RuleApply A B C & targets]).
-    { move => res.
-      apply: rule_absorbl_apply; first by exact res.
-      { by apply mem_head. }
-      apply: res => //.
-      move: inprf__D.
-      case /orP; first by move => ->.
-      move => inprf__D.
-        by rewrite (in_pmap_suffix _ [:: RuleApply A B C] _ inprf__D) orbT. }
-    clear M prf D inprf__D.
-    move => D inprf__D M prf.*)
-    
-
-    (*
-
-    apply: (future_word_weaken (OmegaRules C ++ stable)).
-    { by move => E; rewrite [OmegaRules C]lock in_cons => ->; rewrite orbT. }
-    case DC__eq: (D == C).
-    - rewrite (eqP DC__eq).
-        by apply: OmegaRules_future_word.
-    - apply: (future_word_weaken stable).
-      { by move => E; rewrite mem_cat => ->; by rewrite orbT. }
-      apply: prf_complete => //.
-      move: inprf__D.
-      rewrite [OmegaRules C]lock.
-      case /orP; first case /orP.
-      + rewrite /= in_cons.
-        case /orP.
-        * move => /eqP ->.
-          rewrite mem_head.
+      + move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP targets__eq.
+        rewrite (group_split _ _ _ targets__eq) (pmap_cat _ [::_]) /targetTypes map_cat mem_cat /= rev_cons.
+        rewrite [X in group X]targets__eq.
+        move: targets__eq.
+        case: prefix.
+        * move => /= _ ->.
             by repeat rewrite orbT.
-        * rewrite /targetTypes map_cat mem_cat.
-          repeat rewrite -/(targetTypes _).
-          case /orP; last by move => ->.
-            by rewrite -lock (OmegaRules_targets) mem_seq1 DC__eq.
-      + rewrite /= in_cons.
-        case /orP.
-        * by rewrite DC__eq.
-        * rewrite /parameterTypes pmap_cat mem_cat.
-          repeat rewrite -/(parameterTypes _).
-          case /orP; last by move => ->; rewrite orbT.
-            by rewrite -lock (OmegaRules_params) mem_seq1 DC__eq.
-      + move => ->.
-          by repeat rewrite orbT.
-  Qed.*)
+        * move => r prefix /=.
+          rewrite -cat_cons [group (_ ++ _)]/group foldl_cat /= updateGroups0.
+          rewrite -cat_cons.
+          move => /(dropTargets_notCombinator).
+          move: (dropTargets_combinatorOrEmpty targets).
+          case: (dropTargets targets).
+          ** move => /= _ /andP [] _ /group_notComb => ->.
+             rewrite [rev [:: _]]/rev /catrev /= rev_cons /=.
+             case: (rev prefix).
+             *** rewrite /= => ->.
+                   by repeat rewrite orbT.
+             *** move => r2 rprefix /= => ->.
+                   by repeat rewrite orbT.
+          ** case => //.
+             move => ? ? ? _ /andP []  _ /(group_notComb) => ->.
+             rewrite group_comb rev_cat pmap_cat map_cat mem_cat.
+             case /orP.
+             *** rewrite /= rev_cons /=.
+                 case: (rev prefix).
+                 **** move => /= ->.
+                        by repeat rewrite orbT.
+                 **** move => ? ? /= ->.
+                        by repeat rewrite orbT.
+             *** move => ->.
+                   by repeat rewrite orbT.
   Qed.
 
   Lemma accumulateCovers_cat:
@@ -5513,22 +4268,6 @@ Section InhabitationMachineProperties.
     move => C prf.
       by rewrite -foldl_accumulateCovers_failed_targets_eq //.
   Qed.
-
-  (*Lemma accumulateCovers_empty_fail:
-    forall C,
-      flatten [seq (accumulateCovers (SplitCtxt Gamma) C (primeFactors C) ([::], true) c).1 | c <- rev (enum Combinator)] = [::] ->
-      forall M, [FCL Gamma |- M : C] -> False.
-  Proof.
-    move => C disprf M.
-    rewrite -(unapply_revapply M).
-    move => /FCL__invApp [] srcs [] size__eq prfs.
-    move: (prfs (seq.size (unapply M).2)).
-    rewrite nth_default // nth_default; last by rewrite -size__eq.
-    have: (accumulateCovers (SplitCtxt Gamma) C (primeFactors C) ([::], true) (unapply M).1 = ([::], true)).
-    { move: disprf.
-      
-
-    move: disprf.*)
 
   Lemma future_word_weaken_targets1:
     forall stable targets1 targets2 A M,
@@ -5759,10 +4498,30 @@ Section InhabitationMachineProperties.
             by rewrite src_size take0.
   Qed.
 
+  Lemma commitMultiArrows_combinatorOrEmpty:
+    forall (C: @IT Constructor) (c: Combinator) (ms: seq (@MultiArrow Constructor)) nextTargets,
+      nextTargets = rev (flatten (map (fun m => rev (commitMultiArrow [::] c m.1 C)) ms)) ->
+      if nextTargets is [:: RuleCombinator _ _ & _]
+       then true
+       else if nextTargets is [::]
+            then true
+            else false.
+  Proof.
+    move => C c.
+    elim /last_ind.
+    - move => nextTargets -> //.
+    - move => ms m IH nextTargets -> /=.
+      rewrite map_rcons rev_flatten map_rcons rev_rcons revK.
+      move: (commitMultiArrow_nth c m.1 C 0).
+      case: (commitMultiArrow [::] c m.1 C).
+      * by rewrite eq_refl /=.
+      * move => hd ?.
+          by rewrite eq_refl /= => ->.
+  Qed.
 
   Lemma nextTargets_combinatorOrEmpty:
-    forall C nextTargets,
-      nextTargets = flatten (map (fun c => (accumulateCovers (SplitCtxt Gamma) C (primeFactors C) ([::], true) c).1) (rev (enum Combinator))) ->
+    forall C combinators nextTargets,
+      nextTargets = flatten (map (fun c => (accumulateCovers (SplitCtxt Gamma) C (primeFactors C) ([::], true) c).1) combinators) ->
       if nextTargets is [:: RuleCombinator _ _ & _]
        then true
        else if nextTargets is [::]
@@ -5770,7 +4529,7 @@ Section InhabitationMachineProperties.
             else false.
   Proof.
     move => C.
-    elim: (rev (enum Combinator)).
+    elim.
     - move => nextTargets -> //.
     - move => c combinators IH nextTargets -> /=.
       case: (coverMachine ([::], map (fun ms =>
@@ -5787,7 +4546,9 @@ Section InhabitationMachineProperties.
             by rewrite eq_refl /= => ->.
   Qed.
 
-  Lemma covers_not_omega:
+
+
+  (*Lemma covers_not_omega:
     forall C A,
       ~~(isOmega C) ->
       (A \in targetTypes (flatten
@@ -5820,6 +4581,90 @@ Section InhabitationMachineProperties.
         by rewrite omega_mkArrow_tgt.
     - move => /= ? _ <- /=.
         by rewrite omega_mkArrow_tgt.
+  Qed.*)
+
+  Lemma group_commitMultiArrow:
+    forall c srcs tgt,
+      group (commitMultiArrow [::] c srcs tgt) = [:: commitMultiArrow [::] c srcs tgt].
+  Proof.
+    move => c srcs tgt.
+    rewrite /group.
+    suff: ((foldl updateGroups [::] (commitMultiArrow [::] c srcs tgt)) = [:: commitMultiArrow [::] c srcs tgt]) by move => ->.
+    move: tgt.
+    elim: srcs => // src srcs IH tgt.
+      by rewrite /= commitMultiArrow_cons /= foldl_cat /= IH cats1.
+  Qed.
+
+  Lemma future_word_weaken_inhabapply:
+    forall targets A B C,
+      (exists N, [FCL Gamma |- N : C]) ->
+      forall D M,
+        future_word [::] (targets) D M ->
+        future_word [::] (targets ++ [:: RuleApply A B C]) D M.
+  Proof.
+    move => targets A B C prf D M.
+    move: D.
+    elim: M.
+    - move => c D.
+      case => // [] [] g [] inprf__g [] inprf__r prfs.
+      right.
+      move: inprf__g.
+      rewrite /group foldl_cat.
+      case: (foldl updateGroups [::] targets) => // g1 gs inprf__g.
+      rewrite (group_notComb) //.
+      move: inprf__g.
+      rewrite mem_rev in_cons.
+      case /orP.
+      + move => g__eq.
+        exists (g1 ++ [:: RuleApply A B C]); split; last split.
+        * by rewrite mem_rev mem_head.
+        * by rewrite -(eqP g__eq) mem_cat inprf__r.
+        * move => E.
+          rewrite /parameterTypes pmap_cat mem_cat.
+          case /orP.
+          ** rewrite -(eqP g__eq).
+               by apply: prfs.
+          ** by rewrite mem_seq1 => /eqP ->.
+      + move => inprf__g.
+        exists g; split => //.
+          by rewrite mem_rev in_cons inprf__g orbT.
+    - move => M IH__M N IH__N D /= [] E [] F.
+      case; first by case.
+      move => [] g [] inprf__g [] inprf__r [] /IH__M prf__M [] prfs prf__N.
+      exists E, F.
+      right.
+      move: inprf__g.
+      rewrite /group foldl_cat.
+      case: (foldl updateGroups [::] targets) => // g1 gs inprf__g.
+      rewrite (group_notComb) //.
+      move: inprf__g.
+      rewrite mem_rev in_cons.
+      case /orP.
+      + move => g__eq.
+        exists (g1 ++ [:: RuleApply A B C]); split; last split; last split => //; last split => //.
+        * by rewrite mem_rev mem_head.
+        * by rewrite -(eqP g__eq) mem_cat inprf__r.
+        * move => G.
+          rewrite /parameterTypes pmap_cat mem_cat.
+          case /orP.
+          ** rewrite -(eqP g__eq).
+               by apply: prfs.
+          ** by rewrite mem_seq1 => /eqP ->.
+      + move => inprf__g.
+        exists g; split => //.
+          by rewrite mem_rev in_cons inprf__g orbT.
+  Qed.
+
+
+  Lemma commitMultiArrow_parameters:
+    forall c srcs tgt, parameterTypes (commitMultiArrow [::] c srcs tgt) = rev srcs.
+  Proof.
+    move => c.
+    elim => // src srcs IH tgt.
+    rewrite /= commitMultiArrow_cons.
+    rewrite /parameterTypes pmap_cat.
+    repeat rewrite -/(parameterTypes _).
+      by rewrite IH /= rev_cons cats1.
   Qed.
 
   Lemma future_word_covers:
@@ -5830,39 +4675,136 @@ Section InhabitationMachineProperties.
                             (map (fun c => (accumulateCovers (SplitCtxt Gamma) C (primeFactors C) ([::], true) c).1)
                                  (rev (enum Combinator))))) C M.
   Proof.
-    
-
-    (*move => C A M notOmega__C prf inprf__A.
-    have: (exists srcs n,
-              lhs (nth (RuleApply C ((mkArrow (take (seq.size srcs - n.-1) srcs, C)))
-                                  (nth C srcs (seq.size srcs - n)))
-                       (commitMultiArrow [::] (unapply M).1 srcs C) n) = A).
-    { move: prf.
-      move: (unapply_revapply M) => <- /FCL__invApp [] srcs [] srcs_size__eq /(fun prf => prf (seq.size srcs)).
-      rewrite nth_default; last by rewrite srcs_size__eq.
-      rewrite nth_default //.
-      move => /minimalType_minimal le_prf.
-      move: (le_prf) => /coverMachine_splitTy_complete.
-      case: (coverMachine ([::], map (fun ms =>
-                                        Cover (map (fun m => (m, filter (checkSubtypes m.2) (primeFactors A))) ms) (primeFactors A))
-                                     (SplitCtxt Gamma (unapply M).1))) => s.
-      rewrite /minimalType /SplitCtxt ffunE => steps_prf.
-      move => /(fun prf => prf s (covers_not_omega C A notOmega__C inprf__A) steps_prf).
-      move => /completenessPreserving hasprf.
-      move: (coverMachine_splitTy_tgt_sound _ _ _ s steps_prf) => /hasprf /hasP [] m inprf__m /andP [] m_srcs_size__eq /andP [] srcs_ge tgt_le.
-      admit. }
-    move: prf inprf__A.
+    move => C M notOmega__C prf.
+    suff: (future_word [::]
+                       ((accumulateCovers (SplitCtxt Gamma) C (primeFactors C) ([::], true) (unapply M).1).1)
+                       C M).
+    { have: ((unapply M).1 \in (rev (enum Combinator))) by rewrite mem_rev; apply mem_enum.
+      elim: (rev (enum Combinator)) => // c combinators IH.
+      rewrite in_cons.
+      case /orP.
+      - move => /eqP ->.
+        rewrite [accumulateCovers]lock /=.
+        apply: future_word_weaken_targets1.
+        rewrite -lock.
+          by apply: nextTargets_combinatorOrEmpty.
+      - move => inprf fwprf.
+        rewrite [accumulateCovers]lock /= -lock.
+        apply: future_word_weaken_targets2.
+        + by apply: nextTargets_combinatorOrEmpty.
+        + by apply: IH. }
+    rewrite /=.
+    move: prf.
+    move: (unapply_revapply M) => <- /FCL__invApp [] srcs [] srcs_size__eq prfs.
+    move: (prfs) => /(fun prf => prf (seq.size srcs)).
+    rewrite nth_default; last by rewrite srcs_size__eq.
+    rewrite nth_default //.
+    move => /minimalType_minimal le_prf.
+    move: (le_prf) => /coverMachine_splitTy_complete.
+    rewrite (unapply_revapply).
+    case: (coverMachine ([::], map (fun ms =>
+                                      Cover (map (fun m => (m, filter (checkSubtypes m.2) (primeFactors C))) ms) (primeFactors C))
+                                   (SplitCtxt Gamma (unapply M).1))) => s.
+    rewrite /minimalType /SplitCtxt ffunE => steps_prf.
+    move => /(fun prf => prf s notOmega__C steps_prf).
+    move => /completenessPreserving hasprf.
+    move: (coverMachine_splitTy_tgt_sound _ _ _ s steps_prf) => /hasprf /hasP [] m inprf__m /andP [] m_srcs_size__eq /andP [] srcs_ge tgt_le.
+    rewrite commitUpdates_flatten.
+    suff: future_word [::] (commitMultiArrow [::] (unapply M).1 m.1 C) C M.
+    { move: inprf__m.
+      elim: (reduceMultiArrows s) => // m0 ms IH.
+      rewrite in_cons.
+      case /orP.
+      - move => /eqP <- /=.
+        rewrite rev_cat revK cats0.
+        apply: future_word_weaken_targets2.
+        move: (commitMultiArrow_nth (unapply M).1 m.1 C 0) => /=.
+        rewrite subn0.
+          by case: (commitMultiArrow [::] (unapply M).1 m.1 C) => // ? ? ->.
+      - rewrite cats0 /= rev_cat revK.
+        move => inprf /(IH inprf).
+        rewrite cats0 /=.
+        apply: future_word_weaken_targets1.
+        move: (commitMultiArrow_nth (unapply M).1 m0.1 C 0) => /=.
+        rewrite subn0.
+          by case: (commitMultiArrow [::] (unapply M).1 m0.1 C) => // ? ? ->. }
+    have: (forall n : nat, [ FCL Gamma |- nth (Var (unapply M).1) (unapply M).2 n : nth (minimalType Gamma (Var (unapply M).1)) srcs n]).
+    { move => n.
+      case n_lt: (n < (seq.size srcs)).
+      - move: (prfs n).
+        rewrite (set_nth_default (minimalType Gamma (Var (unapply M).1))) => //.
+      - rewrite nth_default.
+        + rewrite nth_default.
+          * by apply: minimalType_sound.
+          * by rewrite leqNgt n_lt.
+        + by rewrite srcs_size__eq leqNgt n_lt. }
+    clear s steps_prf hasprf inprf__m prfs.
+    move: m_srcs_size__eq srcs_ge.
+    clear tgt_le le_prf.
+    case: m.
+    move => m_srcs /= _.
+    move: C notOmega__C srcs srcs_size__eq m_srcs.
     elim: M.
-    - move => c prf inprf__A.
+    - move => c C notOmega__C srcs.
+      rewrite /=.
+      case: srcs => //.
+      move => _.
+      case => [] // _ _ _/=.
       right.
-      exists ((accumulateCovers (SplitCtxt Gamma) C (primeFactors C) ([::], true) c).1).
-      split.
-      + admit.
-      + admit.
-    - move => M IH__M N IH__N prf inprf.
-  Abort.*)
-  Admitted.
-
+      exists [:: RuleCombinator C c]; split; last split => //; by apply: mem_head.
+    - move => M IH__M N IH__N C notOmega__C srcs.
+      case: srcs; first by rewrite /=; case: (unapply M) => //.
+      move => src srcs srcs_size__eq m_srcs.
+      case: m_srcs => // m_src1 m_srcs m_srcs_size__eq srcs_ge prfs.
+      exists (m_src1 -> C), m_src1.
+      right.
+      rewrite group_commitMultiArrow.
+      exists (commitMultiArrow [::] (let (c, Ns) := unapply M in (c, N :: Ns)).1 ([:: m_src1 & m_srcs], C).1 C).
+      split; first by apply: mem_head.
+      split; last split; last split.
+      + by rewrite /= commitMultiArrow_cons mem_cat mem_head orbT.
+      + have: ((unapply (M @ N)).1 = (unapply M).1).
+        { rewrite /=; by case: (unapply M). }
+        move => -> /=.
+        rewrite commitMultiArrow_cons.
+        apply: future_word_weaken_inhabapply.
+        * exists N.
+          apply: (FCL__Sub src).
+          ** move: (prfs 0).
+             rewrite /=.
+               by case: (unapply M) => ? ? /=.
+          ** by move: srcs_ge => /andP [] /subtypeMachineP.
+        * apply: (IH__M _ _ srcs) => //.
+          ** move: srcs_size__eq => /=.
+               by case: (unapply M) => ? ? /= [] ->.
+          ** by move: srcs_ge => /andP [].
+          ** move => n.
+             move: (prfs n.+1) => /=.
+               by case: (unapply M) => ? ? /=.
+      + rewrite commitMultiArrow_parameters.
+        move => B.
+        rewrite mem_rev /= => /(nthP (Gamma (unapply (M @ N)).1)) [] n n_lt  <-.
+        exists (nth (Var (unapply (M @ N)).1) (unapply (M @ N)).2 n).
+        apply: FCL__Sub; first by apply: (prfs n).
+        have: ((nth (Gamma (unapply (M @ N)).1) (src :: srcs) n) =
+               (nth (Gamma (unapply (M @ N)).1) (src :: srcs) n, nth (Gamma (unapply (M @ N)).1) (m_src1 :: m_srcs) n).1) by done.
+        move => ->.
+        have: ((nth (Gamma (unapply (M @ N)).1) (m_src1 :: m_srcs) n) =
+               (nth (Gamma (unapply (M @ N)).1) (src :: srcs) n, nth (Gamma (unapply (M @ N)).1) (m_src1 :: m_srcs) n).2) by done.
+        move => ->.
+        rewrite -nth_zip; last by rewrite (eqP m_srcs_size__eq).
+        apply /subtypeMachineP.
+        move: srcs_ge => /all_nthP srcs_ge.
+        apply: srcs_ge.
+          by rewrite size_zip -(eqP m_srcs_size__eq) minnn.
+      + move: (prfs 0).
+        rewrite /=.
+        case: (unapply M) => ? ? /=.
+        move => /FCL__Sub res.
+        apply: res.
+        apply /subtypeMachineP.
+          by move: srcs_ge => /andP [].
+  Qed.
 
 
   Lemma rule_absorbl_apply_covers:
@@ -6010,20 +4952,20 @@ Section InhabitationMachineProperties.
   Qed.
 
   Lemma inhabit_cover_complete:
-    forall stable targets A B C,
-      FCL_complete stable [:: RuleApply A B C & targets] ->
+    forall initialType stable targets A B C,
+      FCL_complete initialType stable [:: RuleApply A B C & targets] ->
       ~~(isOmega C) ->
-      FCL_complete
+      FCL_complete initialType
         (match inhabit_cover (SplitCtxt Gamma) targets C with
-         | (true, nextTargets) => (RuleFail C :: stable, dropTargets nextTargets)
+         | (true, nextTargets) => (RuleFail C :: stable, dropTargets targets)
          | (false, nextTargets) => (RuleApply A B C :: stable, nextTargets)
          end.1)
         (match inhabit_cover (SplitCtxt Gamma) targets C with
-         | (true, nextTargets) => (RuleFail C :: stable, dropTargets nextTargets)
+         | (true, nextTargets) => (RuleFail C :: stable, dropTargets targets)
          | (false, nextTargets) => (RuleApply A B C :: stable, nextTargets)
          end.2).
   Proof.
-    move => stable targets A B C prf_complete notOmega__C.
+    move => inititalType stable targets A B C prf_complete notOmega__C.
     rewrite /inhabit_cover.
     move: (inhabit_cover_empty C).
     move: (inhabit_cover_flatten C).
@@ -6035,19 +4977,11 @@ Section InhabitationMachineProperties.
       admit.
     - move => next_combOrEmpty nextTargets__eq _ /= D.
       case /orP; first case /orP.
-      + rewrite /= in_cons.
-        case /orP.
-        * move => /eqP -> M prf.
-          have: (future_word stable [:: RuleApply A B C & targets] A M).
-          { apply: prf_complete => //.
-              by rewrite in_cons /= eq_refl orbT. }
-          move: nextTargets__eq => /= ->.
-            by apply: rule_absorbl_apply_covers.
-        * move => inprf__D M /prf_complete.
-          rewrite inprf__D /=.
-          move => /(fun prf => prf isT).
-          move: nextTargets__eq => /= ->.
-            by apply: rule_absorbl_apply_covers.
+      + move => inprf__D M /prf_complete.
+        rewrite inprf__D /=.
+        move => /(fun prf => prf isT).
+        move: nextTargets__eq => /= ->.
+          by apply: rule_absorbl_apply_covers.
       + rewrite /= in_cons.
         case /orP.
         * move => /eqP -> M prf.
@@ -6060,27 +4994,55 @@ Section InhabitationMachineProperties.
           move => /(fun prf => prf isT).
           move: nextTargets__eq => /= ->.
             by apply: rule_absorbl_apply_covers.
-      + rewrite /targetTypes map_cat mem_cat -/(targetTypes _) -/(targetTypes _).
-        case /orP.
-        * move => inprf__D M /prf_complete.
-          move: inprf__D.
-          rewrite (takeTargets_prefix _ _ (next_combOrEmpty nextTargets__eq)) /= in_cons /targetTypes map_cat mem_cat => ->.
-          repeat rewrite orbT.
-          move => /(fun prf => prf isT).
-          move: nextTargets__eq => /= ->.
-            by apply: rule_absorbl_apply_covers.
-        * admit.
+      + admit.
   Admitted.
 
+  Lemma prefix_target_groups:
+    forall r targets B,
+      (B \in targetTypes (pmap (ohead \o rev) (group targets))) ->
+      (B \in targetTypes (pmap (ohead \o rev) (group [:: r & targets]))).
+  Proof.
+    move => r targets B.
+    move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP targets__eq.
+    rewrite (group_split _ _ _ targets__eq).
+    rewrite (pmap_cat _ [:: _]) /targetTypes map_cat mem_cat.
+    rewrite [X in (group X)]targets__eq.
+    move: (dropTargets_notCombinator _ _ targets__eq).
+    move: (dropTargets_combinatorOrEmpty targets).
+    move: targets__eq.
+    case: prefix; first by move => _ _ _ ->; rewrite orbT.
+    move => r2 prefix targets__eq drop_combinator /andP [] _ notCombinators.
+    rewrite /group foldl_cat.
+    move: drop_combinator.
+    case: (dropTargets targets).
+    - move => _.
+      rewrite /= updateGroups0 (group_notComb _ _ _ notCombinators).
+      rewrite [rev [:: _]]/rev /catrev /= rev_cons rev_cons rev_cons.
+      case: (rev prefix).
+      + by rewrite /= => ->.
+      + by move => ? ? /= ->.
+    - case => // ? ? ? _.
+      rewrite group_comb rev_cat pmap_cat map_cat mem_cat.
+      case /orP.
+      + rewrite /= updateGroups0 (group_notComb _ _ _ notCombinators).
+        rewrite [rev [:: _]]/rev /catrev /= rev_cons rev_cons rev_cons.
+        case: (rev prefix).
+        * by rewrite /= => ->.
+        * by move => ? ? /= ->.
+      + move => ->.
+          by rewrite orbT.
+  Qed.
+
   Lemma inhabit_step_complete:
-    forall stable targets,
+    forall initialType stable targets,
       FailSound stable ->
       noTargetFailures targets ->
-      FCL_complete stable targets ->
-      FCL_complete (inhabitation_step (SplitCtxt Gamma) stable targets).1
+      FCL_complete initialType stable targets ->
+      FCL_complete initialType
+                   (inhabitation_step (SplitCtxt Gamma) stable targets).1
                    (inhabitation_step (SplitCtxt Gamma) stable targets).2.
   Proof.
-    move => stable targets fsprf.
+    move => initialType stable targets fsprf.
     case: targets => // r targets.
     case: r.
     - done.
@@ -6093,68 +5055,51 @@ Section InhabitationMachineProperties.
           move => /(fun prf => prf isT) res.
           rewrite /=.
             by apply: (rule_absorbl _ _ _ _ inprf__Ac).
-        * move => in_stable M prf__MB /=.
+        * move => inprf M prf__MB /=.
           apply: (rule_absorbl _ _ A c); first by apply: mem_head.
           apply: (future_word_weaken stable) => //.
           { move => x; rewrite in_cons => ->; by rewrite orbT. }
           apply: prf_complete => //.
-          move: in_stable.
-          rewrite /= in_cons.
-          case /orP; last by move => ->; rewrite orbT.
-          case /orP; last by move => ->.
-          move => /eqP ->.
-          
-
-          case /orP; first case /orP; move => ->; repeat rewrite orbT.
-          admit.*)
+          move: inprf.
+            by rewrite /= => ->.
       + case inprf__Ac: (RuleCombinator A c \in stable).
         * move => in_targets M prf__MB.
           move: (fun inprf => prf_complete B inprf M prf__MB).
-          (*rewrite in_cons. in_targets. orbT orbT.
-          rewrite (in_pmap_suffix _ [::_] _ in_targets) orbT.
+          rewrite /=.
+          rewrite (prefix_target_groups _ _ _ in_targets) orbT.
           move => /(fun prf => prf isT).
-            by apply: rule_absorbl.*)
-          admit.
+            by apply: rule_absorbl.
         * move => in_targets M prf__MB /=.
           apply: (rule_absorbl _ _ A c); first by apply: mem_head.
           apply: (future_word_weaken stable) => //.
           { move => x; rewrite in_cons => ->; by rewrite orbT. }
           apply: prf_complete => //.
-          move: in_targets => /=.
-          admit.
-          (*rewrite mem_cat /= in_targets.
-            by rewrite (in_pmap_suffix _ [::_] _ in_targets) orbT.*)
-          (*move: in_targets.
-          rewrite /= in_cons => ->.
-            by do 2 rewrite orbT.*)
+          rewrite (prefix_target_groups _ _ _ in_targets).
+            by repeat rewrite orbT.
     - move => A B C noFail prf_complete /=.
       case inprf__r: (RuleApply A B C \in stable).
-      + move => D inprf__D M prf.
-        apply: (rule_absorbl_apply _ _ A B C) => //.
+      + move => D inprf__D M prf /=.
+        apply: (rule_absorbl_apply initialType _ _ A B C) => //.        
         apply: prf_complete => //.
         move: inprf__D.
         case /orP; first case /orP; try by move => ->; repeat rewrite orbT.
-        move => in_targets.
-        admit.
-        (*  by rewrite (in_pmap_suffix _ [::_] _ in_targets) orbT.*)
-        (*rewrite /= in_cons.
-        move: inprf__D.
-        case /orP; first case /orP; by move => ->; repeat rewrite orbT.*)
+        move => /prefix_target_groups ->.
+          by rewrite orbT.
       + move: (computeFailExisting_existing stable C).
-        move: (fun prf => computeFailExisting_failed_complete stable targets A B C fsprf prf prf_complete).
+        move: (fun prf => computeFailExisting_failed_complete initialType stable targets A B C fsprf prf prf_complete).
         case: (computeFailExisting stable C) => [].
         case; first by move => ? /(fun prf => prf isT) //=.
         case; move => _.
-        * move => /(fun prf => prf isT) inprf__C /= D inprf__D M prf.
-          suff: (FCL_complete [:: RuleApply A B C & stable] [:: RuleApply A B C & targets]).
+        * move => /(fun prf => prf isT isT) inprf__C /= D inprf__D M prf.
+          suff: (FCL_complete initialType [:: RuleApply A B C & stable] [:: RuleApply A B C & targets]).
           { move => res.
             apply: rule_absorbl_apply; first by exact res.
             - by apply: mem_head.
             - apply: res => //.
               move: inprf__D.
               case /orP; first by move => ->.
-              rewrite /= [_ \in [:: A & targetTypes (takeTargets _ ++ _)]]in_cons => ->.
-                by repeat rewrite orbT. }
+              move => /prefix_target_groups ->.
+                by rewrite orbT. }
           clear D inprf__D M prf.
           move => D inprf__D M prf.
           apply: (future_word_weaken stable).
@@ -6162,24 +5107,17 @@ Section InhabitationMachineProperties.
           apply: prf_complete => //.
           move: inprf__D.
           case /orP; first case /orP.
-          ** rewrite /= in_cons.
-             case /orP.
-             *** move => /eqP ->.
-                 rewrite mem_head.
-                   by repeat rewrite orbT.
-             *** by move => ->.
+          ** by move => ->.
           ** rewrite /= in_cons.
              case /orP.
              *** move => /eqP DC__eq.
                  move: inprf__C.
-                   by rewrite DC__eq => ->.
+                 rewrite DC__eq => ->.
+                   by rewrite orbT.
              *** move => ->.
                    by rewrite orbT.
-          ** rewrite /= in_cons => ->.
+          ** move => ->.
                by repeat rewrite orbT.
-          (* ** rewrite /= in_cons -/(map _ _) -/(targetTypes targets).
-             move => inprf.
-               by apply /orP; right; apply /orP; right.*)
         * move => _.
           case isOmega__C: (isOmega C); first by apply FCL_Omega_complete.
           apply: inhabit_cover_complete => //.
