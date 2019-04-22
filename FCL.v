@@ -4951,52 +4951,6 @@ Section InhabitationMachineProperties.
           by rewrite /= IH.
   Qed.
 
-  Lemma inhabit_cover_complete:
-    forall initialType stable targets A B C,
-      FCL_complete initialType stable [:: RuleApply A B C & targets] ->
-      ~~(isOmega C) ->
-      FCL_complete initialType
-        (match inhabit_cover (SplitCtxt Gamma) targets C with
-         | (true, nextTargets) => (RuleFail C :: stable, dropTargets targets)
-         | (false, nextTargets) => (RuleApply A B C :: stable, nextTargets)
-         end.1)
-        (match inhabit_cover (SplitCtxt Gamma) targets C with
-         | (true, nextTargets) => (RuleFail C :: stable, dropTargets targets)
-         | (false, nextTargets) => (RuleApply A B C :: stable, nextTargets)
-         end.2).
-  Proof.
-    move => inititalType stable targets A B C prf_complete notOmega__C.
-    rewrite /inhabit_cover.
-    move: (inhabit_cover_empty C).
-    move: (inhabit_cover_flatten C).
-    move: (nextTargets_combinatorOrEmpty C (foldl (accumulateCovers (SplitCtxt Gamma) C (primeFactors C)) ([::], true) (enum Combinator)).1).
-    case: (foldl (accumulateCovers (SplitCtxt Gamma) C (primeFactors C)) ([::], true) (enum Combinator)).
-    move => nextTargets b.
-    case: b.
-    - move => next_combOrEmpty -> /(fun prf => prf isT).
-      admit.
-    - move => next_combOrEmpty nextTargets__eq _ /= D.
-      case /orP; first case /orP.
-      + move => inprf__D M /prf_complete.
-        rewrite inprf__D /=.
-        move => /(fun prf => prf isT).
-        move: nextTargets__eq => /= ->.
-          by apply: rule_absorbl_apply_covers.
-      + rewrite /= in_cons.
-        case /orP.
-        * move => /eqP -> M prf.
-          apply: future_word_weaken_targets2; first by apply: next_combOrEmpty.
-          apply: (future_word_weaken [::]) => //.
-          move: nextTargets__eq => /= ->.
-            by apply: future_word_covers.
-        * move => inprf__D M /prf_complete.
-          rewrite inprf__D orbT.
-          move => /(fun prf => prf isT).
-          move: nextTargets__eq => /= ->.
-            by apply: rule_absorbl_apply_covers.
-      + admit.
-  Admitted.
-
   Lemma prefix_target_groups:
     forall r targets B,
       (B \in targetTypes (pmap (ohead \o rev) (group targets))) ->
@@ -5032,6 +4986,149 @@ Section InhabitationMachineProperties.
       + move => ->.
           by rewrite orbT.
   Qed.
+
+  Lemma nil_reduceMultiArrows:
+    forall (covers: seq (@MultiArrow Constructor)), nilp (reduceMultiArrows covers) -> nilp covers.
+  Proof.
+    elim => // m ms IH.
+    rewrite /=.
+    case: (reduceMultiArrows ms) => // m2 ms2.
+      by case: (has (fun m2 =>
+                       (seq.size m2.1 == seq.size m.1) && all (fun AB : IT * IT => checkSubtypes AB.1 AB.2) (zip m.1 m2.1))
+                    [:: m2 & ms2]).
+  Qed.
+
+  Lemma empty_inhabit_cover:
+    forall C : IT,
+      (foldl (accumulateCovers (SplitCtxt Gamma) C (primeFactors C)) ([::], true) (enum Combinator)).1 = [::] ->
+      (foldl (accumulateCovers (SplitCtxt Gamma) C (primeFactors C)) ([::], true) (enum Combinator)).2.
+  Proof.
+    move => C.
+    suff: (nilp (foldl (accumulateCovers (SplitCtxt Gamma) C (primeFactors C)) ([::], true) (enum Combinator)).1 = 
+           (foldl (accumulateCovers (SplitCtxt Gamma) C (primeFactors C)) ([::], true) (enum Combinator)).2).
+    { by case: ((foldl (accumulateCovers (SplitCtxt Gamma) C (primeFactors C)) ([::], true) (enum Combinator)).1) => //. }
+    have: (nilp ([::]: @TreeGrammar Combinator Constructor) = true) by done.
+    move: [::] true.
+    elim: (enum Combinator) => // c combinators IH.
+    - move => results b.
+      rewrite /=.
+      case: (coverMachine ([::], map (fun ms =>
+                                      Cover (map (fun m => (m, filter (checkSubtypes m.2) (primeFactors C))) ms) (primeFactors C))
+                                     (SplitCtxt Gamma c))) => covers _.
+      case covers_empty: (nilp covers).
+      + move => prf.
+        rewrite IH => //.
+        move: covers_empty => /nilP -> /=.
+          by rewrite prf andbT.
+      + move => prf.
+        rewrite andbF.
+        rewrite IH //.
+        move: (nil_reduceMultiArrows covers).
+        rewrite commitUpdates_flatten.
+        case: (reduceMultiArrows covers).
+        * by rewrite covers_empty => /(fun prf => prf isT).
+        * move => m ms _.
+          move: (commitMultiArrow_size c m.1 C) => /=.
+          rewrite rev_cat revK /nilp size_cat size_cat => ->.
+          rewrite -addn1 addnAC addnA addn1.
+            by case: (seq.size (rev (flatten [seq rev (commitMultiArrow [::] c m0.1 C) | m0 <- ms])) + seq.size results + seq.size m.1) => //.
+  Qed.
+
+  Lemma inhabit_cover_complete:
+    forall initialType stable targets A B C,
+      FCL_complete initialType stable [:: RuleApply A B C & targets] ->
+      ~~(isOmega C) ->
+      FCL_complete initialType
+        (match inhabit_cover (SplitCtxt Gamma) targets C with
+         | (true, nextTargets) => (RuleFail C :: stable, dropTargets targets)
+         | (false, nextTargets) => (RuleApply A B C :: stable, nextTargets)
+         end.1)
+        (match inhabit_cover (SplitCtxt Gamma) targets C with
+         | (true, nextTargets) => (RuleFail C :: stable, dropTargets targets)
+         | (false, nextTargets) => (RuleApply A B C :: stable, nextTargets)
+         end.2).
+  Proof.
+    move => inititalType stable targets A B C prf_complete notOmega__C.
+    rewrite /inhabit_cover.
+    move: (empty_inhabit_cover C).
+    move: (inhabit_cover_empty C).
+    move: (inhabit_cover_flatten C).
+    move: (nextTargets_combinatorOrEmpty C (rev (enum Combinator))
+                                         (foldl (accumulateCovers (SplitCtxt Gamma) C (primeFactors C)) ([::], true) (enum Combinator)).1).
+    case: (foldl (accumulateCovers (SplitCtxt Gamma) C (primeFactors C)) ([::], true) (enum Combinator)).
+    move => nextTargets b.
+    case: b.
+    - move => next_combOrEmpty -> /(fun prf => prf isT) notargets _ D inprf__D M prf.
+      apply: (future_word_dropFailed _ _ A B C).
+      + move => N prf__N.
+        move: (future_word_covers C N notOmega__C prf__N).
+        rewrite notargets.
+        clear...
+        case: N.
+        * move => c.
+          case => //.
+            by case => [] g [].
+        * by move => M N /= [] A [] B [] [] // ? [].
+      + rewrite /=.
+        apply: (future_word_weaken stable).
+        { by move => ?; rewrite in_cons => ->; rewrite orbT. }
+        apply: prf_complete => //.
+        move: inprf__D.
+        case /orP.
+        * by move => /= ->.
+        * move => /= inprf.
+          move: (dropTargets_suffix targets) => /suffixP [] prefix /eqP targets__eq.
+            by rewrite (group_split _ _ _ targets__eq) (pmap_cat _ [:: _]) /targetTypes map_cat mem_cat inprf orbT orbT.
+    - move => next_combOrEmpty nextTargets__eq _ /= D.
+      case /orP; first case /orP.
+      + move => inprf__D M /prf_complete.
+        rewrite inprf__D /=.
+        move => /(fun prf => prf isT).
+        move: nextTargets__eq => /= ->.
+          by apply: rule_absorbl_apply_covers.
+      + rewrite /= in_cons.
+        case /orP.
+        * move => /eqP -> M prf.
+          apply: future_word_weaken_targets2; first by apply: next_combOrEmpty.
+          apply: (future_word_weaken [::]) => //.
+          move: nextTargets__eq => /= ->.
+            by apply: future_word_covers.
+        * move => inprf__D M /prf_complete.
+          rewrite inprf__D orbT.
+          move => /(fun prf => prf isT).
+          move: nextTargets__eq => /= ->.
+            by apply: rule_absorbl_apply_covers.
+      + rewrite /group foldl_cat.
+        move: next_combOrEmpty nextTargets__eq.
+
+        case: (nextTargets).
+        * move => _ _.
+          rewrite [foldl _ _ [::]]/= cats0.
+          move => /(prefix_target_groups (RuleApply A B C)) inprf__D M prf.
+          suff: (FCL_complete inititalType [:: RuleApply A B C & stable]  [:: RuleApply A B C & targets]).
+          { move => prf_complete_prefix.
+            apply: rule_absorbl_apply; first by exact prf_complete_prefix.
+            - by apply: mem_head.
+            - apply: (future_word_weaken stable).
+              { by move => ?; rewrite in_cons => ->; rewrite orbT. }
+              apply: prf_complete => //.
+                by rewrite inprf__D orbT. }
+          clear D inprf__D M prf.
+          move => D inprf__D M prf.
+
+            move: (prf_complete D).
+            rewrite inprf__D orbT => res.
+            move => M prf.
+          apply: rule_absorbl_apply.
+          apply: res.
+
+
+
+        
+
+  Admitted.
+
+  
 
   Lemma inhabit_step_complete:
     forall initialType stable targets,
