@@ -6,3 +6,4 @@
 ./DependentFixpoint.v
 ./Algebra.v
 ./TwoCounter.v
+./Labyrinth.v
