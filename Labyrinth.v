@@ -127,6 +127,8 @@ Section LabyrinthSpec.
       + done.
   Defined.
 
+  Definition Alg__Lab: sigAlg Sigma__Lab := sigAlg_Type LabAction.
+
 End LabyrinthSpec.
 
 Section LabExample.
@@ -141,7 +143,7 @@ Section LabExample.
      ; [:: O; O; O; O; O ]
     ].
 
-  Definition goal := (0, 0).
+  Definition goal := (3, 3).
   Definition start := (2, 2).
 
   Definition testLabSig := Sigma__Lab free goal.
@@ -153,19 +155,64 @@ Section LabExample.
 
   Fixpoint result_terms (fuel: nat) (A: IT): seq (@Term _) :=
     if fuel is n.+1
-    then foldl (fun s rule =>
-                  if rule is RuleCombinator B c
-                  then if B == A
-                       then [:: (Var c) & s]
-                       else s
-                  else if rule is RuleApply B C D
-                       then if B == A
-                            then (allpairs (@App _) (result_terms n C) (result_terms n D)) ++ s
-                            else s
-                       else s) [::] result_grammar
+    then flatten (map (fun rule =>
+                         if rule is RuleCombinator B c
+                         then if B == A
+                              then [:: (Var c)]
+                              else [::]
+                         else if rule is RuleApply B C D
+                              then if B == A
+                                   then (allpairs (@App _) (result_terms n C) (result_terms n D))
+                                   else [::]
+                              else [::]) result_grammar)
     else [::].
 
-  Example upto10 := undup (result_terms 20 (embed _ testLabSig (Some start))).
+  Lemma result_terms_words: forall n A M, M \in result_terms n A -> word result_grammar A M.
+  Proof.
+    elim => // n IH A M.
+    rewrite /result_terms.
+    move => /flattenP [] res /mapP [] r.
+    case: r.
+    - by move => ? _ ->.
+    - move => B c.
+      case B__eq: (B == A).
+      + move => inprf__r ->.
+        rewrite mem_seq1 => /eqP -> /=.
+        apply /hasP.
+        eexists; first by exact inprf__r.
+          by rewrite /= (eqP B__eq) eq_refl eq_refl.
+      + by move => _ ->.
+    - move => B C D.
+      case B__eq: (B == A).
+      + move => inprf__r -> /allpairsP [] [] M1 M2 [] /IH prf1 /IH prf2 ->.
+        rewrite /=.
+        apply /hasP.
+        eexists; first by exact inprf__r.
+          by rewrite /= (eqP B__eq) prf1 prf2 eq_refl.
+      + by move => _ ->.
+  Qed.
+
+  Definition result_terms_carrier: forall (n: nat), seq C__Goal.
+  Proof.
+    move => n.
+    move: (result_terms_words n (embed _ testLabSig (Some start))) => /allP.
+    move: (result_terms n (embed _ testLabSig (Some start))).
+    elim.
+    - move => _.
+        by exact [::].
+    - move => M Ms IH /andP [] prf /IH results.
+      have tychecks: (typeCheck Gamma__Lab M (embed _ testLabSig (Some start))).
+      { apply /fclP.
+        apply: inhabit_sound.
+        exact prf. }
+        by exact [:: exist _ M tychecks & results].
+  Defined.
+
+  Definition result_terms_mapped (n: nat): seq (C__Lab free goal (Some start)) :=
+    map (algebra_morphism__FCL _ _ (Alg__Lab free goal) (Some start)) (result_terms_carrier n).
+      
+
+  Example upto10 := (result_terms_mapped 10).
 
 End LabExample.
 
