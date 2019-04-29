@@ -129,31 +129,15 @@ Section LabyrinthSpec.
 
   Definition Alg__Lab: sigAlg Sigma__Lab := sigAlg_Type LabAction.
 
-End LabyrinthSpec.
-
-Section LabExample.
-  Let X := false.
-  Let O := true.
-
-  Definition free :=
-    [::[:: O; O; X; O; O ]
-     ; [:: O; X; X; X; O ]
-     ; [:: O; X; O; X; O ]
-     ; [:: O; X; O; O; O ]
-     ; [:: O; O; O; O; O ]
-    ].
-
-  Definition goal := (3, 3).
-  Definition start := (2, 2).
-
-  Definition testLabSig := Sigma__Lab free goal.
+  Definition testLabSig := Sigma__Lab.
 
   Definition Gamma__Lab := Gamma _ testLabSig.
   Definition C__Goal := C__FCL _ testLabSig (Some start).
 
   Definition result_grammar := inhabit _ _ Gamma__Lab (embed _ testLabSig (Some start)).
 
-  Fixpoint result_terms (fuel: nat) (A: IT): seq (@Term _) :=
+  Fixpoint result_terms {Combinator: finType} {Constructor: ctor}
+           (G: @TreeGrammar Combinator Constructor) (fuel: nat) (A: @IT Constructor): seq (@Term Combinator) :=
     if fuel is n.+1
     then flatten (map (fun rule =>
                          if rule is RuleCombinator B c
@@ -162,12 +146,12 @@ Section LabExample.
                               else [::]
                          else if rule is RuleApply B C D
                               then if B == A
-                                   then (allpairs (@App _) (result_terms n C) (result_terms n D))
+                                   then (allpairs (@App _) (result_terms G n C) (result_terms G n D))
                                    else [::]
-                              else [::]) result_grammar)
+                              else [::]) G)
     else [::].
 
-  Lemma result_terms_words: forall n A M, M \in result_terms n A -> word result_grammar A M.
+  Lemma result_terms_words: forall n A M, M \in result_terms (result_grammar) n A -> word result_grammar A M.
   Proof.
     elim => // n IH A M.
     rewrite /result_terms.
@@ -196,7 +180,7 @@ Section LabExample.
   Proof.
     move => n.
     move: (result_terms_words n (embed _ testLabSig (Some start))) => /allP.
-    move: (result_terms n (embed _ testLabSig (Some start))).
+    move: (result_terms _ n (embed _ testLabSig (Some start))).
     elim.
     - move => _.
         by exact [::].
@@ -208,17 +192,69 @@ Section LabExample.
         by exact [:: exist _ M tychecks & results].
   Defined.
 
-  Definition result_terms_mapped (n: nat): seq (C__Lab free goal (Some start)) :=
-    map (algebra_morphism__FCL _ _ (Alg__Lab free goal) (Some start)) (result_terms_carrier n).
-      
+  Definition result_terms_mapped (n: nat): seq (C__Lab (Some start)) :=
+    map (algebra_morphism__FCL _ _ Alg__Lab (Some start)) (result_terms_carrier n).
 
-  Example upto10 := (result_terms_mapped 10).
+End LabyrinthSpec.
 
+Section LabExample.
+  Let X := false.
+  Let O := true.
+
+  (** Small Test
+  Definition free :=
+    [::[:: O; O; X; O; O ]
+     ; [:: O; X; X; X; O ]
+     ; [:: O; X; O; X; O ]
+     ; [:: O; X; O; O; O ]
+     ; [:: O; O; O; O; O ]
+    ].
+
+  Definition goal := (3, 3).
+  Definition start := (2, 2). 
+   **)
+
+  (** Benchmark **)
+  Definition free :=
+    [::[:: O; X; O; O; O; O; O; X; O; O; O; O; O; X; O; X; O; O; O; X; O; O; O; X; O; O; O; X; O; O ]
+     ; [:: O; O; O; O; O; O; O; O; O; X; O; X; X; O; O; X; X; O; O; O; O; O; O; O; O; O; X; X; X; O ]
+     ; [:: O; O; O; O; O; O; O; X; O; X; O; O; O; O; X; O; O; O; O; O; X; X; O; O; X; O; O; X; O; X ]
+     ; [:: O; O; O; O; O; X; O; O; X; X; O; O; O; O; O; O; O; O; O; O; O; O; O; O; X; O; O; O; O; X ]
+     ; [:: O; O; O; O; O; X; O; O; X; X; O; X; O; X; O; O; X; O; O; O; O; O; O; X; O; O; O; O; O; X ]
+     ; [:: O; O; X; X; O; O; O; O; X; O; O; O; O; O; X; O; O; O; X; O; O; O; O; O; X; O; O; O; O; O ]
+     ; [:: O; O; O; X; O; X; X; O; O; X; O; O; O; X; O; O; O; O; O; O; O; O; O; O; O; O; O; O; O; O ]
+     ; [:: O; O; O; X; O; X; X; O; O; X; X; X; O; O; O; O; X; O; O; O; X; O; O; O; O; X; O; O; X; O ]
+     ; [:: O; O; O; X; O; O; X; O; O; X; O; X; O; O; X; X; X; O; X; O; O; O; O; O; X; X; O; X; O; O ]
+     ; [:: O; X; X; O; O; O; O; O; O; O; O; O; X; O; O; O; X; O; O; O; O; O; O; O; X; X; O; X; O; O ]
+     ; [:: O; X; O; X; O; O; X; O; O; O; O; O; O; O; O; X; O; O; O; X; O; X; O; X; O; O; X; X; O; X ]
+     ; [:: O; O; O; X; O; O; O; O; O; X; O; O; O; O; O; X; O; O; X; X; O; X; O; O; O; O; O; O; O; O ]
+     ; [:: O; X; O; O; X; X; O; X; X; O; O; O; X; O; O; O; O; O; X; O; O; O; O; O; O; O; O; O; O; O ]
+     ; [:: O; O; O; X; O; O; X; O; O; O; O; O; O; O; O; O; X; O; O; O; O; O; O; O; O; O; X; O; O; O ]
+     ; [:: X; O; O; X; O; O; X; O; O; O; O; O; X; O; O; X; O; O; O; X; O; O; O; X; O; O; O; O; O; O ]
+     ; [:: O; X; X; O; O; O; X; X; O; O; X; X; O; O; X; O; O; X; X; O; O; O; O; O; O; O; X; O; O; O ]
+     ; [:: O; O; X; X; O; O; O; O; O; O; O; X; O; O; O; O; O; O; O; O; O; O; O; O; O; X; O; O; O; O ]
+     ; [:: O; O; O; O; O; O; O; O; O; O; X; X; O; O; O; X; X; X; O; X; O; O; O; O; O; O; O; O; O; O ]
+     ; [:: O; O; O; O; O; X; O; O; O; X; O; X; X; O; O; O; O; O; X; O; O; O; O; O; O; O; O; X; X; O ]
+     ; [:: X; X; O; O; X; O; X; O; O; X; X; O; X; O; O; O; O; O; O; O; O; O; O; O; O; X; O; O; O; O ]
+     ; [:: O; O; O; X; X; X; O; X; O; O; O; O; O; X; O; O; O; O; O; O; O; O; X; O; X; O; O; O; O; X ]
+     ; [:: X; O; O; O; O; O; O; O; O; O; O; X; O; O; O; O; O; O; O; O; O; O; O; O; O; X; O; X; X; O ]
+     ; [:: O; O; O; O; O; X; O; O; O; O; O; O; O; O; X; O; X; O; O; X; O; O; O; O; O; O; O; O; O; O ]
+     ; [:: O; O; O; X; O; O; O; O; X; O; O; X; O; O; O; O; O; X; O; O; X; O; O; O; O; X; O; X; O; O ]
+     ; [:: O; O; O; O; O; O; O; X; O; O; O; O; O; O; O; O; O; X; O; O; O; O; O; O; O; X; X; O; O; O ]
+     ; [:: O; O; O; X; O; O; X; O; O; O; O; X; O; O; O; O; O; O; X; X; O; O; O; O; X; O; O; O; X; O ]
+     ; [:: X; X; O; O; X; O; O; O; O; X; O; O; O; X; O; O; X; X; O; O; O; O; O; O; O; O; X; X; X; O ]
+     ; [:: O; O; O; O; O; O; O; X; O; X; O; X; O; X; O; O; X; X; X; O; O; O; O; O; O; O; O; O; O; O ]
+     ; [:: O; O; X; O; X; O; O; O; O; O; X; O; O; O; O; O; X; O; O; X; X; O; X; O; X; O; O; X; O; O ]
+     ; [:: O; O; O; O; O; X; O; O; X; X; X; O; O; X; X; O; X; X; O; O; O; X; O; O; O; O; O; O; O; O ]
+    ].
+  Definition start := (0, 0).
+  Definition goal := (seq.size free - 1, seq.size free - 1).
+  Example upto100 := (result_terms_mapped free goal start 100).
 End LabExample.
 
 
 
 Extraction Language Haskell.
-Recursive Extraction upto10.
+Recursive Extraction upto100.
   
 
