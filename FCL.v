@@ -593,11 +593,11 @@ Module SplitContextPair.
     Notation splitCtxtPair := type.
     Notation SplitCtxtPairMixin := Mixin.
     Notation SplitCtxtPairType Combinator Constructor m := (@pack Combinator Constructor _ _ m _ _ id _ _ id m id).
-    Notation "[ 'splitCtxtPair' 'of' Combinator '*' Constructor 'for' splitCtxts ]" :=
+    Notation "[ 'splitCtxtPair' 'of' Combinator 'and' Constructor 'for' splitCtxts ]" :=
       (@clone Combinator Constructor splitCtxts _ idfun)
-        (at level 0, format "[ 'splitCtxtPair' 'of' Combinator '*' Constructor 'for' splitCtxts ]") : form_scope.
-    Notation "[ 'splitCtxtPair' 'of' Combinator '*' Constructor ]" :=
-      (@clone Combinator Constructor _ _ id) (at level 0, format "[ 'splitCtxtPair' 'of' Combinator '*' Constructor ]") : form_scope.
+        (at level 0, format "[ 'splitCtxtPair' 'of'  Combinator 'and' Constructor 'for' splitCtxts ]") : form_scope.
+    Notation "[ 'splitCtxtPair' 'of' Combinator 'and' Constructor ]" :=
+      (@clone Combinator Constructor _ _ id) (at level 0, format "[ 'splitCtxtPair' 'of' Combinator 'and' Constructor ]") : form_scope.
   End Exports.
 End SplitContextPair.
 
@@ -2162,6 +2162,50 @@ Section SplitContexts.
    Qed.
 End SplitContexts.
 
+Section CanonicalCombinedContexts.
+  Variable Combinator: finType.
+  Variables Constructor1 Constructor2: ctor.
+  Variables (Gamma1: Ctxt Combinator Constructor1) (Gamma2: Ctxt Combinator Constructor2).
+  Let Gammas := [splitCtxtPair of Combinator and _ for
+                              @sum_splitCtxtPairType Combinator Constructor1 Constructor2 Gamma1 Gamma2 ].
+  Let Gamma :=
+    [ffun c: Combinator => (ctxt1 Gammas c) \cap (ctxt2 Gammas c)]. 
+
+  Theorem canonicalCoproductLifted:
+    forall M (A: @IT Constructor1) (B: @IT Constructor2),
+      [FCL Gamma |- M : (lift1 _ _ A) \cap (lift2 _ _ B)] <->
+      [FCL Gamma1 |- M : A] /\ [FCL Gamma2 |- M : B].
+  Proof.
+    move => M A B.
+    move: (FCL__split Gammas (lift1 _ _ A) (lift2 _ _ B)).
+    move: (@FCL__hom _ (@sum1_ITHomType Constructor1 Constructor2) Gamma1 M A).
+    move: (@FCL__hom _ (@sum2_ITHomType Constructor1 Constructor2) Gamma2 M B).
+    rewrite /Gamma /Gammas /= /ctxt1 /ctxt2 /= /SplitContextPair.ctxt1 /SplitContextPair.ctxt2 /sum_splitCtxtPairMixin /=.
+    rewrite /sum2_itHomMixin /=.
+    move: M A B Gamma1 Gamma2.
+    clear Gamma1 Gamma2 Gammas Gamma.
+    case: Combinator => /= c fc.
+    case: Constructor1 => /= C1 pC1.
+    case: Constructor2 => /= C2 pC2.
+    move => M A B Gamma1 Gamma2 homprf2 homprf1 splitprf.
+    split.
+    - move => /(splitprf M (inPartition_lift1 _ _ A) (inPartition_lift2 _ _ B)) [] res1 res2.
+      split.
+      + apply /homprf1.
+        move: res1.
+          by rewrite /LiftedCtxt1 ffunK.
+      + apply /homprf2.
+        move: res2.
+          by rewrite /LiftedCtxt2 ffunK.
+    - move => [] res1 res2.
+      apply /(splitprf M (inPartition_lift1 _ _ A) (inPartition_lift2 _ _ B)).
+      rewrite /LiftedCtxt1 ffunK /LiftedCtxt2 ffunK.
+      split.
+      + by apply /homprf1.
+      + by apply /homprf2.
+  Qed.
+
+End CanonicalCombinedContexts.
 
 Section InhabitationMachine.
   Variable Combinator: finType.
