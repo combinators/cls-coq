@@ -1913,7 +1913,7 @@ Section SplitContexts.
           by move => [] /prf1 -> /prf2 ->.
   Qed.
 
-   Lemma inPartition2_minimalType: forall M, inPartition2 (minimalType (ctxt2 Gammas) M).
+  Lemma inPartition2_minimalType: forall M, inPartition2 (minimalType (ctxt2 Gammas) M).
   Proof.
     elim.
     - by apply: pure_context2.
@@ -2130,7 +2130,7 @@ Section SplitContexts.
             by move => prf' ? /(Types.Semantics_functional _ _ _ _ prf') [].
   Qed.
 
-   Lemma FCL__split:
+  Lemma FCL__split:
     forall A B M,
       @inPartition1 Gammas A ->
       @inPartition2 Gammas B ->
