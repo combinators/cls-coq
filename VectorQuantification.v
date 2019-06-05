@@ -546,7 +546,8 @@ Proof.
     simpl.
     auto.
 Qed.
-  
+
+
 (*Lemma ForAll2'_tail: forall {n: nat} {A B: Type} (P : A -> B -> Type) (xs: t A (S n)) (ys: t B (S n)) (prfs: ForAll2' P xs ys), ForAll2' P (tl xs) (tl ys).
 Proof.
   intros n A B P xs ys prfs.
@@ -1807,4 +1808,26 @@ Proof.
     assumption.
   - apply (proj1 (List.Forall_forall _ _) all_ys).
     assumption.
-Qed.  
+Qed.
+
+
+Lemma ListRepeat_comm {A: Type}: forall n (x: A), List.cons x (repeat x n) = List.app (repeat x n) (List.cons x List.nil).
+Proof.
+  intros n x.
+  induction n as [ | n IH ].
+  - reflexivity.
+  - simpl.
+    rewrite IH.
+    reflexivity.
+Qed.
+
+Lemma ListForall2_comm {A: Type}:
+  forall (P : A -> A -> Prop) xs ys,
+    (forall x y, P x y -> P y x) ->
+    List.Forall2 P xs ys ->
+    List.Forall2 P ys xs.
+Proof.
+  intros P xs ys comm prf.
+  induction prf as [ | x y hd tl IH ];
+    constructor; auto.
+Qed.
