@@ -2458,7 +2458,7 @@ Section InhabitationMachineProperties.
       by rewrite /FCL_sound G2__eq all_cat => /andP [].
   Qed.
 
-  Lemma word_perm: forall G1 G2, perm_eq G1 G2 -> forall A M, word G1 A M -> word G2 A M.
+  (*Lemma word_perm: forall G1 G2, perm_eq G1 G2 -> forall A M, word G1 A M -> word G2 A M.
   Proof.
     move => G1 G2 perm_prf A M.
     move: A.
@@ -2481,7 +2481,7 @@ Section InhabitationMachineProperties.
   Proof.
     move => G1 G2 perm_prf prf.
       by rewrite /FCL_sound (perm_eq_all _ perm_prf).
-  Qed.
+  Qed.*)
 
   Lemma cat_sound: forall G1 G2, FCL_sound G1 -> FCL_sound G2 -> FCL_sound (G1 ++ G2).
   Proof.
@@ -2580,33 +2580,7 @@ Section InhabitationMachineProperties.
       by rewrite andbT.
   Qed.
 
-  Definition parameterTypes (G: @TreeGrammar Combinator Constructor): seq (@IT Constructor) :=
-    pmap (fun r => match r with
-                | RuleApply _ _ C => Some C
-                | _ => None
-                end) G.
-
-  Lemma computeFailExisting_exists_param:
-    forall G A,
-      (A \in (parameterTypes G)) ->
-      ~~(computeFailExisting G A).1 ->
-      (computeFailExisting G A).2.
-  Proof.
-    elim => //.
-    case.
-    - move => B G IH A /IH /=.
-      case: (A == B) => //.
-        by case: (checkSubtypes A B) => //.
-    - by move => B c G IH A /IH /=.
-    - move => B C D G IH A /=.
-      rewrite in_cons.
-      move => /orP.
-      case.
-      + by move => ->.
-      + move => /IH.
-          by case: ((A == D)) => //.
-  Qed.
-
+  
   Lemma OmegaRules_sound:
     forall A, isOmega A -> FCL_sound (OmegaRules A).
   Proof.
@@ -2675,7 +2649,35 @@ Section InhabitationMachineProperties.
                  split => //.
                    by apply /andP; split.
   Qed.
-    
+
+  Definition parameterTypes (G: @TreeGrammar Combinator Constructor): seq (@IT Constructor) :=
+    pmap (fun r => match r with
+                | RuleApply _ _ C => Some C
+                | _ => None
+                end) G.
+
+  Lemma computeFailExisting_exists_param:
+    forall G A,
+      (A \in (parameterTypes G)) ->
+      ~~(computeFailExisting G A).1 ->
+      (computeFailExisting G A).2.
+  Proof.
+    elim => //.
+    case.
+    - move => B G IH A /IH /=.
+      case: (A == B) => //.
+        by case: (checkSubtypes A B) => //.
+    - by move => B c G IH A /IH /=.
+    - move => B C D G IH A /=.
+      rewrite in_cons.
+      move => /orP.
+      case.
+      + by move => ->.
+      + move => /IH.
+          by case: ((A == D)) => //.
+  Qed.
+
+
   Fixpoint grammarTypes (srcs: seq (@IT Constructor)) (tgt: @IT Constructor): seq (@IT Constructor) :=
     if srcs is [:: src & srcs]
     then [:: src , tgt & grammarTypes srcs (src -> tgt)]
@@ -2739,7 +2741,7 @@ Section InhabitationMachineProperties.
         by rewrite in_cons inprf orbT.
   Qed.
 
-  Lemma commitMultiArrow_targetTypes_subset:
+  (*Lemma commitMultiArrow_targetTypes_subset:
     forall (Delta: seq (@IT Constructor)) G c srcs tgt,
       {subset (undup (targetTypes G)) <= Delta} ->
       (forall n, (mkArrow (take n srcs, tgt)) \in Delta) ->
@@ -2772,7 +2774,7 @@ Section InhabitationMachineProperties.
         * by apply: G_prf.
       + move => n.
           by apply: (inprf__srcstgt n.+1).
-  Qed.    
+  Qed.    *)
 
   Lemma commitUpdates_parameterTypes_subset:
     forall (Delta: seq (@IT Constructor)) G currentTarget c (ms : seq (@MultiArrow Constructor)),
@@ -2907,7 +2909,7 @@ Section InhabitationMachineProperties.
         by apply: nextTargets_subset.
   Qed.
 
-  Lemma OmegaRules_targets:
+  (*Lemma OmegaRules_targets:
     forall A, targetTypes (OmegaRules A) =i [:: A].
   Proof.
     move => A B.
@@ -2915,7 +2917,7 @@ Section InhabitationMachineProperties.
     case AB__eq: (B == A) => //=.
     elim: (enum Combinator) => //= c combinators IH.
       by rewrite in_cons AB__eq IH.
-  Qed.
+  Qed.*)
 
   Lemma OmegaRules_params:
     forall A, parameterTypes (OmegaRules A) =i [:: A].
