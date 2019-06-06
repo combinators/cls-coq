@@ -2580,7 +2580,12 @@ Section InhabitationMachineProperties.
       by rewrite andbT.
   Qed.
 
-  
+  Definition parameterTypes (G: @TreeGrammar Combinator Constructor): seq (@IT Constructor) :=
+    pmap (fun r => match r with
+                | RuleApply _ _ C => Some C
+                | _ => None
+                end) G.
+
   Lemma OmegaRules_sound:
     forall A, isOmega A -> FCL_sound (OmegaRules A).
   Proof.
@@ -2649,12 +2654,6 @@ Section InhabitationMachineProperties.
                  split => //.
                    by apply /andP; split.
   Qed.
-
-  Definition parameterTypes (G: @TreeGrammar Combinator Constructor): seq (@IT Constructor) :=
-    pmap (fun r => match r with
-                | RuleApply _ _ C => Some C
-                | _ => None
-                end) G.
 
   Lemma computeFailExisting_exists_param:
     forall G A,
@@ -3219,7 +3218,7 @@ Section InhabitationMachineProperties.
       inhabit_step_rel initialTarget (inhabitation_step (SplitCtxt Gamma) s.1 s.2) s.
   Proof.
     move => initialTarget [] stable targets /=.
-    elim: targets => // r targets IH _.
+    case: targets => // r targets _.
     case: r.
     - move => A _ _.
       right.

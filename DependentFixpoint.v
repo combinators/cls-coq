@@ -19,7 +19,7 @@ Section DependentFixPoint.
     F t x (fun (t' : T) (y : TT t') (h : R (f t' y) (f t x)) =>
              Fix_F t' y (Acc_inv a h)).
 
-  Definition DepFix (t: T) (x: TT t) := Fix_F t x (Rwf (f t x)).
+  Definition DepFix (t: T) (x: TT t) := Fix_F t x (Rwf (f t x)). 
 
 
   Hypothesis
@@ -40,4 +40,22 @@ Section DependentFixPoint.
     apply Fix_F_inv.
   Qed.
   
-End DependentFixPoint.    
+  Definition IsFix (g: forall (t: T) (x: TT t), P t x): Prop :=
+    forall t x, g t x = F t x (fun (t' : T) (y : TT t') (h : R (f t' y) (f t x)) => g t' y).
+
+  Fixpoint isFix_unique g (isFix: IsFix g) (t: T) (x: TT t) (acc: Acc R (f t x)) {struct acc}:
+    Fix_F t x acc = g t x.
+  Proof.
+    unfold Fix_F.
+    rewrite isFix.
+    destruct acc.
+    match goal with
+    |[|- F t x ?lhs = F t x ?rhs ] =>
+     apply (F_ext t x lhs rhs)
+    end.
+    intros.
+    simpl.
+    apply isFix_unique.
+    exact isFix.
+  Qed.
+End DependentFixPoint.
