@@ -1,10 +1,10 @@
 -R . CLAlg
+./Cantor.v
 ./VectorQuantification.v
 ./FunctionSpace.v
 ./IntersectionTypes.v
 ./CombinatoryTerm.v
 ./CombinatoryLogic.v
-./Cantor.v
 ./ComputationalPathLemma.v
 ./FiniteSubstitutionSpace.v
 ./DependentFixpoint.v
