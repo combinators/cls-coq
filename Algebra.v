@@ -1018,26 +1018,27 @@ Section FCLAlgebra.
     Qed.
 
     Lemma revApply_nil: forall (M: @Term Combinator), revApply M [::] = M.
-    Proof. by move => M. Qed.    
-    Definition Term_unapply_ind:
-      forall (P : @Term Combinator -> Prop) (f: forall c Ns, (forall N, N \in Ns -> P N) -> P (revApply (Var c) Ns)) M, P M :=
-      fun P f M =>
-        (fix rec (M: Term): forall (Ns: seq Term), (forall N, N \in Ns -> P N) -> P (revApply M Ns) :=
-           match M with
-           | Var c => f c
-           | M @ N => fun Ns prfs =>
-                       rew revApply_rcons M N Ns in
-                         (rec M (rcons Ns N)
-                              (fun N2 inprf =>
-                                 match orP (rew (in_cons N Ns N2)
-                                             in rew (mem_rcons Ns N N2) in inprf) with
-                                 | or_introl N__eq =>
-                                   rew <- [P] (eqP N__eq) in
-                                       rew (revApply_nil N) in
-                                       rec N [::] (fun N inprf => False_rect _ (not_false_is_true inprf))
-                                 | or_intror inprf => prfs N2 inprf
-                                 end))
-           end) M [::] (fun N inprf => False_rect _ (not_false_is_true inprf)).
+    Proof. by move => M. Qed.
+
+    Lemma Term_unapply_ind: forall (P : @Term Combinator -> Prop) (f: forall c Ns, (forall N, N \in Ns -> P N) -> P (revApply (Var c) Ns)) M, P M.
+    Proof.
+      move => P f M.
+      have: (forall N, N \in [::] -> P N) by done.
+      rewrite -(revApply_nil M).
+      move: [::].
+      elim: M.
+      - move => c Ns IH.
+          by apply: f.
+      - move => M IH__M N IH__N Ns prf.
+        rewrite -revApply_rcons.
+        apply: IH__M.
+        move => N'.
+        rewrite mem_rcons in_cons.
+        case /orP.
+        + move => /eqP ->.
+            by apply: (IH__N [::]).
+        + by apply: prf.
+    Qed.
     
     Lemma IsChild_wf: well_founded IsChild.
     Proof.
