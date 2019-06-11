@@ -6705,8 +6705,6 @@ Section CoverMachineProperties.
                
   End PostReductionPhase.
 End CoverMachineProperties.
-
-Recursive Extraction coverMachine.
  
 Arguments coverMachine [Constructor].
 Arguments reduceMultiArrows [Constructor].

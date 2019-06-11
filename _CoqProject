@@ -7,3 +7,6 @@
 ./Algebra.v
 ./TwoCounter.v
 ./Labyrinth.v
+./Runtime.v
+./ExtractLabyrinthHaskell.v
+./ExtractLabyrinthOCaml.v

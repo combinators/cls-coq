@@ -2458,31 +2458,6 @@ Section InhabitationMachineProperties.
       by rewrite /FCL_sound G2__eq all_cat => /andP [].
   Qed.
 
-  (*Lemma word_perm: forall G1 G2, perm_eq G1 G2 -> forall A M, word G1 A M -> word G2 A M.
-  Proof.
-    move => G1 G2 perm_prf A M.
-    move: A.
-    elim: M.
-    - move => c A /hasP [] r inprf prf.
-      apply /hasP.
-      exists r.
-      + by rewrite -(perm_eq_mem perm_prf r).
-      + done.
-    - move => M IH__M N IH__N A.
-      move => /hasP [].
-      case => // B C D inprf /andP [] /andP [] A__eq /IH__M prf__M /IH__N prf__N.
-      apply /hasP.
-      exists (RuleApply B C D).
-      + by rewrite -(perm_eq_mem perm_prf _).
-      + by rewrite /= A__eq -/(word G2 C M) prf__M -/(word G2 D N) prf__N.
-  Qed.
-
-  Lemma perm_sound: forall G1 G2, perm_eq G1 G2 -> FCL_sound G2 -> FCL_sound G1.
-  Proof.
-    move => G1 G2 perm_prf prf.
-      by rewrite /FCL_sound (perm_eq_all _ perm_prf).
-  Qed.*)
-
   Lemma cat_sound: forall G1 G2, FCL_sound G1 -> FCL_sound G2 -> FCL_sound (G1 ++ G2).
   Proof.
     move => G1 G2 prf1 prf2.
@@ -2740,41 +2715,6 @@ Section InhabitationMachineProperties.
         by rewrite in_cons inprf orbT.
   Qed.
 
-  (*Lemma commitMultiArrow_targetTypes_subset:
-    forall (Delta: seq (@IT Constructor)) G c srcs tgt,
-      {subset (undup (targetTypes G)) <= Delta} ->
-      (forall n, (mkArrow (take n srcs, tgt)) \in Delta) ->
-      {subset (undup (targetTypes (commitMultiArrow G c srcs tgt))) <= Delta}.
-  Proof.
-    move => Delta G c srcs.
-    move: G.
-    elim: srcs.
-    - move => G tgt G_prf inprf__srcstgt.
-      rewrite /=.
-      case: (tgt \in targetTypes G) => //.
-      move => A.
-      rewrite in_cons.
-      move => /orP.
-      case.
-      + move => /eqP ->.
-          by apply: (inprf__srcstgt 0).
-      + by apply: G_prf.
-    - move => src srcs IH G tgt G_prf inprf__srcstgt.
-      rewrite /=.
-      apply: IH.
-      + rewrite /=.
-        case: (tgt \in targetTypes G) => //.
-        move => A.
-        rewrite in_cons.
-        move => /orP.
-        case.
-        * move => /eqP ->.
-            by apply: (inprf__srcstgt 0).
-        * by apply: G_prf.
-      + move => n.
-          by apply: (inprf__srcstgt n.+1).
-  Qed.    *)
-
   Lemma commitUpdates_parameterTypes_subset:
     forall (Delta: seq (@IT Constructor)) G currentTarget c (ms : seq (@MultiArrow Constructor)),
       {subset (undup (parameterTypes G)) <= Delta} ->
@@ -2907,16 +2847,6 @@ Section InhabitationMachineProperties.
     - rewrite -mem_undup.
         by apply: nextTargets_subset.
   Qed.
-
-  (*Lemma OmegaRules_targets:
-    forall A, targetTypes (OmegaRules A) =i [:: A].
-  Proof.
-    move => A B.
-    rewrite /= in_cons mem_seq1.
-    case AB__eq: (B == A) => //=.
-    elim: (enum Combinator) => //= c combinators IH.
-      by rewrite in_cons AB__eq IH.
-  Qed.*)
 
   Lemma OmegaRules_params:
     forall A, parameterTypes (OmegaRules A) =i [:: A].
