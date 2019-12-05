@@ -1,10 +1,11 @@
 Formalization of
 
-"A Type Theoretic Framework for Software Component Synthesis"
+"A Type-Theoretic Framework for Software Component Synthesis"
 
-by Jan Bessai.
+by Jan Bessai. 
+Available via DOI [10.17877/DE290R-20320](http://dx.doi.org/10.17877/DE290R-20320)
 
-Requires Coq 8.8.0 and mathcomp-1.8.0.
+Requires Coq 8.8.0-8.9.1 and mathcomp-1.8.0.
 
 Compile by running
 
